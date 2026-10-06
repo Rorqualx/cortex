@@ -34,6 +34,12 @@ const image = `sha256:${"a".repeat(64)}`;
 const containerId = "b".repeat(64);
 const cfg: SandboxConfig = {
   mode: "all",
+  osSandbox: {
+    enabled: false,
+    extraWritableRoots: [],
+    extraProtectedMetadata: [],
+    network: "deny",
+  },
   backend: "docker",
   scope: "session",
   workspaceAccess: "rw",

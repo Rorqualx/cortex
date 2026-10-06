@@ -499,7 +499,7 @@ export class TranscriptsStore {
     const input: TranscriptWriteOperations["transcripts.writeSummary"]["input"] = {
       session: identity,
       summaryValues: {
-        generated_at: summary.generatedAt,
+        generated_at: summary.generatedAt ?? null,
         summary_json: summaryJson,
         markdown,
         utterance_count: summary.utteranceCount,

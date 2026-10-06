@@ -54,7 +54,11 @@ import { prepareSystemAgentRunAdmission } from "./admitted-run-context.js";
 import { createTestAdmittedRunContext } from "./admitted-run-context.test-support.js";
 import { testing as cliBackendsTesting } from "./cli-backends.test-support.js";
 import { createLifecycleHooks, setHookRunnerForTest } from "./cli-runner.hooks.test-support.js";
-import { runPreparedCliAgent as runPreparedCliAgentCore } from "./cli-runner.js";
+import {
+  restoreCliRunnerTestDeps,
+  runPreparedCliAgent as runPreparedCliAgentCore,
+  setCliRunnerTestDeps,
+} from "./cli-runner.js";
 import { registerCliReplyCompletionTests } from "./cli-runner.reply-completion.cases.js";
 import {
   createManagedRun,

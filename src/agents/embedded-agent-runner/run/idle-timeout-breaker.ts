@@ -6,12 +6,19 @@ export type IdleTimeoutBreakerState = {
   consecutiveIdleTimeoutsBeforeOutput: number;
 };
 
+export function createIdleTimeoutBreakerState(): IdleTimeoutBreakerState {
+  return { consecutiveIdleTimeoutsBeforeOutput: 0 };
+}
+
 // Non-timeout failures without completed progress neither reset nor increment
 // the counter: they prove neither recovery nor another idle timeout.
 export function stepIdleTimeoutBreaker(
   state: IdleTimeoutBreakerState,
-  input: { idleTimedOut: boolean; completedModelProgress: boolean },
+  input: { idleTimedOut: boolean; completedModelProgress: boolean; outputTokens?: number },
+  options?: { cap?: number },
 ) {
+  const cap = options?.cap ?? MAX_CONSECUTIVE_IDLE_TIMEOUTS_BEFORE_OUTPUT;
+
   if (input.idleTimedOut && !input.completedModelProgress) {
     state.consecutiveIdleTimeoutsBeforeOutput += 1;
   } else if (input.completedModelProgress) {
@@ -20,7 +27,6 @@ export function stepIdleTimeoutBreaker(
 
   return {
     consecutive: state.consecutiveIdleTimeoutsBeforeOutput,
-    tripped:
-      state.consecutiveIdleTimeoutsBeforeOutput >= MAX_CONSECUTIVE_IDLE_TIMEOUTS_BEFORE_OUTPUT,
+    tripped: cap > 0 && state.consecutiveIdleTimeoutsBeforeOutput >= cap,
   };
 }

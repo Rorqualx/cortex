@@ -461,3 +461,9 @@ export function buildCliArgs(params: {
   }
   return args;
 }
+
+export {
+  buildCliSupervisorScopeKey,
+  resolveCliNoOutputTimeoutMs,
+  resolveCliRunTimeoutOverrideMs,
+} from "./reliability.js";

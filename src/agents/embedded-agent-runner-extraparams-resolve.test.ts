@@ -164,7 +164,7 @@ describe("resolveExtraParams", () => {
     expect(result).toBeUndefined();
   });
 
-it("returns undefined with no model config", () => {
+  it("returns undefined with no model config", () => {
     const result = resolveExtraParams({
       cfg: undefined,
       provider: "zai",
@@ -174,17 +174,13 @@ it("returns undefined with no model config", () => {
     expect(result).toBeUndefined();
   });
 
-
-it("returns per-agent params when agentId matches", () => {
+  it("returns per-agent params when agentId matches", () => {
     const result = resolveExtraParams({
       cfg: {
         agents: {
-          list: [
-            {
-              id: "risk-reviewer",
-              params: { cacheRetention: "none" },
-            },
-          ],
+          entries: {
+            "risk-reviewer": { params: { cacheRetention: "none" } },
+          },
         },
       },
       provider: "anthropic",
@@ -194,6 +190,4 @@ it("returns per-agent params when agentId matches", () => {
 
     expect(result).toEqual({ cacheRetention: "none" });
   });
-
-
 });
