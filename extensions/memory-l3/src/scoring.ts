@@ -1,5 +1,4 @@
 import type { FactValidity, L2Fact } from "./types.js";
-
 export type ScoringConfig = {
   weightLexical: number;
   /** BM25 lexical signal. Augments Jaccard with term-frequency/document-rarity
@@ -128,6 +127,13 @@ export type ScoringConfig = {
    * load-bearing for recall purposes.
    */
   staleCentralityMaxDegree?: number;
+  /** TEMPS (temporal-fusion ranking): weight of the temporal-alignment
+   * signal — interval overlap between a time-scoped query ("what did we do in
+   * March 2026", "since June", "last week") and the fact's temporal footprint
+   * (eventTime ?? createdAt, extended to validity.validThrough). Cautious
+   * default 0.05 (same start as weightValidity); raise only against
+   * LongMemEval temporal-category gains. 0 disables. */
+  weightTemporalAlignment?: number;
   /**
    * Fact count threshold above which BM25 weight is scaled up. Research
    * (arXiv:2607.26497) shows BM25 overtakes agent-based retrieval at
@@ -169,6 +175,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   staleZeroRecallDemotion: 0.5,
   staleCentralityAttenuation: 0.5,
   staleCentralityMaxDegree: 6,
+  weightTemporalAlignment: 0.05,
   corpusSizeBm25Threshold: 50_000,
   corpusSizeBm25ScaleFactor: 1.5,
 };
@@ -335,6 +342,13 @@ export type Signals = {
    * text that appear in the query. 0 when entity scoring is disabled or
    * no entities are found. */
   entityScore: number;
+  /** TEMPS temporal-alignment score (0–1). Interval overlap between the
+   * query's parsed time range and the fact's temporal footprint
+   * (eventTime ?? createdAt, extended to validity.validThrough).
+   * 1 = overlap, 0.5 = within one query-span of the range, 0 = otherwise
+   * or when the query carries no parseable time expression (uniform 0
+   * across facts — non-temporal rankings unchanged). */
+  temporalAlignment: number;
   /**
    * Polarity multiplier (0–1). Defaults to 1.0 (neutral). For negative-
    * polarity facts, this is set to `config.polarityDemotionFactor` (0.5)
@@ -561,6 +575,8 @@ export function scoreFact(params: {
    * so a low-trust source cannot hide behind a high-certainty extraction.
    */
   sourceTrust?: import("./types.js").SourceTrust;
+  /** TEMPS: query-side parsed time range; absent = non-temporal query. */
+  queryTimeRange?: QueryTimeRange;
 }): Signals {
   const factTokens = tokenize(params.fact.text);
   const lexical = jaccard(params.queryTokens, factTokens);
@@ -602,6 +618,9 @@ export function scoreFact(params: {
       params.config.useEntityScoring && params.queryText
         ? entityOverlapScore(params.queryText, params.fact.text)
         : 0,
+    temporalAlignment: params.queryTimeRange
+      ? temporalAlignmentScore(params.fact, params.queryTimeRange)
+      : 0,
     polarityMultiplier:
       params.fact.polarity === "negative" ? params.config.polarityDemotionFactor : 1.0,
   };
@@ -688,6 +707,142 @@ export function staleDemotionMultiplier(params: {
   return base + (1 - base) * Math.min(1, attenuation * centrality);
 }
 
+// ---------------------------------------------------------------------------
+// TEMPS: query-side temporal parsing + interval-overlap alignment
+// ---------------------------------------------------------------------------
+
+/** A parsed query time interval, epoch ms (inclusive end). start <= end. */
+export type QueryTimeRange = { start: number; end: number };
+
+const MONTH_NAMES: Record<string, number> = {
+  jan: 1,
+  january: 1,
+  feb: 2,
+  february: 2,
+  mar: 3,
+  march: 3,
+  apr: 4,
+  april: 4,
+  may: 5,
+  jun: 6,
+  june: 6,
+  jul: 7,
+  july: 7,
+  aug: 8,
+  august: 8,
+  sep: 9,
+  sept: 9,
+  september: 9,
+  oct: 10,
+  october: 10,
+  nov: 11,
+  november: 11,
+  dec: 12,
+  december: 12,
+};
+
+/**
+ * TEMPS: parse an explicit time range out of a retrieval query. Rule-based
+ * and linear-time — anchored alternations only, no nested quantifiers
+ * (ReDoS-safe; same regex-family discipline as the compression temporal
+ * anchors). Supported forms (case-insensitive):
+ *   "last/past/previous week|month|quarter|year", "last N days" (relative to now)
+ *   "since/after <date>"   → [date, max(now, date)]
+ *   "until/before <date>"  → [epoch 0, date]
+ *   two bare dates         → [earlier.start, later.end] (covers "between A and B")
+ *   single date            → its own period (day / month / year granularity)
+ *   date forms: 2026-03-01, 2026/03/01, 2026-03, "March 2026", bare 2026
+ *   (19xx/20xx, word-bounded so 4-digit ids inside longer tokens don't match)
+ *
+ * Returns null when no time expression is found — callers then skip the
+ * temporal-alignment signal entirely.
+ */
+export function parseQueryTimeRange(query: string, nowMs: number): QueryTimeRange | null {
+  const q = query.toLowerCase();
+
+  const relative = /(?:last|past|previous)\s+(week|month|quarter|year)\b/.exec(q);
+  if (relative) {
+    const days = { week: 7, month: 30, quarter: 91, year: 365 }[relative[1]!] ?? 0;
+    return { start: nowMs - days * MS_PER_DAY, end: nowMs };
+  }
+  const relativeDays = /(?:last|past)\s+(\d{1,3})\s+days?\b/.exec(q);
+  if (relativeDays) {
+    const days = Number(relativeDays[1]);
+    if (days > 0 && days <= 3650) {
+      return { start: nowMs - days * MS_PER_DAY, end: nowMs };
+    }
+  }
+
+  // Explicit date tokens — one pass, linear alternation, no nesting.
+  const DAY_MS = MS_PER_DAY;
+  const tokens: Array<{ start: number; end: number }> = [];
+  for (const g of q.matchAll(
+    /\b(\d{4})-(\d{1,2})-(\d{1,2})\b|\b(\d{4})\/(\d{1,2})\/(\d{1,2})\b|\b(\d{4})-(\d{1,2})\b|\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})\b|\b(19\d{2}|20\d{2})\b/g,
+  )) {
+    if (g[1] && g[2] && g[3]) {
+      const start = new Date(Number(g[1]), Number(g[2]) - 1, Number(g[3])).getTime();
+      if (Number.isFinite(start)) tokens.push({ start, end: start + DAY_MS });
+    } else if (g[4] && g[5] && g[6]) {
+      const start = new Date(Number(g[4]), Number(g[5]) - 1, Number(g[6])).getTime();
+      if (Number.isFinite(start)) tokens.push({ start, end: start + DAY_MS });
+    } else if (g[7] && g[8]) {
+      const y = Number(g[7]);
+      const mo = Number(g[8]);
+      if (mo >= 1 && mo <= 12) {
+        tokens.push({ start: new Date(y, mo - 1, 1).getTime(), end: new Date(y, mo, 1).getTime() });
+      }
+    } else if (g[9] && g[10]) {
+      const mo = MONTH_NAMES[g[9]!];
+      if (mo) {
+        const y = Number(g[10]);
+        tokens.push({ start: new Date(y, mo - 1, 1).getTime(), end: new Date(y, mo, 1).getTime() });
+      }
+    } else if (g[11]) {
+      const y = Number(g[11]);
+      tokens.push({ start: new Date(y, 0, 1).getTime(), end: new Date(y + 1, 0, 1).getTime() });
+    }
+  }
+  if (tokens.length === 0) return null;
+
+  tokens.sort((a, b) => a.start - b.start);
+  if (/\b(since|after)\b/.test(q)) {
+    return { start: tokens[0]!.start, end: Math.max(nowMs, tokens[tokens.length - 1]!.end) };
+  }
+  if (/\b(until|before)\b/.test(q)) {
+    return { start: 0, end: tokens[tokens.length - 1]!.end };
+  }
+  if (tokens.length >= 2) {
+    return { start: tokens[0]!.start, end: tokens[tokens.length - 1]!.end };
+  }
+  return tokens[0]!;
+}
+
+/**
+ * TEMPS: interval-overlap alignment between the fact's temporal footprint
+ * and the query's parsed range. 1 = overlap; 0.5 = near miss within one
+ * query-span; 0 = far miss. Time-bounded facts (LAPSE validity) extend
+ * their footprint to validThrough.
+ */
+export function temporalAlignmentScore(
+  fact: Pick<L2Fact, "createdAt"> & {
+    eventTime?: number;
+    validity?: FactValidity;
+  },
+  range: QueryTimeRange,
+): number {
+  const factStart = fact.eventTime ?? fact.createdAt;
+  const validThrough =
+    fact.validity?.kind === "time-bounded" &&
+    typeof fact.validity.validThrough === "number" &&
+    fact.validity.validThrough >= factStart
+      ? fact.validity.validThrough
+      : factStart;
+  const overlap = Math.min(validThrough, range.end) - Math.max(factStart, range.start);
+  if (overlap >= 0) return 1;
+  const span = Math.max(range.end - range.start, 1);
+  return -overlap <= span ? 0.5 : 0;
+}
+
 export function composite(signals: Signals, config: ScoringConfig): number {
   const weighted =
     signals.lexical * config.weightLexical +
@@ -701,6 +856,7 @@ export function composite(signals: Signals, config: ScoringConfig): number {
     signals.reliability * config.weightReliability +
     signals.semanticEntropy * config.weightSemanticEntropy +
     signals.validity * config.weightValidity +
+    (signals.temporalAlignment ?? 0) * (config.weightTemporalAlignment ?? 0.05) +
     signals.entityScore * config.weightEntity;
   return weighted * signals.polarityMultiplier;
 }
