@@ -545,3 +545,46 @@ tsgo:core 19→0 locally (cache cleared).
 - `run-fallback-policy.test.ts`: **UNION** — fork base + 5 upstream-unique tests (production identical both sides).
 - `ssh-backend.test.ts` / `agents-mutate.test.ts` / `run-node.test.ts` / `experience-review.apply.test.ts` / `build-all.test.ts`: upstream additions on fork scaffold (run-node: + upstream cast cleanup; experience-review: fork forge/seed flow kept, dual-key skills type admits both).
 - merge=ours drift (11 files) rebased onto upstream w/ fork delta re-applied; protocol-gen + kysely + lockfile regenerated clean.
+
+## 2026-10-06 17:36Z resume: startup-JS budget block — root cause isolated (DO NOT re-derive)
+
+Branch fully resolved: 0 conflicts; huey proof of 52b092a82ed shows all 7 tsgo lanes
+new=0 (core 0/0, extensions 3/3, core:test 115/113, extensions:test 11/11, test:src
+115/113, test:ui 0/0, test:packages 0/0). Sole red gate = control-ui startup budget:
+measured 626209 B / 30 requests vs enforcement 591116 B (baseline 590540 + growth 512
+
+- variance 64) and committed-baseline cap 590848 B (577 KiB). BUILD_EXIT=1 on both
+  proofs (12:09Z, 15:59Z). NOT a merge bug — upstream architecture, root cause chain:
+
+  src/agents/internal-runtime-context.ts (client-path on main; upstream-modified)
+  → packages/agent-core/src/harness/messages.ts (NEW to client graph; value-imports
+  the @openclaw/llm-core barrel for hasRuntimeContextMarker)
+  → barrel re-exports llm-core/validation.ts (typebox Compile/Pointer) and
+  normalization-core/json-schema.ts (typebox Guard/Check)
+  → 5 new pure-typebox foundation chunks = 36606 B gzip (sourcemaps are 100% typebox);
+  7 new foundation chunks total; requests 28 → 30.
+
+main shipped ZERO typebox client-side (verified: no typebox source in any main startup
+chunk map; the barrel was not in main's client graph). sideEffects audit: llm-core /
+normalization-core / agent-core package.json have NO sideEffects flag on upstream tip AND
+main alike (gateway-protocol has sideEffects:false on all three) — nothing was dropped by
+the merge. Upstream's own client (~372 KB startup) ships typebox the same way.
+
+MAINTAINER DECISION REQUIRED (playbook hard-block; first flagged 05:35Z, evidence now complete):
+A) ACCEPT upstream architecture — commit baseline 626209 B, raise the cap 577 → 612 KiB
+(+6.1%), then finish-land. Zero divergence; next batches keep this weight (client-side
+wire validation is upstream's direction).
+B) TRIM — keep typebox out of the client graph. Estimated 626209 − 36606 = 589603 B / 25
+requests: under the CURRENT 591116 B limit by only ~1.5 KB. Cleanest shape is
+sideEffects:false on llm-core + normalization-core package.json (fork-side, 2 lines,
+needs a browser smoke that runtime-context markers still render), or narrowing the
+messages.ts barrel import. Both are fork divergence on upstream hot files that will
+re-drift every future merge.
+RECOMMENDATION: A — fighting the bundler graph fork-side recreates the frozen-file
+disease for ~1.5 KB of headroom that the next batch will eat. If 612 KiB is unpalatable,
+pair A with a fork-UI startup trim follow-up (lazy views), decided separately.
+
+Worktree left resumable at 52b092a82ed (clean tree, no merge in progress). Next run:
+if the maintainer decision is recorded below this line, apply it and finish-land;
+otherwise report the same block and DO NOT re-run the ~10-minute huey proof on an
+unchanged branch (two identical red verdicts already on file).
