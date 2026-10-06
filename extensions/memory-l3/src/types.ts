@@ -110,6 +110,13 @@ export type L2Fact = {
    * as `neutral`.
    */
   polarity?: FactPolarity;
+  /**
+   * QW-2 (LAPSE): whether this fact is time-bounded ("subscribed until
+   * 2026-06") or standing. Absent = standing (same pattern as
+   * `lastVerifiedAt`). Populated from typed facts at retrieval so the
+   * scoring pipeline can demote facts whose validity window has closed.
+   */
+  validity?: FactValidity;
 };
 
 /**
@@ -153,6 +160,25 @@ export type TypedFact = {
    * facts extracted before this feature.
    */
   statedBy?: string;
+  /**
+   * QW-2 (LAPSE): time-bounded vs. standing distinction. Extractor emits
+   * `{ kind: "time-bounded", validThrough }` for values with an explicit
+   * end ("until 2026-06", "through Q3"). Absent = standing — readers treat
+   * absent as standing, same pattern as `lastVerifiedAt`.
+   */
+  validity?: FactValidity;
+};
+
+/**
+ * LAPSE-inspired validity window on a fact: whether it is standing (true
+ * indefinitely) or time-bounded (true only through `validThrough`, epoch ms).
+ * `validThrough` may be absent on time-bounded facts whose end date cannot
+ * be parsed to a deterministic instant — the textual qualifier still
+ * survives in the fact text; only the deterministic demotion is skipped.
+ */
+export type FactValidity = {
+  kind: "standing" | "time-bounded";
+  validThrough?: number;
 };
 
 /**
@@ -370,6 +396,10 @@ export type LongTermTypedFact = {
   supersededBy: string | null;
   /** When true, fact is hidden from retrieval but kept on disk for forensics. */
   archived: boolean;
+  /** QW-2 (LAPSE): validity window threaded from the latest emission.
+   * Absent = standing; a closed window demotes the fact in retrieval
+   * scoring even without a contradicting emission. */
+  validity?: FactValidity;
   archivedAt: number | null;
   /** Epoch ms when this fact was last explicitly verified / reaffirmed.
    * Used for temporal-currency scoring in retrieval and archival.

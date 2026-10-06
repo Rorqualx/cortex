@@ -1,4 +1,4 @@
-import type { L2Fact } from "./types.js";
+import type { FactValidity, L2Fact } from "./types.js";
 
 export type ScoringConfig = {
   weightLexical: number;
@@ -645,10 +645,29 @@ export function staleDemotionMultiplier(params: {
   config: ScoringConfig;
   /** Normalized 0..1 load-bearing centrality; absent/0 = no attenuation. */
   centrality?: number;
+  /** QW-2 (LAPSE): validity window of the fact, when known. A time-bounded
+   * fact whose validThrough has closed is demoted unconditionally — recall
+   * history and centrality cannot resurrect an expired value, and no
+   * contradicting fact is required. */
+  validity?: FactValidity;
+  /** Wall-clock now (ms) for the window-closed check; defaults to Date.now(). */
+  nowMs?: number;
 }): number {
   const thresholdDays = params.config.staleZeroRecallAgeDays ?? 21;
   const factor = params.config.staleZeroRecallDemotion ?? 0.5;
   if (thresholdDays <= 0 || factor >= 1.0) return 1.0;
+
+  // QW-2 (LAPSE) window-closed expiry: deterministic, independent of recall
+  // history, age gates, and CATD centrality. Checked before the age/recall
+  // gates so a young, frequently-recalled-but-expired fact still demotes.
+  if (
+    params.validity?.kind === "time-bounded" &&
+    typeof params.validity.validThrough === "number" &&
+    params.validity.validThrough <= (params.nowMs ?? Date.now())
+  ) {
+    return factor;
+  }
+
   const ageDays = Math.max(0, params.ageMs) / MS_PER_DAY;
   if (ageDays < thresholdDays) return 1.0;
 

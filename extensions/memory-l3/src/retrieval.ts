@@ -860,6 +860,8 @@ export async function retrieveTopK(params: {
       recallCount: retrievalSignalMap.get(item.fact.id)?.recallCount ?? 0,
       ageMs: now - item.fact.createdAt,
       config,
+      ...(item.fact.validity ? { validity: item.fact.validity } : {}),
+      nowMs: now,
       ...(degree > 0 ? { centrality: Math.min(1, degree / centralityMaxDegree) } : {}),
     });
     const score = rawScore * demotion;
@@ -1534,6 +1536,8 @@ function typedFactAsL2Fact(typed: TypedFact): L2Fact {
     eventTime: typed.eventTime,
     sessionId: typed.sessionId,
     participants: typed.participants,
+    // QW-2 (LAPSE): thread the validity window into the scoring pipeline.
+    validity: typed.validity,
   };
 }
 
@@ -1551,6 +1555,8 @@ function longTermTypedAsL2Fact(ltt: LongTermTypedFact, now: number): L2Fact {
     // HERO-style provenance-on-recall: thread the verbatim source span
     // through so the recall renderer can surface an evidence pointer.
     provenanceQuote: ltt.provenance?.quote,
+    // QW-2 (LAPSE): thread the validity window into the scoring pipeline.
+    validity: ltt.validity,
   };
 }
 

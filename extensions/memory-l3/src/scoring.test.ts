@@ -980,6 +980,67 @@ describe("staleDemotionMultiplier", () => {
     ).toBe(0.5);
   });
 
+  it("QW-2 (LAPSE): window-closed time-bounded facts demote regardless of recall/centrality", () => {
+    const now = 1_800_000_000_000;
+    const expired = { kind: "time-bounded" as const, validThrough: now - DAY };
+    // Deterministic expiry: high recall history and load-bearing centrality
+    // cannot resurrect an expired value — no contradicting fact required.
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 5,
+        ageMs: 1 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        validity: expired,
+        centrality: 1.0,
+        nowMs: now,
+      }),
+    ).toBe(0.5);
+    // recallCount=0 path also hits the factor floor (never below it).
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        validity: expired,
+        nowMs: now,
+      }),
+    ).toBe(0.5);
+  });
+
+  it("QW-2 (LAPSE): open validity windows and standing facts keep normal demotion", () => {
+    const now = 1_800_000_000_000;
+    // Window still open → the normal age gate applies (young fact not demoted).
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 10 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        validity: { kind: "time-bounded", validThrough: now + DAY },
+        nowMs: now,
+      }),
+    ).toBe(1.0);
+    // Standing facts are unaffected by the window-closed branch.
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 3,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        validity: { kind: "standing" },
+        nowMs: now,
+      }),
+    ).toBe(1.0);
+    // Time-bounded with no parseable end date → no deterministic expiry.
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 3,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        validity: { kind: "time-bounded" },
+        nowMs: now,
+      }),
+    ).toBe(1.0);
+  });
+
   it("attenuates demotion for load-bearing facts (CATD centrality, default attenuation 0.5)", () => {
     // recallCount=0, factor=0.5, centrality=1.0 → 0.5 + 0.5*min(1, 0.5) = 0.75
     expect(
