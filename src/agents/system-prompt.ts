@@ -253,20 +253,26 @@ function buildWebchatCanvasSection(params: {
   isMinimal: boolean;
   runtimeChannel?: string;
   sourceMessageToolOnly: boolean;
+  messageToolAvailable?: boolean;
 }) {
-  if (params.isMinimal || params.runtimeChannel !== "webchat") {
+  if (
+    params.isMinimal ||
+    params.runtimeChannel !== "webchat" ||
+    (params.sourceMessageToolOnly && !params.messageToolAvailable)
+  ) {
     return [];
   }
   return [
     "## Control UI Embed",
-    "`[embed ...]`: Control UI/webchat only; inline rich bubble. Else use regular links.",
+    "`[embed ...]`: Control UI/webchat only; inline rich bubble. Never non-web.",
     params.sourceMessageToolOnly
       ? "- Files: message attachment fields. Web rich render: `[embed ...]`."
       : "- Attachments: `MEDIA:`. Web rich render: `[embed ...]`.",
     '- Hosted doc: `[embed ref="cv_123" title="Status" height="320" /]`; URL form: `[embed url="/__openclaw__/canvas/documents/cv_123/index.html" title="Status" height="320" /]`.',
     '- YouTube: `[embed url="https://www.youtube.com/watch?v=VIDEO_ID" title="Video" /]`; no widget needed.',
-    "- Never local/file:// or arbitrary URL. Only hosted Canvas refs/URLs or YouTube video URLs.",
-    "- Quote attributes. Stage hosted docs in the profile-scoped root; prefer `ref` or use the full hosted URL.",
+    "- Never local/file:// or arbitrary URL. Only hosted Canvas refs/URLs (must start `/__openclaw__/canvas/`) or YouTube video URLs; else use `ref`.",
+    "- Hosted root is profile-, not workspace-scoped; stage there.",
+    "- Quote attributes. Prefer `ref`; use `url` only with full hosted URL.",
     "",
   ];
 }
@@ -274,6 +280,7 @@ function buildWebchatCanvasSection(params: {
 function buildControlUiSessionCompanionSection(params: {
   isMinimal: boolean;
   runtimeChannel?: string;
+  hasSessionsSpawn?: boolean;
 }) {
   if (params.isMinimal || params.runtimeChannel !== "webchat") {
     return [];
@@ -282,7 +289,9 @@ function buildControlUiSessionCompanionSection(params: {
     "## Control UI Side Chat",
     "- Operator has a read-only Side chat for this session's status and explanations.",
     "- On request, do not spawn sub-agents or burn main-thread turns merely to summarize status or re-explain recent work.",
-    "- Reserve `sessions_spawn` for delegated work with its own deliverable.",
+    ...(params.hasSessionsSpawn
+      ? ["- Reserve `sessions_spawn` for delegated work with its own deliverable."]
+      : []),
     "",
   ];
 }
@@ -1061,10 +1070,12 @@ export function buildAgentSystemPrompt(params: {
       isMinimal,
       runtimeChannel,
       sourceMessageToolOnly,
+      messageToolAvailable,
     }),
     ...buildControlUiSessionCompanionSection({
       isMinimal,
       runtimeChannel,
+      hasSessionsSpawn,
     }),
     ...buildMessagingSection({
       isMinimal,

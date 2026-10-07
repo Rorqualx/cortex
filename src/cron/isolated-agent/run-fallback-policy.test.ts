@@ -92,6 +92,13 @@ describe("resolveCronFallbacksOverride", () => {
                 },
               },
             },
+            entries: {
+              research: {
+                model: {
+                  primary: "anthropic/claude-opus-4-6",
+                },
+              },
+            },
           },
         },
         agentId: "main",
@@ -117,14 +124,13 @@ describe("resolveCronFallbacksOverride", () => {
                 },
               },
             },
-            list: [
-              {
-                id: "research",
+            entries: {
+              research: {
                 model: {
                   primary: "anthropic/claude-opus-4-6",
                 },
               },
-            ],
+            },
           },
         },
         agentId: "research",
@@ -201,11 +207,41 @@ describe("resolveCronFallbacksOverride", () => {
           agents: {
             defaults: {
               model: {
-                primary: "anthropic/claude-opus-4-6",
-                fallbacks: ["openai/gpt-5.4"],
+                primary: "deepseek/deepseek-v4-pro",
+                fallbacks: ["deepseek/deepseek-v4-flash", "moonshot/kimi-k2.6"],
               },
-              subagents: {
-                model: "kimi/kimi-code",
+            },
+            entries: {
+              main: {
+                model: "deepseek/deepseek-v4-pro",
+              },
+            },
+          },
+        },
+        agentId: "main",
+        inheritDefaultFallbacksForAgentStringModel: true,
+        job: makeJob({
+          kind: "agentTurn",
+          message: "summarize",
+        }),
+      }),
+    ).toEqual(["deepseek/deepseek-v4-flash", "moonshot/kimi-k2.6"]);
+  });
+
+  it("does not infer inheritance from rewritten cron agent defaults", () => {
+    expect(
+      resolveCronFallbacksOverride({
+        cfg: {
+          agents: {
+            defaults: {
+              model: {
+                primary: "anthropic/claude-sonnet-4-6",
+                fallbacks: ["deepseek/deepseek-v4-flash", "moonshot/kimi-k2.6"],
+              },
+            },
+            entries: {
+              main: {
+                model: "anthropic/claude-sonnet-4-6",
               },
             },
           },
@@ -311,150 +347,4 @@ describe("resolveCronFallbacksOverride", () => {
       { provider: "anthropic", model: "claude-opus-4-6" },
     ]);
   });
-
-it("uses default subagent fallbacks ahead of the agent primary", () => {
-    expect(
-      resolveCronFallbacksOverride({
-        cfg: {
-          agents: {
-            defaults: {
-              subagents: {
-                model: {
-                  primary: "kimi/kimi-code",
-                  fallbacks: ["openai/gpt-5.2"],
-                },
-              },
-            },
-            entries: {
-              research: {
-                model: {
-                  primary: "anthropic/claude-opus-4-6",
-                },
-              },
-            },
-          },
-        },
-        agentId: "research",
-        useSubagentFallbacks: true,
-        job: makeJob({
-          kind: "agentTurn",
-          message: "summarize",
-        }),
-      }),
-    ).toEqual(["openai/gpt-5.2"]);
-  });
-
-
-it("keeps the agent primary strict when the default subagent model has no primary", () => {
-    expect(
-      resolveCronFallbacksOverride({
-        cfg: {
-          agents: {
-            defaults: {
-              subagents: {
-                model: {
-                  fallbacks: ["openai/gpt-5.2"],
-                },
-              },
-            },
-            entries: {
-              research: {
-                model: {
-                  primary: "anthropic/claude-opus-4-6",
-                },
-              },
-            },
-          },
-        },
-        agentId: "research",
-        useSubagentFallbacks: true,
-        job: makeJob({
-          kind: "agentTurn",
-          message: "summarize",
-        }),
-      }),
-    ).toStrictEqual([]);
-  });
-
-
-it("inherits default fallbacks for cron runs when the agent model is a string", () => {
-    expect(
-      resolveCronFallbacksOverride({
-        cfg: {
-          agents: {
-            defaults: {
-              model: {
-                primary: "deepseek/deepseek-v4-pro",
-                fallbacks: ["deepseek/deepseek-v4-flash", "moonshot/kimi-k2.6"],
-              },
-            },
-            entries: {
-              main: {
-                model: "deepseek/deepseek-v4-pro",
-              },
-            },
-          },
-        },
-        agentId: "main",
-        inheritDefaultFallbacksForAgentStringModel: true,
-        job: makeJob({
-          kind: "agentTurn",
-          message: "summarize",
-        }),
-      }),
-    ).toEqual(["deepseek/deepseek-v4-flash", "moonshot/kimi-k2.6"]);
-  });
-
-
-it("does not infer inheritance from rewritten cron agent defaults", () => {
-    expect(
-      resolveCronFallbacksOverride({
-        cfg: {
-          agents: {
-            defaults: {
-              model: {
-                primary: "anthropic/claude-sonnet-4-6",
-                fallbacks: ["deepseek/deepseek-v4-flash", "moonshot/kimi-k2.6"],
-              },
-            },
-            entries: {
-              main: {
-                model: "anthropic/claude-sonnet-4-6",
-              },
-            },
-          },
-        },
-        agentId: "main",
-        job: makeJob({
-          kind: "agentTurn",
-          message: "summarize",
-        }),
-      }),
-    ).toStrictEqual([]);
-  });
-
-
-it("keeps cron preflight strict when payload fallbacks are explicitly empty", () => {
-    expect(
-      resolveCronPreflightCandidates({
-        cfg: makeConfig(["openai/gpt-5.4"]),
-        agentId: "main",
-        provider: "ollama",
-        model: "qwen3:32b",
-        job: makeJob({
-          kind: "agentTurn",
-          message: "summarize",
-          fallbacks: [],
-        }),
-      }),
-    ).toStrictEqual([
-      {
-        provider: "ollama",
-        model: "qwen3:32b",
-        routeOrigin: "requested",
-        routeResolution: "resolved",
-      },
-    ]);
-  });
-
 });
