@@ -608,3 +608,13 @@ pushed to origin with this entry. main untouched (fbf8ba16758). True backlog 142
 first-parent commits behind full tip (bounded batch stays e25a9815054). Next run:
 if the decision is recorded, apply it and finish-land; else report the same block,
 no re-proof (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07).
+
+## 2026-10-07 16:35Z resume: decision check only — block stands
+
+Checked all record surfaces: no ledger entry below the decision line; zero main commits
+after 13:35Z; budget baseline on main still 590540/590848 (2026-09-29 state); memory has
+no maintainer verdict. Decision A (accept upstream client typebox, baseline 626209 B,
+cap 577→612 KiB) vs B (trim, ≈589603 B) remains UNRECORDED. Per the 13:35Z entry: no
+re-proof on the unchanged branch (third identical verdict adds nothing), no land, no
+fresh merge of the same e25a9815 batch this branch already resolves. Branch re-pushed
+unchanged apart from this entry. main untouched (fbf8ba16758).
