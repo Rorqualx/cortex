@@ -588,3 +588,23 @@ Worktree left resumable at 52b092a82ed (clean tree, no merge in progress). Next 
 if the maintainer decision is recorded below this line, apply it and finish-land;
 otherwise report the same block and DO NOT re-run the ~10-minute huey proof on an
 unchanged branch (two identical red verdicts already on file).
+
+## 2026-10-07 13:35Z resume: all tsgo lanes green on huey; budget block unchanged (decision still pending)
+
+09:40Z session ported remaining e25a981 batch drift onto the fresh 2026-10-07 merge
+(aef316ab36d: system-prompt.ts + transcripts/summary.ts fork deltas + 3 test files);
+its 12:19Z proof caught 3 net-new tsgo errors (ssh-backend.test.ts TS2304
+setActiveDegradedSecretOwners, summary-embeddings.test.ts TS2322 x2) — fixed in
+1f6097af92e. 13:27Z proof of 1f6097af92e: ALL 7 tsgo lanes new=0 (core 0/0,
+extensions 3/3, core:test 113/115, extensions:test 11/11, test:src 113/115, test:ui
+0/0, test:packages 0/0), no NEWFAIL. Sole red: BUILD_EXIT=1 = the SAME startup-JS
+budget block (measured 611.5 KiB / 30 requests vs 577.3 KiB limit, 590848 B cap;
+typebox-in-client root cause per the 2026-10-06 entry — do NOT re-derive). test:fast
+was SIGTERM'd at the poller timeout (exit 143) and never completed — the behavior
+gate is still owed at land time, as is autoreview. MAINTAINER DECISION still
+unrecorded: A) accept upstream client typebox — baseline 626209 B, cap 577→612 KiB
+(recommended) vs B) trim (≈589603 B, fork divergence on upstream hot files). Branch
+pushed to origin with this entry. main untouched (fbf8ba16758). True backlog 1424
+first-parent commits behind full tip (bounded batch stays e25a9815054). Next run:
+if the decision is recorded, apply it and finish-land; else report the same block,
+no re-proof (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07).
