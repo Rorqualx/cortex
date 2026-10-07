@@ -275,6 +275,15 @@ export type RetrievalConfig = {
    */
   retrievalTimeoutMs?: number;
   /**
+   * Evidence-first ordering (MORSE-inspired, 2026-10-07): after composite
+   * scoring, stably pre-sort results by single-signal evidence strength
+   * max(bm25, semantic) so the strongest-evidence item can never be evicted
+   * by trimToTokenBudget or downstream compression in favor of a
+   * weakly-relevant item with a high composite. Composite order breaks
+   * ties. Default true.
+   */
+  evidenceFirstOrdering?: boolean;
+  /**
    * Token-budget guard for injected L3 context. When set, the retrieval
    * result is trimmed from the bottom (lowest-score facts first) so the
    * estimated formatted token cost stays within budget. Prevents context
@@ -298,6 +307,7 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   reformulationThreshold: 0.4,
   useRRFFusion: false,
   rrfK: 60,
+  evidenceFirstOrdering: true,
 };
 
 export type RetrievedFact = {
@@ -1089,6 +1099,27 @@ export async function retrieveTopK(params: {
   // selector that optimises relevance + diversity + query-token coverage
   // under a token budget.  Gated behind useSubmodularSelect so it can be
   // ablated against the legacy sort+slice baseline.
+  // -----------------------------------------------------------------
+  // Evidence-first ordering (MORSE-inspired, 2026-10-07 QW-3)
+  // -----------------------------------------------------------------
+  // Stable pre-sort by single-signal evidence strength: max(bm25, semantic).
+  // The composite blends many weak signals (importance, recency, tier
+  // boosts), so an item with one very strong evidence signal can sit below
+  // a weakly-relevant item with a high composite. Ordering evidence-first
+  // (composite order breaks ties) guarantees trimToTokenBudget and
+  // downstream compression can never evict the strongest-evidence item in
+  // favor of a weakly-relevant one. Flag-gated; default on.
+  if (retConfig.evidenceFirstOrdering) {
+    scored.sort((a, b) => {
+      const aEvidence = Math.max(a.signals.bm25, a.signals.semantic);
+      const bEvidence = Math.max(b.signals.bm25, b.signals.semantic);
+      if (bEvidence !== aEvidence) {
+        return bEvidence - aEvidence;
+      }
+      return b.score - a.score;
+    });
+  }
+
   let result: RetrievedFact[];
   if (retConfig.useSubmodularSelect) {
     result = submodularSelect(

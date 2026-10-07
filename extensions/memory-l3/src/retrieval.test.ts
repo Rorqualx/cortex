@@ -1991,4 +1991,40 @@ describe("retrieveTopK with query reformulation", () => {
     // Highest-score fact always present
     expect(result.facts.some((r) => r.fact.dedupKey === "budget:1")).toBe(true);
   });
+
+  it("orders strongest-evidence facts first (evidence-first ordering, QW-3 2026-10-07)", async () => {
+    await writeChunk("chunk-evidence", [
+      {
+        // Exact rare-token match: strong BM25 evidence, low importance, old.
+        id: "f1",
+        text: "pi-hole unbound resolver 192.168.50.128",
+        importance: 0.3,
+        createdAt: NOW - 90 * 24 * 60 * 60 * 1000,
+        dedupKey: "infra:pi_hole_ip",
+      },
+      {
+        // No query-term overlap: zero evidence, high importance, recent.
+        id: "f2",
+        text: "user prefers tabs over spaces everywhere",
+        importance: 0.95,
+        createdAt: NOW,
+        dedupKey: "user_pref:tabs",
+      },
+    ]);
+
+    const result = await retrieveTopK({
+      query: "pi-hole unbound resolver 192.168.50.128",
+      storage,
+      topK: 2,
+      now: NOW,
+    });
+
+    expect(result.facts.length).toBe(2);
+    // The exact-match fact leads: its evidence signal (bm25) strictly
+    // dominates the preference fact's zero evidence, regardless of the
+    // composite score gap from importance/recency.
+    expect(result.facts[0]!.fact.dedupKey).toBe("infra:pi_hole_ip");
+    expect(result.facts[0]!.signals.bm25).toBeGreaterThan(0);
+    expect(Math.max(result.facts[1]!.signals.bm25, result.facts[1]!.signals.semantic)).toBe(0);
+  });
 });
