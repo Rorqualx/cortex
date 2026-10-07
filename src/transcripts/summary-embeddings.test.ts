@@ -22,6 +22,7 @@ describe("Summary Embeddings", () => {
     return {
       sessionId: "test-session-123",
       title: "Test Session",
+      participants: ["User", "Agent"],
       generatedAt: "2024-01-01T00:00:00Z",
       overview: "We discussed the authentication system and decided to use JWT tokens.",
       transcript: ["User: Let's talk about auth", "Agent: Sure, JWT is a good choice"],
@@ -130,6 +131,7 @@ describe("Summary Embeddings", () => {
       const summary: TranscriptsSummary = {
         sessionId: "minimal",
         title: "Minimal",
+        participants: [],
         source: "heuristic",
         generatedAt: "2024-01-01T00:00:00Z",
         overview: "Brief discussion",
