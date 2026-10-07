@@ -57,6 +57,12 @@ import {
 import { listCoreRuntimePostBuildOutputs, runRuntimePostBuild } from "./runtime-postbuild.mts";
 import { listTsdownOutputRoots } from "./tsdown-build.mts";
 
+type RunNodeSpawnSync = (
+  command: string,
+  args: string[],
+  options: SpawnSyncOptionsWithStringEncoding,
+) => { error?: NodeJS.ErrnoException; status: number | null; stdout?: string | null };
+
 type RunNodeChild = {
   kill?: (signal?: NodeJS.Signals) => boolean | void;
   on(event: string, callback: (...args: never[]) => void): unknown;
@@ -67,11 +73,6 @@ type RunNodeChild = {
 };
 
 type RunNodeSpawn = (command: string, args: string[], options: SpawnOptions) => unknown;
-type RunNodeSpawnSync = (
-  command: string,
-  args: string[],
-  options: SpawnSyncOptionsWithStringEncoding,
-) => { error?: NodeJS.ErrnoException; status: number | null; stdout?: string | null };
 type RunNodeWritable = {
   isTTY?: boolean;
   write(value: string | Uint8Array): unknown;
@@ -91,6 +92,7 @@ type RunNodeMainParams = {
   cwd?: string;
   args?: string[];
   env?: NodeJS.ProcessEnv;
+  // Publication must join an asynchronous writer before releasing build ownership.
   runRuntimePostBuild?: RunNodeRuntimePostBuild;
   platform?: NodeJS.Platform;
   readCodexApiKey?: ReadQaCodexApiKey;
@@ -950,7 +952,7 @@ const logRunner = (message: string, deps: RunNodeLogDeps) => {
 const RUN_NODE_PROGRESS_FRAMES = ["-", "\\", "|", "/"];
 
 const shouldUseRunNodeProgress = (deps: RunNodeDeps) =>
-  deps.stderr?.isTTY === true &&
+  deps.stderr.isTTY &&
   deps.env.OPENCLAW_RUNNER_PROGRESS !== "0" &&
   deps.env.CI !== "true" &&
   !deps.outputTee;
@@ -1718,6 +1720,8 @@ const runQaReportFromSource = (deps: RunNodeDeps, script: QaReportScript) => {
 };
 
 function createRunNodeDeps(params: RunNodeMainParams) {
+  const postbuild: NonNullable<RunNodeMainParams["runRuntimePostBuild"]> =
+    params.runRuntimePostBuild ?? runRuntimePostBuild;
   const cwd = params.cwd ?? process.cwd();
   const distRoot = path.join(cwd, "dist");
   const args = params.args ?? process.argv.slice(2);
@@ -1746,7 +1750,7 @@ function createRunNodeDeps(params: RunNodeMainParams) {
     signalProcess:
       params.signalProcess ??
       ((pid: number, signal?: NodeJS.Signals | number) => process.kill(pid, signal)),
-    runRuntimePostBuild: params.runRuntimePostBuild ?? runRuntimePostBuild,
+    runRuntimePostBuild: postbuild,
     cancellation: new AbortController(),
     distRoot,
     distEntry: path.join(distRoot, "/entry.js"),

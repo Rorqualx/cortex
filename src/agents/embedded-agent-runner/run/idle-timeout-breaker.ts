@@ -2,7 +2,7 @@
 // across every fallback profile (#76293). Partial billed tokens are not progress.
 export const MAX_CONSECUTIVE_IDLE_TIMEOUTS_BEFORE_OUTPUT = 5;
 
-type IdleTimeoutBreakerState = {
+export type IdleTimeoutBreakerState = {
   consecutiveIdleTimeoutsBeforeOutput: number;
 };
 

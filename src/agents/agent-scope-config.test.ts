@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { getRetainedLegacyDefaultAgentId } from "../config/legacy.default-agent-owner-state.js";
 import { retainLegacyDefaultAgentId } from "../config/legacy.default-agent-owner.js";
+import type { OpenClawConfigWithLegacyRoster } from "../config/legacy.roster.js";
 import { captureRuntimeConfig } from "../config/runtime-source-projection.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { freezeJsonSnapshot } from "../shared/immutable-data.js";
@@ -62,31 +63,34 @@ describe("agent roster resolution", () => {
   });
 
   it("preserves the Plugin SDK fallback only when the roster property is absent", () => {
+    const absentLegacyRoster: OpenClawConfigWithLegacyRoster = { agents: { list: undefined } };
+    const emptyLegacyRoster: OpenClawConfigWithLegacyRoster = { agents: { list: [] } };
     expect(listAgentIds({})).toEqual(["main"]);
     expect(listAgentIds({ agents: { entries: {} } })).toEqual([]);
     expect(resolveDefaultAgentId({})).toBe("main");
-    expect(resolveDefaultAgentId({ agents: { list: undefined } })).toBe("main");
+    expect(resolveDefaultAgentId(absentLegacyRoster)).toBe("main");
     expect(resolveDefaultAgentId({ agents: { defaults: { workspace: "/srv/main" } } })).toBe(
       "main",
     );
     expect(() => resolveDefaultAgentId({ agents: { entries: {} } })).toThrow(
       "No agents configured",
     );
-    expect(() => resolveDefaultAgentId({ agents: { list: [] } })).toThrow("No agents configured");
+    expect(() => resolveDefaultAgentId(emptyLegacyRoster)).toThrow("No agents configured");
   });
 
   it("preserves raw legacy markers while sole-agent lookup stays strict", () => {
     expect(resolveSoleAgentId({ agents: { entries: { alpha: {} } } })).toBe("alpha");
     expect(tryResolveSoleAgentId({ agents: { entries: { alpha: {} } } })).toBe("alpha");
-    const missingDefault = { agents: { list: [{ id: "alpha" }, { id: "beta" }] } };
+    const missingDefault: OpenClawConfigWithLegacyRoster = {
+      agents: { list: [{ id: "alpha" }, { id: "beta" }] },
+    };
     expect(() => resolveDefaultAgentId(missingDefault)).toThrow(AgentSelectionRequiredError);
     expect(tryResolveDefaultAgentId(missingDefault)).toBeUndefined();
-    expect(
-      resolveDefaultAgentId({
-        agents: { list: [{ id: "alpha" }, { id: "beta", default: true }] },
-      }),
-    ).toBe("beta");
-    const duplicateDefaults = {
+    const markedDefault: OpenClawConfigWithLegacyRoster = {
+      agents: { list: [{ id: "alpha" }, { id: "beta", default: true }] },
+    };
+    expect(resolveDefaultAgentId(markedDefault)).toBe("beta");
+    const duplicateDefaults: OpenClawConfigWithLegacyRoster = {
       agents: {
         list: [
           { id: "alpha", default: true },
@@ -174,7 +178,7 @@ describe("agent roster resolution", () => {
 
   const ambientOwnerCases: Array<{
     name: string;
-    config: OpenClawConfig;
+    config: OpenClawConfigWithLegacyRoster;
     requestedAgentId?: string;
     expected: string;
   }> = [
@@ -185,7 +189,7 @@ describe("agent roster resolution", () => {
           defaults: { systemAgent: { agentId: "beta" } },
           entries: { alpha: { default: true }, beta: {} },
         },
-      } satisfies OpenClawConfig,
+      } satisfies OpenClawConfigWithLegacyRoster,
       expected: "beta",
     },
     {
@@ -195,14 +199,14 @@ describe("agent roster resolution", () => {
           defaults: { systemAgent: { agentId: "beta" } },
           entries: { alpha: { default: true }, beta: {} },
         },
-      }).config as OpenClawConfig,
+      }).config,
       expected: "beta",
     },
     {
       name: "legacy marker without a configured system agent",
       config: {
         agents: { entries: { alpha: { default: true }, beta: {} } },
-      } satisfies OpenClawConfig,
+      } satisfies OpenClawConfigWithLegacyRoster,
       expected: "alpha",
     },
     {
@@ -225,7 +229,7 @@ describe("agent roster resolution", () => {
           defaults: { systemAgent: { agentId: "beta" } },
           entries: { alpha: { default: true }, beta: {}, gamma: {} },
         },
-      } satisfies OpenClawConfig,
+      } satisfies OpenClawConfigWithLegacyRoster,
       requestedAgentId: " GAMMA ",
       expected: "gamma",
     },
@@ -264,8 +268,9 @@ describe("agent roster resolution", () => {
   it("resolves the default agent directory through the ambient owner", () => {
     const config = {
       agents: {
+        ownership: "explicit",
         defaults: { systemAgent: { agentId: "beta" } },
-        entries: { alpha: { default: true }, beta: { agentDir: "/tmp/openclaw-beta-agent" } },
+        entries: { alpha: {}, beta: { agentDir: "/tmp/openclaw-beta-agent" } },
       },
     } satisfies OpenClawConfig;
 
@@ -273,7 +278,7 @@ describe("agent roster resolution", () => {
   });
 
   it("preserves legacy default ownership for non-explicit CLI operations", () => {
-    const config = {
+    const config: OpenClawConfigWithLegacyRoster = {
       agents: {
         entries: { main: {}, ops: { default: true } },
       },
@@ -297,9 +302,9 @@ describe("agent roster resolution", () => {
       agents: {
         entries: { ops: { default: true }, research: {} },
       },
-    }).config as OpenClawConfig;
+    }).config;
 
-    expect(cfg.agents?.entries?.ops?.default).toBeUndefined();
+    expect(cfg.agents?.entries?.ops).not.toHaveProperty("default");
     expect(resolveAgentOperationAgentId(cfg)).toBe("ops");
   });
 
@@ -309,7 +314,7 @@ describe("agent roster resolution", () => {
         defaults: { systemAgent: { agentId: "research" } },
         entries: { ops: { default: true }, research: {} },
       },
-    }).config as OpenClawConfig;
+    }).config;
     migrated.agents!.ownership = "explicit";
     for (const config of [migrated, structuredClone(migrated)]) {
       expect(tryResolveLegacyCompatibilityAgentId(config)).toBe("research");
@@ -322,7 +327,7 @@ describe("agent roster resolution", () => {
   it.each([undefined, "", "deleted"])(
     "does not infer an explicit fleet owner from a retired marker with designation %s",
     (agentId) => {
-      const config: OpenClawConfig = {
+      const config: OpenClawConfigWithLegacyRoster = {
         agents: {
           ownership: "explicit",
           defaults: { systemAgent: { agentId } },
@@ -375,11 +380,12 @@ describe("agent roster resolution", () => {
 
   it("resolves defaults only for the rosterless implicit main agent", () => {
     const defaults = { fastModeDefault: "auto" as const };
+    const emptyLegacyRoster: OpenClawConfigWithLegacyRoster = { agents: { defaults, list: [] } };
 
     expect(resolveAgentConfig({ agents: { defaults } }, "main")?.fastModeDefault).toBe("auto");
     expect(resolveAgentConfig({ agents: { defaults } }, "work")).toBeUndefined();
     expect(resolveAgentConfig({ agents: { defaults, entries: {} } }, "main")).toBeUndefined();
-    expect(resolveAgentConfig({ agents: { defaults, list: [] } }, "main")).toBeUndefined();
+    expect(resolveAgentConfig(emptyLegacyRoster, "main")).toBeUndefined();
   });
 
   it("does not project unrelated keyed entries while resolving one agent", () => {
@@ -464,9 +470,9 @@ describe("agent roster resolution", () => {
         defaults: { workspace: "/srv/ops" },
         entries: { ops: { default: true }, research: {} },
       },
-    }).config as OpenClawConfig;
+    }).config;
 
-    expect(cfg.agents?.entries?.ops?.default).toBeUndefined();
+    expect(cfg.agents?.entries?.ops).not.toHaveProperty("default");
     expect(cfg.agents?.entries?.ops?.workspace).toBe("/srv/ops");
     expect(resolveAgentWorkspaceDir(cfg, "ops")).toBe(path.resolve("/srv/ops"));
     expect(resolveAgentWorkspaceDir(cfg, "research")).toBe(path.resolve("/srv/ops/research"));
@@ -512,7 +518,7 @@ describe("agent roster resolution", () => {
   });
 
   it("keeps a raw legacy marker owner on the inherited workspace", () => {
-    const cfg: OpenClawConfig = {
+    const cfg: OpenClawConfigWithLegacyRoster = {
       agents: {
         defaults: { workspace: "/srv/ops" },
         entries: { ops: { default: true }, research: {} },
@@ -549,7 +555,7 @@ describe("agent roster resolution", () => {
     const entry = JSON.parse('{"__proto__":{"tools":{"allow":["*"]}}}') as Record<string, unknown>;
     const cfg = {
       agents: { entries: { ops: entry } },
-    } as OpenClawConfig;
+    };
     const [listed] = listAgentEntriesWithSource(cfg);
     expect(listed).toBeDefined();
     const [plainEntry] = listAgentEntries(cfg);
@@ -571,7 +577,7 @@ describe("resolveAgentConfig model policy", () => {
     const cfg: OpenClawConfig = {
       agents: {
         defaults: { modelPolicy: { allow: ["openai/gpt-5.5"] } },
-        list: [{ id: "main", modelPolicy: {} }],
+        entries: { main: { modelPolicy: {} } },
       },
     };
 
@@ -582,7 +588,7 @@ describe("resolveAgentConfig model policy", () => {
     const cfg: OpenClawConfig = {
       agents: {
         defaults: { modelPolicy: { allow: ["openai/gpt-5.5"] } },
-        list: [{ id: "main", modelPolicy: { allow: ["openai/gpt-5.6-sol"] } }],
+        entries: { main: { modelPolicy: { allow: ["openai/gpt-5.6-sol"] } } },
       },
     };
 

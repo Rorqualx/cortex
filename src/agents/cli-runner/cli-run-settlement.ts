@@ -34,11 +34,6 @@ import type { PreparedCliRunContext, RunCliAgentParams } from "./types.js";
 
 const log = createSubsystemLogger("agents/cli-runner");
 
-/** Formats the visible terminal reason for an interrupted turn that retained partial output. */
-export function formatCliTerminalInterruption(interruption: CliTerminalInterruption): string {
-  return `CLI turn ${interruption.reason} after partial output`;
-}
-
 export const cliRunSettlementDeps = {
   claudeCliSessionTranscriptHasContent: claudeCliSessionTranscriptHasContentImpl,
   delay: async (delayMs: number) => {
@@ -50,6 +45,11 @@ export const cliRunSettlementDeps = {
   markAuthProfileFailure,
   markAuthProfileSuccess,
 };
+
+/** Formats the visible terminal reason for an interrupted turn that retained partial output. */
+export function formatCliTerminalInterruption(interruption: CliTerminalInterruption): string {
+  return `CLI turn ${interruption.reason} after partial output`;
+}
 
 async function settleCliAuthProfile(params: {
   store: AuthProfileStore;
@@ -68,7 +68,7 @@ async function settleCliAuthProfile(params: {
 }): Promise<void> {
   try {
     if (params.terminal.outcome === "success") {
-      await cliRunSettlementDeps.markAuthProfileSuccess({
+      await markAuthProfileSuccess({
         store: params.store,
         profileId: params.profileId,
         provider: params.provider,
@@ -85,7 +85,7 @@ async function settleCliAuthProfile(params: {
           : undefined,
     });
     if (reason) {
-      await cliRunSettlementDeps.markAuthProfileFailure({
+      await markAuthProfileFailure({
         store: params.store,
         profileId: params.profileId,
         reason,
@@ -146,7 +146,7 @@ export async function settleCliPreparationError(
     if (!(error instanceof CliAuthProfilePreparationError)) {
       return;
     }
-    const store = cliRunSettlementDeps.loadAuthProfileStoreForRuntime(error.agentDir, {
+    const store = loadAuthProfileStoreForRuntime(error.agentDir, {
       externalCli: externalCliDiscoveryForProviderAuth({
         cfg: params.config,
         provider: error.provider,
