@@ -81,6 +81,52 @@ describe("cross-context", () => {
       assert.strictEqual(read[1]!.dedupKey, "key:beta");
       await cleanup();
     });
+
+    it("admissibleAgentIds filter returns only listed agents' facts", async () => {
+      const dir = path.join(tmpBase, "admissible-filter");
+      const facts: SharedLongTermFact[] = [
+        makeSharedFact("key:alpha", "agent-1"),
+        makeSharedFact("key:beta", "agent-2"),
+        makeSharedFact("key:gamma", "agent-3"),
+      ];
+      await writeSharedFacts(facts, dir);
+      const read = await readSharedFacts(dir, { admissibleAgentIds: ["agent-1", "agent-3"] });
+      assert.strictEqual(read.length, 2);
+      const keys = read.map((f) => f.dedupKey).sort();
+      assert.deepStrictEqual(keys, ["key:alpha", "key:gamma"]);
+      await cleanup();
+    });
+
+    it("empty admissibleAgentIds preserves read-all behavior", async () => {
+      const dir = path.join(tmpBase, "admissible-empty");
+      const facts: SharedLongTermFact[] = [
+        makeSharedFact("key:alpha", "agent-1"),
+        makeSharedFact("key:beta", "agent-2"),
+      ];
+      await writeSharedFacts(facts, dir);
+      const read = await readSharedFacts(dir, { admissibleAgentIds: [] });
+      assert.strictEqual(read.length, 2);
+      await cleanup();
+    });
+
+    it("unknown admissibleAgentIds returns empty result", async () => {
+      const dir = path.join(tmpBase, "admissible-unknown");
+      await writeSharedFacts([makeSharedFact("key:alpha", "agent-1")], dir);
+      const read = await readSharedFacts(dir, { admissibleAgentIds: ["agent-x"] });
+      assert.strictEqual(read.length, 0);
+      await cleanup();
+    });
+
+    it("filter dedupes repeated agent IDs", async () => {
+      const dir = path.join(tmpBase, "admissible-dupes");
+      await writeSharedFacts([makeSharedFact("key:alpha", "agent-1")], dir);
+      const read = await readSharedFacts(dir, {
+        admissibleAgentIds: ["agent-1", "agent-1", ""],
+      });
+      assert.strictEqual(read.length, 1);
+      assert.strictEqual(read[0]!.sourceAgentId, "agent-1");
+      await cleanup();
+    });
   });
 
   describe("resolveConflicts", () => {

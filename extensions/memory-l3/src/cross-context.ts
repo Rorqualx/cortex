@@ -136,6 +136,50 @@ function readAllSync(db: DatabaseSync): SharedLongTermFact[] {
 }
 
 /**
+ * Options for admissible-namespace reads of the shared store.
+ *
+ * `admissibleAgentIds` restricts which publishers' facts are returned. When it
+ * is undefined or empty the store is read in full (the historical behavior —
+ * intentional cross-agent sharing). When provided, rows from other agents are
+ * excluded **at the SQL level** before payload JSON parsing, so a hostile or
+ * merely noisy peer cannot inflate parse cost or leak into the reader's
+ * retrieval candidates.
+ */
+export type ReadSharedFactsOptions = {
+  admissibleAgentIds?: ReadonlyArray<string>;
+};
+
+/**
+ * Load facts filtered by admissible source agents, preserving insertion order.
+ * The filter is applied as a SQL `WHERE source_agent_id IN (…)` pre-filter so
+ * non-admissible payloads are never parsed.
+ */
+function readAdmissibleSync(
+  db: DatabaseSync,
+  admissibleAgentIds: ReadonlyArray<string>,
+): SharedLongTermFact[] {
+  const unique = Array.from(new Set(admissibleAgentIds.filter((id) => id.length > 0)));
+  if (unique.length === 0) {
+    return readAllSync(db);
+  }
+  const placeholders = unique.map(() => "?").join(", ");
+  const rows = db
+    .prepare(
+      `SELECT payload FROM l3_shared_longterm WHERE source_agent_id IN (${placeholders}) ORDER BY row_id`,
+    )
+    .all(...unique) as Array<{ payload: string }>;
+  const facts: SharedLongTermFact[] = [];
+  for (const row of rows) {
+    try {
+      facts.push(JSON.parse(row.payload) as SharedLongTermFact);
+    } catch {
+      // A single corrupt row must not take down cross-context recall.
+    }
+  }
+  return facts;
+}
+
+/**
  * Replace the entire stored set. Mirrors the previous full-file rewrite, but as
  * a DELETE + INSERT that the caller wraps in an immediate transaction.
  */
@@ -157,10 +201,21 @@ function replaceAllSync(db: DatabaseSync, facts: ReadonlyArray<SharedLongTermFac
 
 /**
  * Read shared facts from the store. Returns empty array when the store is new.
+ *
+ * By default every agent reads the full store (intentional cross-agent
+ * sharing). Pass `opts.admissibleAgentIds` to enforce a namespace boundary:
+ * only facts published by the listed agents are returned, filtered at the SQL
+ * layer before payload parsing.
  */
-export async function readSharedFacts(sharedDir?: string): Promise<SharedLongTermFact[]> {
+export async function readSharedFacts(
+  sharedDir?: string,
+  opts?: ReadSharedFactsOptions,
+): Promise<SharedLongTermFact[]> {
   const db = openSharedDb(sharedDir);
   try {
+    if (opts?.admissibleAgentIds && opts.admissibleAgentIds.length > 0) {
+      return readAdmissibleSync(db, opts.admissibleAgentIds);
+    }
     return readAllSync(db);
   } finally {
     closeSharedDb(db);

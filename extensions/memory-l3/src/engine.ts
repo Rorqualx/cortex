@@ -168,6 +168,13 @@ export type HierarchicalL3EngineOptions = {
   /** Shared memory directory for cross-context tier. Defaults to ~/.openclaw/shared-memory/. */
   sharedMemoryDir?: string;
   /**
+   * Admissible-namespace filter for the cross-context tier. When provided
+   * (non-empty), only facts published by these agent IDs are read from the
+   * shared store (SQL-level pre-filter). Default: read all (intentional
+   * cross-agent sharing).
+   */
+  sharedAdmissibleAgentIds?: string[];
+  /**
    * Embedding provider for pre-computing vectors at promotion time.
    * When provided, LongTermFacts get an `embedding` field that enables
    * cosine-similarity semantic dedup and retrieval. Falls back to jaccard
@@ -187,6 +194,7 @@ export class HierarchicalL3Engine implements ContextEngine {
   private readonly workspaceDir: string | undefined;
   private readonly skillForgeDir: string | undefined;
   private readonly sharedMemoryDir: string | undefined;
+  private readonly sharedAdmissibleAgentIds: string[] | undefined;
   private readonly embeddingProviderOverride: EmbeddingProvider | undefined;
   /** Lazily resolved embedding provider from core infrastructure. */
   private resolvedEmbeddingProvider: EmbeddingProvider | null | undefined;
@@ -205,6 +213,7 @@ export class HierarchicalL3Engine implements ContextEngine {
     this.workspaceDir = options?.workspaceDir;
     this.skillForgeDir = options?.skillForgeDir;
     this.sharedMemoryDir = options?.sharedMemoryDir;
+    this.sharedAdmissibleAgentIds = options?.sharedAdmissibleAgentIds;
   }
 
   async bootstrap(): Promise<BootstrapResult> {
@@ -334,6 +343,7 @@ export class HierarchicalL3Engine implements ContextEngine {
       memoryCoreLookup: this.resolveMemoryCoreLookup(),
       skillForgeDir: this.skillForgeDir,
       sharedMemoryDir: this.sharedMemoryDir,
+      sharedAdmissibleAgentIds: this.sharedAdmissibleAgentIds,
       queryEmbedding,
     });
     if (top.facts.length === 0) {

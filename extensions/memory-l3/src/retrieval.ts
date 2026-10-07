@@ -478,6 +478,13 @@ export async function retrieveTopK(params: {
    */
   sharedMemoryDir?: string;
   /**
+   * Optional admissible-namespace filter for the shared-memory tier. When
+   * provided (non-empty), only facts published by the listed agent IDs are
+   * read from the shared store (SQL-level pre-filter). Default: read all —
+   * preserves the intentional cross-agent sharing behavior.
+   */
+  sharedAdmissibleAgentIds?: string[];
+  /**
    * Optional Hebbian config. Defaults to DEFAULT_HEBBIAN_CONFIG.
    */
   hebbianConfig?: HebbianConfig;
@@ -972,7 +979,9 @@ export async function retrieveTopK(params: {
   // facts published by other agents/sessions and include in ranking.
   if (params.sharedMemoryDir) {
     try {
-      const shared = await readSharedFacts(params.sharedMemoryDir);
+      const shared = await readSharedFacts(params.sharedMemoryDir, {
+        admissibleAgentIds: params.sharedAdmissibleAgentIds,
+      });
       for (const sf of shared) {
         if (sf.archived) {
           continue;
