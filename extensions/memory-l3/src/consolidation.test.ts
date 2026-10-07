@@ -123,6 +123,54 @@ describe("aggregateCandidates", () => {
     const c = (await aggregateCandidates(storage))[0]!;
     expect(c.sourceChunkIds).toEqual(["chunk-x"]);
   });
+
+  it("aggregates modality: a settled sighting upgrades a plan; plan-only stays plan (speculation gate)", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1", "user might migrate the lab", 0.9, NOW - 2 * MS_PER_DAY, "plan:migrate"),
+          modality: "plan" as const,
+        },
+      ],
+      NOW - 2 * MS_PER_DAY,
+    );
+    await writeChunk(
+      "chunk-000001-b",
+      [
+        {
+          ...fact("f2", "user migrated the lab", 0.9, NOW - MS_PER_DAY, "plan:migrate"),
+          modality: "fact" as const,
+        },
+      ],
+      NOW - MS_PER_DAY,
+    );
+    await writeChunk("chunk-000002-c", [
+      {
+        ...fact("f3", "user might adopt bun", 0.9, NOW, "plan:bun"),
+        modality: "plan" as const,
+      },
+      {
+        ...fact("f4", "user may adopt bun", 0.9, NOW, "plan:bun"),
+        modality: "plan" as const,
+      },
+      {
+        ...fact("f5", "the old IP was replaced", 0.9, NOW, "infra:ip_correction"),
+        modality: "correction" as const,
+      },
+      {
+        ...fact("f6", "the IP is 10.0.0.1", 0.9, NOW, "infra:ip_correction"),
+        modality: "fact" as const,
+      },
+    ]);
+    const byKey = new Map((await aggregateCandidates(storage)).map((c) => [c.dedupKey, c]));
+    // A confirming (non-plan) occurrence lifts the candidate out of plan.
+    expect(byKey.get("plan:migrate")!.modality).toBe("fact");
+    // Plan-only evidence keeps the candidate a plan.
+    expect(byKey.get("plan:bun")!.modality).toBe("plan");
+    // A correction outranks a plain fact.
+    expect(byKey.get("infra:ip_correction")!.modality).toBe("correction");
+  });
 });
 
 describe("joinRetrievalUseCounts", () => {

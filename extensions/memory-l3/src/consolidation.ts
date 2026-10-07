@@ -1,7 +1,7 @@
 import type { LlmCaller } from "./llm.js";
 import { summarizeChunkUse } from "./retrieval-use-store.js";
 import type { Storage } from "./storage.js";
-import type { FactCertainty, L2Fact, LongTermFact } from "./types.js";
+import type { FactCertainty, FactModality, L2Fact, LongTermFact } from "./types.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -75,6 +75,19 @@ const CERTAINTY_RANK: Record<FactCertainty, number> = {
 };
 
 /**
+ * Rank for aggregating candidate modality (speculation gate,
+ * PROMPT_VERSION=18). A "plan" is the weakest claim — it stays a plan until
+ * a settled occurrence arrives. A "correction" (explicit supersession) is
+ * the strongest. Max across occurrences wins: one confirming sighting lifts
+ * an intention out of plan status; nothing demotes back to plan.
+ */
+const MODALITY_RANK: Record<FactModality, number> = {
+  plan: 0,
+  fact: 1,
+  correction: 2,
+};
+
+/**
  * The aggregated view of a single dedupKey across every L2 chunk that has
  * emitted it. This is the input to promotion decisions in `longterm.ts`.
  */
@@ -101,6 +114,15 @@ export type ConsolidationCandidate = {
    * before PROMPT_VERSION=8 carry no tag and count as confirmed.
    */
   certainty: FactCertainty;
+  /**
+   * Strongest modality across occurrences (speculation gate,
+   * PROMPT_VERSION=18): plan < fact < correction. Facts extracted before
+   * v18 carry no tag and count as "fact". Plans promote into long-term
+   * memory with status "pending" (longterm.ts) until a confirming
+   * occurrence flips them to "confirmed"; abandoned plans expire.
+   * Optional so hand-built candidates may omit it; mergeFact always sets it.
+   */
+  modality?: FactModality;
 };
 
 /**
@@ -139,6 +161,7 @@ function mergeFact(
       lastConfirmedAt: fact.createdAt,
       sourceChunkIds: [chunkId],
       certainty: fact.certainty ?? "confirmed",
+      modality: fact.modality ?? "fact",
     });
     return;
   }
@@ -161,6 +184,12 @@ function mergeFact(
   const factCertainty = fact.certainty ?? "confirmed";
   if (CERTAINTY_RANK[factCertainty] > CERTAINTY_RANK[existing.certainty]) {
     existing.certainty = factCertainty;
+  }
+  // Speculation gate: a settled (fact/correction) occurrence upgrades a
+  // plan-modality candidate; correction outranks plain fact. Never demotes.
+  const factModality = fact.modality ?? "fact";
+  if (MODALITY_RANK[factModality] > MODALITY_RANK[existing.modality]) {
+    existing.modality = factModality;
   }
 }
 

@@ -67,6 +67,16 @@ export type LongTermConfig = {
   /** Cap on retrieval recallCount fed into stability growth, so a hot fact can't
    * grow an unbounded half-life. Mirrors the Hebbian maxEdgeWeight cap. Default 10. */
   retrievalStabilityMaxRecall: number;
+  /**
+   * Speculation gate (PROMPT_VERSION=18): a long-term fact promoted from a
+   * plan modality lands with status "pending". If it is never confirmed —
+   * no later occurrence with fact/correction modality — this many ms after
+   * its last confirmation it is expired (status "expired") and archived,
+   * ahead of the regular maxAgeWithoutConfirmMs sweep and without epoch
+   * grace: an abandoned intention is stale memory, not a topic survivor.
+   * Default 30 days (half the regular archival window).
+   */
+  pendingPlanExpiryMs: number;
 };
 
 export const DEFAULT_LONG_TERM_CONFIG: LongTermConfig = {
@@ -76,6 +86,7 @@ export const DEFAULT_LONG_TERM_CONFIG: LongTermConfig = {
   semanticDedupCosineThreshold: 0.85,
   retrievalStabilityEnabled: false,
   retrievalStabilityMaxRecall: 10,
+  pendingPlanExpiryMs: 30 * MS_PER_DAY,
 };
 
 export type ConsolidationOutput = {
@@ -291,7 +302,13 @@ export async function consolidateLongTerm(params: {
         Math.min(signal.recallCount, longTermConfig.retrievalStabilityMaxRecall)
       : 1;
     const age = params.now - lastActive;
-    const effectiveMaxAge = longTermConfig.maxAgeWithoutConfirmMs * stabilityFactor;
+    const effectiveMaxAge =
+      fact.status === "pending"
+        ? Math.min(
+            longTermConfig.maxAgeWithoutConfirmMs * stabilityFactor,
+            longTermConfig.pendingPlanExpiryMs,
+          )
+        : longTermConfig.maxAgeWithoutConfirmMs * stabilityFactor;
     if (age < effectiveMaxAge) {
       continue;
     }
@@ -327,7 +344,14 @@ export async function consolidateLongTerm(params: {
     // This means: 2-fact epochs archive both, 3+ epochs protect the last one.
     const isSolitary = originalPop === 1;
     const isLastOfCluster = originalPop >= 3 && pop <= 1;
-    if ((isSolitary || isLastOfCluster) && longTermConfig.epochGraceMultiplier > 1) {
+    // Speculation gate: expired plans get NO epoch grace — an abandoned
+    // intention lingering as the "last survivor of its topic" is exactly the
+    // stale memory the gate exists to remove.
+    if (
+      fact.status !== "pending" &&
+      (isSolitary || isLastOfCluster) &&
+      longTermConfig.epochGraceMultiplier > 1
+    ) {
       const graceThreshold = effectiveMaxAge * longTermConfig.epochGraceMultiplier;
       if (age < graceThreshold) {
         epochGraceCount += 1;
@@ -481,6 +505,8 @@ function promote(candidate: ConsolidationCandidate): LongTermFact {
     archived: false,
     archivedAt: null,
     supersededBy: null,
+    // Speculation gate: plans land pending — an intention is not yet memory.
+    status: candidate.modality === "plan" ? "pending" : "confirmed",
   };
 }
 
@@ -515,11 +541,22 @@ function reaffirm(prior: LongTermFact, candidate: ConsolidationCandidate): LongT
     // run again with current data to decide.
     supersededBy: prior.supersededBy ?? null,
     ...(history.length > 0 ? { history } : {}),
+    // Speculation gate: a confirming (non-plan) occurrence flips a pending
+    // plan to confirmed; a still-plan occurrence keeps it pending (and can
+    // re-pend a fact whose latest evidence regressed to plan-only).
+    status: candidate.modality === "plan" ? "pending" : "confirmed",
   };
 }
 
 function archive(fact: LongTermFact, now: number): LongTermFact {
-  return { ...fact, archived: true, archivedAt: now };
+  // Speculation gate: archiving a still-pending plan means the intention
+  // aged out unconfirmed — stamp it expired so the lifecycle is auditable.
+  return {
+    ...fact,
+    archived: true,
+    archivedAt: now,
+    ...(fact.status === "pending" ? { status: "expired" as const } : {}),
+  };
 }
 
 function mergeChunkIds(prior: ReadonlyArray<string>, incoming: ReadonlyArray<string>): string[] {

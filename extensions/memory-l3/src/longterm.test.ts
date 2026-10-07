@@ -188,6 +188,74 @@ describe("consolidateLongTerm", () => {
     expect(lt.facts[0]!.archivedAt).toBe(NOW);
   });
 
+  it("promotes plan-modality facts as pending, then flips to confirmed on a settled sighting (speculation gate)", async () => {
+    // A plan one-shot promotes via high-importance passthrough → pending.
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1", "user plans to visit Japan in spring", 0.9, NOW, "plan:japan_spring"),
+          modality: "plan" as const,
+        },
+      ],
+      NOW,
+    );
+    const r1 = await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+    expect(r1.promotedCount).toBe(1);
+    const lt1 = await storage.readLongTerm();
+    expect(lt1.facts[0]!.status).toBe("pending");
+    expect(lt1.facts[0]!.archived).toBe(false);
+
+    // A settled occurrence of the same key flips pending → confirmed.
+    await writeChunk(
+      "chunk-000001-b",
+      [
+        {
+          ...fact("f2", "user booked the Japan trip", 0.9, NOW, "plan:japan_spring"),
+          modality: "fact" as const,
+        },
+      ],
+      NOW,
+    );
+    const r2 = await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+    expect(r2.reaffirmedCount).toBe(1);
+    const lt2 = await storage.readLongTerm();
+    expect(lt2.facts[0]!.status).toBe("confirmed");
+  });
+
+  it("expires an abandoned pending plan at pendingPlanExpiryMs, without epoch grace (speculation gate)", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1", "user might switch to zsh", 0.9, NOW - 35 * MS_PER_DAY, "plan:zsh"),
+          modality: "plan" as const,
+        },
+      ],
+      NOW - 35 * MS_PER_DAY,
+    );
+    const r1 = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 35 * MS_PER_DAY,
+    });
+    expect(r1.promotedCount).toBe(1);
+    const lt1 = await storage.readLongTerm();
+    expect(lt1.facts[0]!.status).toBe("pending");
+
+    // The intention is never confirmed. 35 days later — past
+    // pendingPlanExpiryMs (30d) but under maxAgeWithoutConfirmMs (60d), and
+    // inside what solitary-epoch grace would have granted (90d) — the
+    // pending plan must expire anyway.
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]!);
+    const r2 = await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+    expect(r2.archivedCount).toBe(1);
+    const lt2 = await storage.readLongTerm();
+    expect(lt2.facts[0]!.status).toBe("expired");
+    expect(lt2.facts[0]!.archived).toBe(true);
+    expect(lt2.facts[0]!.archivedAt).toBe(NOW);
+  });
+
   it("does not archive when lastConfirmedAt is recent enough", async () => {
     await writeChunk("chunk-x", [fact("f1", "fresh", 0.9, NOW, "fresh:1")], NOW);
     await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });

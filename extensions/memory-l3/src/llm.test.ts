@@ -78,6 +78,24 @@ describe("parseExtractResponse", () => {
     ]);
   });
 
+  it("keeps valid modality tags and drops unknown values (speculation gate)", () => {
+    const raw = JSON.stringify({
+      facts: [
+        { text: "a", importance: 0.7, dedupKey: "k:1", modality: "plan" },
+        { text: "b", importance: 0.7, dedupKey: "k:2", modality: "correction" },
+        { text: "c", importance: 0.7, dedupKey: "k:3", modality: "wish" },
+        { text: "d", importance: 0.7, dedupKey: "k:4" },
+      ],
+    });
+    const result = parseExtractResponse(raw);
+    expect(result.facts.map((fact) => fact.modality)).toEqual([
+      "plan",
+      "correction",
+      undefined,
+      undefined,
+    ]);
+  });
+
   it("preserves reasoning field when present", () => {
     const raw = JSON.stringify({
       facts: [
@@ -247,9 +265,11 @@ describe("extractFacts", () => {
     expect(result.typedFacts[0]!.slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0]![0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=17");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=18");
     // QW1 (2026-08-16): extraction prompts must demand verbatim temporal expressions.
     expect(call.systemPrompt).toContain("TEMPORAL");
+    // QW-1 (2026-10-07): AgentMemGate speculation gate — fact|plan|correction modality.
+    expect(call.systemPrompt).toContain("MODALITY");
     // QW2 (2026-10-05): LAPSE verb-aspect preservation guard.
     expect(call.systemPrompt).toContain("ASPECT");
     // QW2 (2026-10-05): Manufactured Confidence — hedges stay hedged in fact text.

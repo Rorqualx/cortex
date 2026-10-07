@@ -56,6 +56,26 @@ export type FactCertainty = "tentative" | "confirmed" | "instructional";
 export type FactPolarity = "positive" | "negative" | "neutral";
 
 /**
+ * Epistemic modality of a fact — AgentMemGate speculation gate
+ * (PROMPT_VERSION=18). "fact" = settled statement; "plan" = stated
+ * intention or future action (planning/hedged verbs like "might", "plans
+ * to"); "correction" = supersedes a previously held value. Orthogonal to
+ * `certainty` (source grounding): modality describes the *kind* of
+ * statement, not how firmly it was grounded. Plans promote into long-term
+ * memory with status "pending" until a confirming sighting flips them.
+ */
+export type FactModality = "fact" | "plan" | "correction";
+
+/**
+ * Lifecycle status of a long-term fact (speculation gate, PROMPT_VERSION=18).
+ * "pending" = promoted from a plan modality — an intention awaiting
+ * confirmation; "confirmed" = settled fact (default for all pre-existing
+ * facts); "expired" = a pending plan that aged out without ever being
+ * confirmed — archived for forensics, hidden from retrieval.
+ */
+export type FactStatus = "pending" | "confirmed" | "expired";
+
+/**
  * A single distilled fact extracted from a chunk of conversation. Importance
  * and dedupKey are used by retrieval scoring and within-chunk dedup.
  */
@@ -110,6 +130,12 @@ export type L2Fact = {
    * as `neutral`.
    */
   polarity?: FactPolarity;
+  /**
+   * Epistemic modality (fact|plan|correction) from the extraction prompt's
+   * MODALITY rule (PROMPT_VERSION=18). Absent on facts extracted before
+   * then; readers treat absent as "fact".
+   */
+  modality?: FactModality;
   /**
    * QW-2 (LAPSE): whether this fact is time-bounded ("subscribed until
    * 2026-06") or standing. Absent = standing (same pattern as
@@ -314,6 +340,13 @@ export type LongTermFact = {
   supersededBy?: string | null;
   /** Emotional significance flag propagated from L2 extraction. */
   significant?: boolean;
+  /**
+   * Plan lifecycle (speculation gate, PROMPT_VERSION=18): "pending" when
+   * promoted from a plan modality; flips to "confirmed" on a confirming
+   * sighting; "expired" when an abandoned pending plan ages out. Absent on
+   * facts promoted before this feature; readers treat absent as "confirmed".
+   */
+  status?: FactStatus;
   /**
    * Pre-computed embedding vector for semantic dedup and retrieval.
    * Computed at promotion time (or reaffirmation) via the embedding provider.

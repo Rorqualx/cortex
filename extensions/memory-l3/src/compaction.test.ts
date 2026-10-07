@@ -402,9 +402,11 @@ describe("compactSession", () => {
     });
     expect(caller).toHaveBeenCalledTimes(1);
     const systemPrompt = (caller as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.systemPrompt;
-    expect(systemPrompt).toContain("PROMPT_VERSION=17-NATIVE");
+    expect(systemPrompt).toContain("PROMPT_VERSION=18-NATIVE");
     // QW1 (2026-08-16): native dense extraction must preserve temporal expressions.
     expect(systemPrompt).toContain("TEMPORAL");
+    // QW-1 (2026-10-07): AgentMemGate speculation gate — fact|plan|correction modality.
+    expect(systemPrompt).toContain("MODALITY");
     // QW2 (2026-10-05): LAPSE verb-aspect + hedge preservation guards.
     expect(systemPrompt).toContain("ASPECT");
     expect(systemPrompt).toContain("HEDGE");

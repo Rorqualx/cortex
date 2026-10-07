@@ -52,5 +52,6 @@ export function liftToL2Fact(
     significant,
     certainty: fact.certainty,
     semanticEntropy: fact.semanticEntropy,
+    modality: fact.modality,
   };
 }
