@@ -175,6 +175,14 @@ export type HierarchicalL3EngineOptions = {
    */
   sharedAdmissibleAgentIds?: string[];
   /**
+   * Embedding provider adapter id for the semantic channel (e.g. "openai",
+   * "openai-compatible"). Falls back to the OPENCLAW_L3_EMBEDDING_PROVIDER
+   * env var, then "openai". Decouples L3 from a single hardcoded provider
+   * so an Ollama/llama.cpp-compatible endpoint can serve embeddings
+   * (EmbeddingGemma-class models) without touching the engine.
+   */
+  embeddingProviderId?: string;
+  /**
    * Embedding provider for pre-computing vectors at promotion time.
    * When provided, LongTermFacts get an `embedding` field that enables
    * cosine-similarity semantic dedup and retrieval. Falls back to jaccard
@@ -195,6 +203,7 @@ export class HierarchicalL3Engine implements ContextEngine {
   private readonly skillForgeDir: string | undefined;
   private readonly sharedMemoryDir: string | undefined;
   private readonly sharedAdmissibleAgentIds: string[] | undefined;
+  private readonly embeddingProviderIdOverride: string | undefined;
   private readonly embeddingProviderOverride: EmbeddingProvider | undefined;
   /** Lazily resolved embedding provider from core infrastructure. */
   private resolvedEmbeddingProvider: EmbeddingProvider | null | undefined;
@@ -214,6 +223,7 @@ export class HierarchicalL3Engine implements ContextEngine {
     this.skillForgeDir = options?.skillForgeDir;
     this.sharedMemoryDir = options?.sharedMemoryDir;
     this.sharedAdmissibleAgentIds = options?.sharedAdmissibleAgentIds;
+    this.embeddingProviderIdOverride = options?.embeddingProviderId;
   }
 
   async bootstrap(): Promise<BootstrapResult> {
@@ -759,14 +769,23 @@ export class HierarchicalL3Engine implements ContextEngine {
 
     // 2. Try to resolve from core OpenClaw embedding provider infrastructure
     try {
+      // Provider id resolution (QW-5 2026-10-07): constructor override →
+      // OPENCLAW_L3_EMBEDDING_PROVIDER env var → "openai" default. The core
+      // registry (openai-compatible adapter) lets an Ollama/llama.cpp-class
+      // endpoint serve L3 embeddings without code changes here.
+      const envProviderId = process.env.OPENCLAW_L3_EMBEDDING_PROVIDER?.trim();
+      const providerId =
+        this.embeddingProviderIdOverride ?? (envProviderId || undefined) ?? "openai";
       // Lazy import via the public SDK seam (loaded only when the semantic
       // channel is first needed) — keeps the embedding runtime out of the eager
       // module graph without reaching into core `src/**`.
       const { getMemoryEmbeddingProvider } =
         await import("openclaw/plugin-sdk/memory-core-host-engine-embeddings");
-      const adapter = getMemoryEmbeddingProvider("openai", this.config);
+      const adapter = getMemoryEmbeddingProvider(providerId, this.config);
       if (!adapter) {
-        l3debug("resolveEmbeddingProvider(): no openai adapter found; semantic channel disabled");
+        l3debug(
+          `resolveEmbeddingProvider(): no ${providerId} adapter found; semantic channel disabled`,
+        );
         this.resolvedEmbeddingProvider = null;
         return undefined;
       }
