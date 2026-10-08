@@ -630,3 +630,14 @@ B (trim startup path, ≈589603 B) remains UNRECORDED. No re-proof on the unchan
 branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07), no land,
 no fresh merge of the same e25a9815 batch. Branch re-pushed with this entry. main
 untouched (fbf8ba16758).
+
+## 2026-10-08 02:37Z resume: decision check only — block stands
+
+Fifth check. All record surfaces re-verified: no entry below the decision line; main
+unchanged (fbf8ba16758); baseline on main still 590540 B / cap 590848 B (updatedAt
+2026-09-29); no workspace-memory daily for 10-07/10-08 (no verdict). Decision A
+(accept upstream client typebox, baseline 626209 B, cap 577→612 KiB, recommended)
+vs B (trim startup path, ≈589603 B) remains UNRECORDED. No re-proof on the unchanged
+branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07), no
+land, no fresh merge of the same e25a9815 batch. Branch re-pushed with this entry.
+main untouched (fbf8ba16758).
