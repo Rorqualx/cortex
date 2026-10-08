@@ -578,6 +578,12 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     sourceSessionId: sessionId,
     sourceModel: modelId ?? null,
     sourceTrust: inferSourceTrust(c.latest),
+    // Verification sliver (2026-10-08): thread the winning emission's
+    // episodic attribution (event time, participants, mention time) through
+    // promotion — previously dropped at the L2→L3 boundary.
+    eventTime: c.latest.eventTime,
+    participants: c.latest.participants,
+    mentionTime: c.latest.mentionTime,
   };
   // QW-1: Compute per-fact perishability from slot/volatility/trust.
   fact.perishability = derivePerishability({
@@ -630,6 +636,11 @@ function reaffirm(
     sourceSessionId: effectiveSession,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
     sourceTrust: inferSourceTrust(c.latest),
+    // Verification sliver (2026-10-08): refresh attribution from the latest
+    // emission; absent fields keep the prior value (conservative).
+    eventTime: c.latest.eventTime ?? prior.eventTime,
+    participants: c.latest.participants ?? prior.participants,
+    mentionTime: c.latest.mentionTime ?? prior.mentionTime,
   };
   // Update provenance with the most recent source.
   if (effectiveSession) {
@@ -681,6 +692,10 @@ function supersede(
     sourceSessionId: effectiveSession,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
     sourceTrust: inferSourceTrust(c.latest),
+    // Verification sliver (2026-10-08): the new value's attribution wins.
+    eventTime: c.latest.eventTime,
+    participants: c.latest.participants,
+    mentionTime: c.latest.mentionTime,
   };
   // QW-1: Recompute perishability for the new value.
   result.perishability = derivePerishability({

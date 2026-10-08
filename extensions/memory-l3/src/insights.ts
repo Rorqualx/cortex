@@ -54,6 +54,11 @@ export type MemoryInsights = {
       provenance?: { quote: string; chunkId: string; sessionId: string };
       conflictWith?: string;
       mergedWith?: string[];
+      /** Episodic attribution threaded from the winning L2 emission
+       * (verification sliver, 2026-10-08). */
+      eventTime?: number;
+      participants?: string[];
+      mentionTime?: number;
     }>;
     epochsCreated: Array<{ id: string; createdAt: number; representativeFactCount: number }>;
     l2Chunks: number;
@@ -122,6 +127,9 @@ export async function collectMemoryInsights(params: {
       provenance: fact.provenance,
       conflictWith: fact.conflictWith,
       mergedWith: fact.mergedWith,
+      eventTime: fact.eventTime,
+      participants: fact.participants,
+      mentionTime: fact.mentionTime,
     }));
 
   const topRecalled = activeFacts

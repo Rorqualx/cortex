@@ -264,6 +264,81 @@ describe("consolidateLongTermTyped", () => {
     expect(ltt.facts[0]!.recallCount).toBe(2);
   });
 
+  it("threads episodic attribution (eventTime/participants/mentionTime) through promotion, reaffirmation, and supersession", async () => {
+    // First emission with full attribution → promoted with attribution intact.
+    await writeChunkWithTyped(
+      "chunk-attr-a",
+      [
+        {
+          id: "tf-attr-1",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 5 * DAY,
+          eventTime: NOW - 5 * DAY,
+          participants: ["user", "assistant"],
+          mentionTime: NOW - 5 * DAY,
+        },
+      ],
+      NOW - 5 * DAY,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 5 * DAY });
+    let ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.eventTime).toBe(NOW - 5 * DAY);
+    expect(ltt.facts[0]!.participants).toEqual(["user", "assistant"]);
+    expect(ltt.facts[0]!.mentionTime).toBe(NOW - 5 * DAY);
+
+    // Reaffirm with partial attribution → mentionTime refreshed, prior fields kept.
+    await writeChunkWithTyped(
+      "chunk-attr-b",
+      [
+        {
+          id: "tf-attr-2",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "still 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 2 * DAY,
+          mentionTime: NOW - 2 * DAY,
+        },
+      ],
+      NOW - 2 * DAY,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 2 * DAY });
+    ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.mentionTime).toBe(NOW - 2 * DAY);
+    expect(ltt.facts[0]!.participants).toEqual(["user", "assistant"]); // prior kept
+
+    // Value change with new attribution → the new value's attribution wins.
+    await writeChunkWithTyped(
+      "chunk-attr-c",
+      [
+        {
+          id: "tf-attr-3",
+          slot: "user:phone",
+          value: "555-9999",
+          sourceSpan: "new phone is 555-9999",
+          unit: null,
+          confidence: 0.95,
+          createdAt: NOW,
+          eventTime: NOW,
+          participants: ["user"],
+          mentionTime: NOW,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+    ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.value).toBe("555-9999");
+    expect(ltt.facts[0]!.eventTime).toBe(NOW);
+    expect(ltt.facts[0]!.participants).toEqual(["user"]);
+    expect(ltt.facts[0]!.mentionTime).toBe(NOW);
+  });
+
   it("supersedes existing canonical entry on a second pass", async () => {
     await writeChunkWithTyped(
       "chunk-old",

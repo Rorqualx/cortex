@@ -465,6 +465,19 @@ export type LongTermTypedFact = {
   sourceModel?: string | null;
 
   /**
+   * Episodic attribution threaded from the winning L2 typed fact at
+   * promotion/supersession and refreshed on reaffirmation (verification
+   * sliver, 2026-10-08): wall-clock time of the source event (ms), distinct
+   * participant roles present in the source chunk, and when the fact was
+   * mentioned/extracted. Enables speaker/date-aware retrieval and
+   * memory_insights surfacing. Absent on facts consolidated before this
+   * feature — previously dropped at the L2→L3 boundary.
+   */
+  eventTime?: number;
+  participants?: string[];
+  mentionTime?: number;
+
+  /**
    * Evidence trail: the verbatim source text, chunk, and session that
    * produced the current `value`. Updated on promotion, reaffirmation, and
    * supersession to reflect the most recent source. Absent on facts created

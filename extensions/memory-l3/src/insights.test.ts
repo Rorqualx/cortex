@@ -148,6 +148,9 @@ describe("collectMemoryInsights", () => {
             lastConfirmedAt: NOW - DAY_MS,
             conflictWith: "ltt-prior",
             mergedWith: ["tf-merge-a", "tf-merge-b"],
+            eventTime: NOW - 2 * DAY_MS,
+            participants: ["user", "assistant"],
+            mentionTime: NOW - DAY_MS,
           }),
         ],
       },
@@ -158,6 +161,11 @@ describe("collectMemoryInsights", () => {
     expect(insights.window.typedSlotsChanged).toHaveLength(1);
     expect(insights.window.typedSlotsChanged[0]?.conflictWith).toBe("ltt-prior");
     expect(insights.window.typedSlotsChanged[0]?.mergedWith).toEqual(["tf-merge-a", "tf-merge-b"]);
+    // Verification sliver (2026-10-08): episodic attribution is surfaced for
+    // speaker/date-aware memory inspection.
+    expect(insights.window.typedSlotsChanged[0]?.eventTime).toBe(NOW - 2 * DAY_MS);
+    expect(insights.window.typedSlotsChanged[0]?.participants).toEqual(["user", "assistant"]);
+    expect(insights.window.typedSlotsChanged[0]?.mentionTime).toBe(NOW - DAY_MS);
   });
 
   it("counts epochs and L2 chunks inside the window", async () => {
