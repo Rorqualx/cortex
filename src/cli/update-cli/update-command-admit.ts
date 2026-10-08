@@ -6,6 +6,7 @@ import {
   listLegacyOAuthSidecarPaths,
 } from "../../commands/doctor-auth-legacy-paths.js";
 import { planLegacyConfigForUpdateChannel } from "../../commands/doctor/legacy-config-repair.js";
+import { findRetiredConfigUpgradeRequirement } from "../../commands/doctor/shared/retired-config-formats.js";
 import { cloneEnvWithPlatformSemantics } from "../../config/env-vars.js";
 import { createConfigIO } from "../../config/io.js";
 import { resolveStateDir } from "../../config/paths.js";
@@ -31,6 +32,11 @@ import {
   type UpdateAdmissionVerdict,
 } from "../../infra/update-run-schema.js";
 import { redactSupportDiagnosticLine } from "../../logging/diagnostic-support-redaction.js";
+import {
+  isTrustedForDurableStores,
+  resolvePluginDoctorStateMigrationRecords,
+} from "../../plugins/doctor-contract-registry.js";
+import { assertPluginStateRetention } from "../../plugins/doctor-migration-resources.js";
 import { loadInstalledPluginIndexInstallRecordsSync } from "../../plugins/installed-plugin-index-record-reader.js";
 import { resolveLegacyInstalledPluginIndexStorePath } from "../../plugins/installed-plugin-index-store-path.js";
 import { defaultRuntime } from "../../runtime.js";
@@ -110,6 +116,14 @@ async function inspectUpdateAdmission(
           shellEnvFallback: "defer",
           suppressFutureVersionWarning: true,
         }).readConfigFileSnapshotForWrite();
+        const retired = findRetiredConfigUpgradeRequirement(
+          snapshot.sourceConfigBeforeMigrations ?? snapshot.sourceConfig,
+        );
+        if (retired) {
+          throw new UpdatePreMutationError("invalid-config", retired.message, {
+            nextAction: retired.nextAction,
+          });
+        }
         const legacyConfigPlan =
           !snapshot.valid && snapshot.legacyIssues.length
             ? planLegacyConfigForUpdateChannel(snapshot, writeOptions)
@@ -200,6 +214,27 @@ async function inspectUpdateAdmission(
             refuse("state-format", "retired-state-format", error.message);
             schemasAccepted = false;
           }
+        }
+      }
+      if (databaseContext && schemasAccepted) {
+        try {
+          const snapshot = databaseContext.configSnapshot;
+          const retention = {
+            candidateRoot,
+            config:
+              snapshot.sourceConfigBeforeMigrations ?? snapshot.sourceConfig ?? snapshot.config,
+            env: databaseContext.env,
+            stateDir: resolveStateDir(databaseContext.env),
+          };
+          const records = resolvePluginDoctorStateMigrationRecords({
+            ...retention,
+            artifactPreservingReadOnly: true,
+          }).filter(isTrustedForDurableStores);
+          await assertPluginStateRetention(records, retention);
+        } catch (error) {
+          // Published updaters fall back on exit 2; inspection errors need a refusal verdict.
+          refuse("plugin-state-retention", "plugin-state-retention", String(error));
+          schemasAccepted = false;
         }
       }
       // Plugin metadata reads require compatible stores; never let them mask a schema refusal.

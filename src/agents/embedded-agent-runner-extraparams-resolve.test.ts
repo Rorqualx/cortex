@@ -108,12 +108,7 @@ describe("resolveExtraParams", () => {
               },
             },
           },
-          list: [
-            {
-              id: "risk-reviewer",
-              params: { cacheRetention: "none" },
-            },
-          ],
+          entries: { "risk-reviewer": { params: { cacheRetention: "none" } } },
         },
       },
       provider: "anthropic",
@@ -235,12 +230,7 @@ describe("resolveExtraParams", () => {
     const result = resolveExtraParams({
       cfg: {
         agents: {
-          list: [
-            {
-              id: "risk-reviewer",
-              params: { cacheRetention: "none" },
-            },
-          ],
+          entries: { "risk-reviewer": { params: { cacheRetention: "none" } } },
         },
       },
       provider: "anthropic",
