@@ -528,3 +528,243 @@ Preflight 20:32 left tsgo:core=19 after merge commit 60b7d0f878f. All 19 traced 
 - `src/workboard/sessions-board-rules.ts` + `packages/workboard-contract/src/sessions-board.test.ts` — git rm (KEEP-OURS): orphaned salvage port of upstream #163823 extensions/workboard rules had zero consumers and imported contract types the fork doesn't carry; the adopted test imports the nonexistent sessions-board.js module. Fork ships no sessions-board feature (standing policy: upstream workboard features not shipped; fork workboard = core src/workboard/).
 
 tsgo:core 19→0 locally (cache cleared).
+
+## 2026-10-06 bounded-batch merge (e25a9815, advance 200 of 1091)
+
+- `extensions/workboard/**` + `packages/workboard-contract/src/sessions-board.{ts,test.ts}`: **KEEP-OURS** deletion — fork product decision 14e83c5185e (replaced by core `src/workboard/`); upstream delta since base = sidebar feat #164604 + deslop refactors on the abandoned tree; zero `sessions-board` importers outside it.
+- `src/cron/service.pr-automation.test.ts`: **KEEP-OURS** deletion — UI-coupled to dropped `ui/src/lib/session-pr-automation-spec.js` (fork ui policy).
+- `src/agents/tools/sessions-list-title.test.ts`: **ADOPT-UPSTREAM** — imports all resolve in merged tree, feature (sessions-list title) in fork production; prior deletion was unledgered 10-04 merge debt.
+- `src/agents/provider-request-config.ts` (+ new `.types.ts`): **ADOPT-UPSTREAM** module split; grafted fork `maxConcurrentRequests` (provider-concurrency-gate) into `.types.ts` + sanitize/merge/policy fns.
+- `src/agents/embedded-agent-runner/post-compaction-loop-guard.ts`: **ENHANCE-OURS** — fork `ToolLoopPostCompactionGuardConfig` windowSize feature on upstream deslop scaffold.
+- `src/cron/types.ts`: **ENHANCE-OURS** — keep fork-required `export type CronTrigger`, adopt upstream `SchemaContract` wire-derived def (shape-identical: script/once).
+- `src/agents/tool-catalog.ts`: **ADOPT-UPSTREAM** `portal` tool entry; fork exports kept via drift rebase.
+- `src/gateway/methods/core-descriptors.ts`: **ADOPT-UPSTREAM** +5 new method rows (sessions.files.assets, worktrees.recoverRemoval/retireSnapshot, sessions.processes.list/stop).
+- `src/agents/system-prompt.ts`: **ENHANCE-OURS** — kept fork helper extraction; ported upstream's 3 embed-text edit groups into `buildWebchatCanvasSection`.
+- `src/transcripts/summary.ts`: **ENHANCE-OURS** — upstream SchemaContract derivation + fork persistence fields incl. memory-l3 `embedding`.
+- `extraparams-resolve.test.ts`: **ADOPT-UPSTREAM** parameterized alias table (subsumes fork list-shape tests; merged config is entries-only) + grafted 2 fork-unique tests.
+- `run-fallback-policy.test.ts`: **UNION** — fork base + 5 upstream-unique tests (production identical both sides).
+- `ssh-backend.test.ts` / `agents-mutate.test.ts` / `run-node.test.ts` / `experience-review.apply.test.ts` / `build-all.test.ts`: upstream additions on fork scaffold (run-node: + upstream cast cleanup; experience-review: fork forge/seed flow kept, dual-key skills type admits both).
+- merge=ours drift (11 files) rebased onto upstream w/ fork delta re-applied; protocol-gen + kysely + lockfile regenerated clean.
+
+## 2026-10-06 17:36Z resume: startup-JS budget block — root cause isolated (DO NOT re-derive)
+
+Branch fully resolved: 0 conflicts; huey proof of 52b092a82ed shows all 7 tsgo lanes
+new=0 (core 0/0, extensions 3/3, core:test 115/113, extensions:test 11/11, test:src
+115/113, test:ui 0/0, test:packages 0/0). Sole red gate = control-ui startup budget:
+measured 626209 B / 30 requests vs enforcement 591116 B (baseline 590540 + growth 512
+
+- variance 64) and committed-baseline cap 590848 B (577 KiB). BUILD_EXIT=1 on both
+  proofs (12:09Z, 15:59Z). NOT a merge bug — upstream architecture, root cause chain:
+
+  src/agents/internal-runtime-context.ts (client-path on main; upstream-modified)
+  → packages/agent-core/src/harness/messages.ts (NEW to client graph; value-imports
+  the @openclaw/llm-core barrel for hasRuntimeContextMarker)
+  → barrel re-exports llm-core/validation.ts (typebox Compile/Pointer) and
+  normalization-core/json-schema.ts (typebox Guard/Check)
+  → 5 new pure-typebox foundation chunks = 36606 B gzip (sourcemaps are 100% typebox);
+  7 new foundation chunks total; requests 28 → 30.
+
+main shipped ZERO typebox client-side (verified: no typebox source in any main startup
+chunk map; the barrel was not in main's client graph). sideEffects audit: llm-core /
+normalization-core / agent-core package.json have NO sideEffects flag on upstream tip AND
+main alike (gateway-protocol has sideEffects:false on all three) — nothing was dropped by
+the merge. Upstream's own client (~372 KB startup) ships typebox the same way.
+
+MAINTAINER DECISION REQUIRED (playbook hard-block; first flagged 05:35Z, evidence now complete):
+A) ACCEPT upstream architecture — commit baseline 626209 B, raise the cap 577 → 612 KiB
+(+6.1%), then finish-land. Zero divergence; next batches keep this weight (client-side
+wire validation is upstream's direction).
+B) TRIM — keep typebox out of the client graph. Estimated 626209 − 36606 = 589603 B / 25
+requests: under the CURRENT 591116 B limit by only ~1.5 KB. Cleanest shape is
+sideEffects:false on llm-core + normalization-core package.json (fork-side, 2 lines,
+needs a browser smoke that runtime-context markers still render), or narrowing the
+messages.ts barrel import. Both are fork divergence on upstream hot files that will
+re-drift every future merge.
+RECOMMENDATION: A — fighting the bundler graph fork-side recreates the frozen-file
+disease for ~1.5 KB of headroom that the next batch will eat. If 612 KiB is unpalatable,
+pair A with a fork-UI startup trim follow-up (lazy views), decided separately.
+
+Worktree left resumable at 52b092a82ed (clean tree, no merge in progress). Next run:
+if the maintainer decision is recorded below this line, apply it and finish-land;
+otherwise report the same block and DO NOT re-run the ~10-minute huey proof on an
+unchanged branch (two identical red verdicts already on file).
+
+## 2026-10-07 13:35Z resume: all tsgo lanes green on huey; budget block unchanged (decision still pending)
+
+09:40Z session ported remaining e25a981 batch drift onto the fresh 2026-10-07 merge
+(aef316ab36d: system-prompt.ts + transcripts/summary.ts fork deltas + 3 test files);
+its 12:19Z proof caught 3 net-new tsgo errors (ssh-backend.test.ts TS2304
+setActiveDegradedSecretOwners, summary-embeddings.test.ts TS2322 x2) — fixed in
+1f6097af92e. 13:27Z proof of 1f6097af92e: ALL 7 tsgo lanes new=0 (core 0/0,
+extensions 3/3, core:test 113/115, extensions:test 11/11, test:src 113/115, test:ui
+0/0, test:packages 0/0), no NEWFAIL. Sole red: BUILD_EXIT=1 = the SAME startup-JS
+budget block (measured 611.5 KiB / 30 requests vs 577.3 KiB limit, 590848 B cap;
+typebox-in-client root cause per the 2026-10-06 entry — do NOT re-derive). test:fast
+was SIGTERM'd at the poller timeout (exit 143) and never completed — the behavior
+gate is still owed at land time, as is autoreview. MAINTAINER DECISION still
+unrecorded: A) accept upstream client typebox — baseline 626209 B, cap 577→612 KiB
+(recommended) vs B) trim (≈589603 B, fork divergence on upstream hot files). Branch
+pushed to origin with this entry. main untouched (fbf8ba16758). True backlog 1424
+first-parent commits behind full tip (bounded batch stays e25a9815054). Next run:
+if the decision is recorded, apply it and finish-land; else report the same block,
+no re-proof (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07).
+
+## 2026-10-07 16:35Z resume: decision check only — block stands
+
+Checked all record surfaces: no ledger entry below the decision line; zero main commits
+after 13:35Z; budget baseline on main still 590540/590848 (2026-09-29 state); memory has
+no maintainer verdict. Decision A (accept upstream client typebox, baseline 626209 B,
+cap 577→612 KiB) vs B (trim, ≈589603 B) remains UNRECORDED. Per the 13:35Z entry: no
+re-proof on the unchanged branch (third identical verdict adds nothing), no land, no
+fresh merge of the same e25a9815 batch this branch already resolves. Branch re-pushed
+unchanged apart from this entry. main untouched (fbf8ba16758).
+
+## 2026-10-08 00:35Z resume: decision check only — block stands
+
+Fourth check. All record surfaces re-verified: no entry below the decision line; main
+advanced only with daily-research QW commits (fbf8ba16758 tip) — no budget change;
+baseline on main still 590540 B / cap 590848 B (updatedAt 2026-09-29); workspace memory
+records the same A/B options (2026-10-06 daily) with no maintainer verdict. Decision
+A (accept upstream client typebox, baseline 626209 B, cap 577→612 KiB, recommended) vs
+B (trim startup path, ≈589603 B) remains UNRECORDED. No re-proof on the unchanged
+branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07), no land,
+no fresh merge of the same e25a9815 batch. Branch re-pushed with this entry. main
+untouched (fbf8ba16758).
+
+## 2026-10-08 02:37Z resume: decision check only — block stands
+
+Fifth check. All record surfaces re-verified: no entry below the decision line; main
+unchanged (fbf8ba16758); baseline on main still 590540 B / cap 590848 B (updatedAt
+2026-09-29); no workspace-memory daily for 10-07/10-08 (no verdict). Decision A
+(accept upstream client typebox, baseline 626209 B, cap 577→612 KiB, recommended)
+vs B (trim startup path, ≈589603 B) remains UNRECORDED. No re-proof on the unchanged
+branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07), no
+land, no fresh merge of the same e25a9815 batch. Branch re-pushed with this entry.
+main untouched (fbf8ba16758).
+
+## 2026-10-08 04:35Z resume: decision check only — block stands
+
+Sixth check. All record surfaces re-verified: no ledger entry below the decision line;
+main unchanged (fbf8ba16758, zero commits since 02:37Z); baseline on main still
+590540 B / cap 590848 B (updatedAt 2026-09-29); no workspace-memory daily for
+10-07/10-08 (2026-10-06 daily records the block, no verdict). Decision A (accept
+upstream client typebox, baseline 626209 B, cap 577->612 KiB, recommended) vs B
+(trim startup path, ~589603 B) remains UNRECORDED. No re-proof on the unchanged
+branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07), no
+land, no fresh merge of the same e25a9815 batch. Branch re-pushed with this entry.
+main untouched (fbf8ba16758).
+
+## 2026-10-08 05:35Z resume: decision check only — block stands
+
+Seventh check. All record surfaces re-verified: no ledger entry below the decision
+line; main unchanged (fbf8ba16758, MAIN-SYNC in sync); origin staging == local
+(d82a0a1ad61, clean tree); baseline on main still 590540 B / cap 590848 B
+(updatedAt 2026-09-29); no workspace-memory daily for 10-07/10-08 (2026-10-06 daily
+records the block, no verdict). Decision A (accept upstream client typebox,
+baseline 626209 B, cap 577->612 KiB, recommended) vs B (trim startup path,
+~589603 B) remains UNRECORDED. No re-proof on the unchanged branch
+(identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07), no land,
+no fresh merge of the same e25a9815 batch. Branch re-pushed with this entry.
+main untouched (fbf8ba16758).
+
+## 2026-10-08 07:35Z resume: decision check only — block stands
+
+Eighth check. All record surfaces re-verified: no ledger entry below the decision
+line; main unchanged (fbf8ba16758, local == origin); baseline on main still
+590540 B / cap 590848 B (updatedAt 2026-09-29); no workspace-memory daily for
+10-07/10-08 (2026-10-06 daily records the block, no verdict). Decision A (accept
+upstream client typebox, baseline 626209 B, cap 577->612 KiB, recommended) vs B
+(trim startup path, ~589603 B) remains UNRECORDED. No re-proof on the unchanged
+branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07),
+no land, no fresh merge of the same e25a9815 batch. Branch re-pushed with this
+entry. main untouched (fbf8ba16758). Backlog now 1673 first-parent commits
+behind the full upstream tip; batch stays e25a9815054.
+
+## 2026-10-08 09:35Z resume: decision check only — block stands
+
+Ninth check. All record surfaces re-verified: no ledger entry below the decision
+line; main unchanged (fbf8ba16758, local == origin); baseline on main still
+590540 B / cap 590848 B (updatedAt 2026-09-29); no workspace-memory daily for
+10-07/10-08 (2026-10-06 daily records the block, no verdict). Decision A (accept
+upstream client typebox, baseline 626209 B, cap 577->612 KiB, recommended) vs B
+(trim startup path, ~589603 B) remains UNRECORDED. No re-proof on the unchanged
+branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07),
+no land, no fresh merge of the same e25a9815 batch. Branch re-pushed with this
+entry. main untouched (fbf8ba16758). Backlog now 1708 first-parent commits
+behind the full upstream tip; batch stays e25a9815054.
+
+## 2026-10-08 13:35Z resume: decision check only — block stands
+
+Tenth check. All record surfaces re-verified: no ledger entry below the decision
+line; baseline on main still updatedAt 2026-09-29 (590540 B / cap 590848 B);
+2026-10-08 daily now exists (deploy testgate hold note — a SEPARATE pending
+decision) and carries no A/B verdict; 2026-10-06 daily remains the only block
+record; MEMORY.md and reports carry no verdict. Decision A (accept upstream
+client typebox, baseline 626209 B, cap 577->612 KiB, recommended) vs B (trim
+startup path, ~589603 B) remains UNRECORDED. No re-proof on the code-unchanged
+branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07),
+no land, no fresh merge of the same e25a9815 batch. NEW since ninth check: main
+advanced +3 to e11f53338a5 (daily-research memory-l3 only; 13:36Z route
+MAIN-SYNC pushed them to origin) — the branch no longer contains main, so the
+land sequence once the decision is recorded is: stage-resume (absorb main) ->
+apply A/B -> preflight + huey proof (test:fast behavior gate + autoreview still
+owed at land time) -> finish-land. Branch re-pushed with this entry. Backlog
+1773 first-parent commits behind full tip eea11f9739d; batch stays e25a9815054.
+
+## 2026-10-08 16:35Z resume: decision check only — block stands
+
+Eleventh check. All record surfaces re-verified: no ledger entry below the
+decision line; baseline on main still updatedAt 2026-09-29 (590540 B / cap
+590848 B); 2026-10-08 daily carries only the deploy-testgate hold note (a
+SEPARATE pending operator decision, day 6) and no A/B verdict; 2026-10-06
+daily remains the only block record; MEMORY.md carries no verdict; origin/main
+@ e11f53338a5 unchanged since 13:36Z and origin staged branch == local @
+9b2510eb5a7 — maintainer has not touched either. Decision A (accept upstream
+client typebox, baseline 626209 B, cap 577->612 KiB, recommended) vs B (trim
+startup path, ~589603 B) remains UNRECORDED. No re-proof on the code-unchanged
+branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07),
+no land. DEVIATION NOTE: 16:37Z stage-init (run before this session read the
+log) reclaimed the worktree and briefly created resync-staging/2026-10-08 as a
+fresh unresolved merge of the same e25a9815 batch — aborted and branch deleted
+within the same session; worktree restored to THIS branch, no resolution
+redone, no huey cycle burned. Land sequence once the decision is recorded is
+unchanged: stage-resume (absorb main) -> apply A/B -> preflight + huey proof
+(test:fast behavior gate + autoreview still owed at land time) -> finish-land.
+Branch re-pushed with this entry. Backlog 1816 first-parent commits behind
+full tip 1fe2aa03fe4; batch stays e25a9815054.
+
+## 2026-10-08 21:43Z resume: twelfth decision check — block stands; fresh 10-08 re-stage resolved + locally green
+
+Twelfth check. All record surfaces re-verified: no ledger entry below the decision
+line (staged ledger @ d15bfe03f84); baseline on main still 590540 B / cap 590848 B
+(unchanged since 2026-09-29); origin/main @ e11f53338a5 unchanged; the 2026-10-08
+daily carries only the separate deploy-testgate hold note; no maintainer verdict
+anywhere. Decision A (accept upstream client typebox, baseline 626209 B, cap
+577->612 KiB, recommended) vs B (trim startup path, ~589603 B) remains UNRECORDED.
+
+State change vs the eleventh check: 20:37Z stage-init reclaimed the stale 10-07
+branch and re-staged the SAME e25a9815 batch from baseline e11f53338a5
+(resync-staging/2026-10-08). Resolution redone: merge f23c896ed09 + 3c3ca22ef73
+(new tsgo:test:src errors from the newer baseline fixed: agents.entries migration,
+DI rebases, roster API, breaker graft). The 20:53Z STAGE-PREFLIGHT FAIL was the
+pre-fix tree; this session re-ran preflight on 3c3ca22ef73 at 21:40Z: PASS,
+tsgo:core=0 (conflict markers, merge=ours export gate, protocol-gen all green).
+The 21:26Z stage-finish re-run was killed by the exec-session reaper ~10 min in —
+no huey verdict, no push; this entry completes that interrupted cycle.
+
+No huey proof run, per standing instruction: the sole red lane (startup-JS budget
+626209 B/30 req vs cap 590848 B) is structural to the upstream batch + main's cap
+(three identical verdicts on file: 10-06 12:09Z/15:59Z, 10-07 13:27Z). NOTE: this
+10-08 tree is NOT identical to the proven 10-07 tree (newer baseline + new
+resolution), so the tsgo:test / test:fast verdicts do NOT carry — full preflight +
+huey proof still owed at land time; local preflight (tsgo:core=0) is the only
+verdict on file for this exact tree. No land (cap raise is a playbook hard-block).
+
+Ledger decision-line + check history carried forward from the 10-07 staged copy
+(d15bfe03f84; purely additive over main's 2026-10-03 ledger, 0 removed lines) so
+the newest pushed staging branch remains the maintainer's single decision surface.
+Backlog 1907 first-parent commits behind full tip 409cef15bea (was 1816 at the
+eleventh check today, 1346 at 10-07 04:40Z); batch stays e25a98150544. Land
+sequence once the decision is recorded is unchanged: stage-resume (absorb main) ->
+apply A/B -> preflight + huey proof (test:fast behavior gate + autoreview owed at
+land time) -> finish-land.
