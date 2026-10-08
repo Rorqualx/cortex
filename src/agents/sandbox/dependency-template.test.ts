@@ -39,6 +39,12 @@ const cfg: SandboxConfig = {
   workspaceAccess: "rw",
   workspaceRoot: "/owned",
   dockerTmpfsSource: "default",
+  osSandbox: {
+    enabled: false,
+    extraWritableRoots: [],
+    extraProtectedMetadata: [],
+    network: "deny",
+  },
   docker: createSandboxTestContext({
     dockerOverrides: {
       image: "fixture:mutable",

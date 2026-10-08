@@ -609,11 +609,11 @@ describe("run-node script", () => {
       const stdoutChunks: string[] = [];
       const stderrChunks: string[] = [];
       const stdout = {
-        write: (chunk: string | Uint8Array) => {
+        write: (chunk: string | Buffer) => {
           stdoutChunks.push(String(chunk));
           return true;
         },
-      };
+      } as unknown as NodeJS.WriteStream;
       const exitCode = await runNodeCommand(tmp, {
         args: ["plugins", "list", "--json"],
         env: { OPENCLAW_FORCE_BUILD: "1", OPENCLAW_RUN_NODE_OUTPUT_LOG: outputPath },
@@ -789,11 +789,11 @@ describe("run-node script", () => {
       const spawn = () => createPipedExitedProcess({ stdout: "child stdout\n" });
       const stderrChunks: string[] = [];
       const mutedStream = {
-        write: (chunk: string | Uint8Array) => {
+        write: (chunk: string | Buffer) => {
           stderrChunks.push(String(chunk));
           return true;
         },
-      };
+      } as unknown as NodeJS.WriteStream;
 
       const exitCode = await runNodeCommand(tmp, {
         env: { OPENCLAW_RUN_NODE_OUTPUT_LOG: outputPath },
@@ -819,7 +819,7 @@ describe("run-node script", () => {
       };
       const mutedStream = {
         write: () => true,
-      };
+      } as unknown as NodeJS.WriteStream;
 
       const exitCode = await runNodeCommand(tmp, {
         args: ["qa", "matrix"],
@@ -1276,17 +1276,17 @@ describe("run-node script", () => {
         env: { OPENCLAW_RUNNER_LOG: "0" },
         fs: fsSync,
         process: lockProcess,
-        stderr: { write: () => true },
+        stderr: { write: () => true } as unknown as NodeJS.WriteStream,
       });
       const { promise: waitingForLock, resolve: markWaiting } = createDeferred();
       const stderr = {
-        write: (chunk: string | Uint8Array) => {
+        write: (chunk: string | Buffer) => {
           if (String(chunk).includes("Waiting for TypeScript/runtime artifact lock")) {
             markWaiting();
           }
           return true;
         },
-      };
+      } as unknown as NodeJS.WriteStream;
       const runRuntimePostBuild = vi.fn();
       const { spawnCalls, spawn, spawnSync } = createCurrentGitSpawnRecorder({
         gitStatus: ` M ${ROOT_SRC}\0`,
@@ -1435,7 +1435,7 @@ describe("run-node script", () => {
         env: { OPENCLAW_RUNNER_LOG: "0" },
         fs: fsSync,
         process: fakeProcess,
-        stderr: { write: () => true },
+        stderr: { write: () => true } as unknown as NodeJS.WriteStream,
       });
 
       it("releases the lock directory on process exit", async ({ tmp }) => {

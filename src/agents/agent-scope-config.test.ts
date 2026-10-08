@@ -494,7 +494,9 @@ describe("agent roster resolution", () => {
     retainLegacyDefaultAgentId(cfg, "ops");
     expect(getRetainedLegacyDefaultAgentId(cfg)).toBe("ops");
 
-    expect(cfg.agents?.entries?.ops?.default).toBeUndefined();
+    expect(
+      (cfg.agents?.entries?.ops as { default?: unknown } | undefined)?.default,
+    ).toBeUndefined();
     expect(tryResolveSoleAgentId(cfg)).toBeUndefined();
     expect(tryResolveDefaultAgentId(cfg)).toBe("ops");
     expect(resolveDefaultAgentId(cfg)).toBe("ops");
@@ -541,10 +543,12 @@ describe("agent roster resolution", () => {
   });
 
   it("offers a non-throwing diagnostic lookup for malformed rosters", () => {
-    expect(tryResolveDefaultAgentId({ agents: { list: [{ id: "alpha" }] } })).toBe("alpha");
+    expect(agentRoster.tryResolveDefaultAgentId({ agents: { list: [{ id: "alpha" }] } })).toBe(
+      "alpha",
+    );
     for (const marker of ["false", 1]) {
       expect(
-        tryResolveDefaultAgentId({
+        agentRoster.tryResolveDefaultAgentId({
           agents: { entries: { alpha: { default: marker } } },
         }),
       ).toBe("alpha");

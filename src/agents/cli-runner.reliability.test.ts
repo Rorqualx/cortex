@@ -64,11 +64,11 @@ import {
 } from "./cli-runner.test-support.js";
 import { executePreparedCliRun as executePreparedCliRunCore } from "./cli-runner/execute.js";
 import { wrapPreparedCliRunWithTestAdmission } from "./cli-runner/execute.test-support.js";
+import { prepareCliRunContext } from "./cli-runner/prepare.js";
 import {
   resolveCliNoOutputTimeoutMs,
   resolveCliRunTimeoutOverrideMs,
-} from "./cli-runner/helpers.js";
-import { prepareCliRunContext } from "./cli-runner/prepare.js";
+} from "./cli-runner/reliability.js";
 import { hashCliReseedPrompt } from "./cli-runner/reseed-envelope.js";
 import * as sessionHistoryModule from "./cli-runner/session-history.js";
 import { captureCliRunStartTime, type PreparedCliRunContext } from "./cli-runner/types.js";
@@ -1393,9 +1393,9 @@ describe("runCliAgent reliability", () => {
       );
       return makeManagedRun();
     });
-    setCliRunnerTestDeps({
-      claudeCliSessionTranscriptHasContent: async () => true,
-    });
+    vi.spyOn(cliTranscript, "claudeCliSessionTranscriptHasContent").mockImplementation(
+      async () => true,
+    );
     const context = makeClaudePreparedContext({
       sessionKey: "agent:main:stateless",
       runId: "run-stateless-session-id",
@@ -1798,7 +1798,9 @@ describe("runCliAgent reliability", () => {
     vi.useFakeTimers();
     supervisorSpawnMock.mockClear();
     const transcriptProbe = vi.fn(async () => false);
-    setCliRunnerTestDeps({ claudeCliSessionTranscriptHasContent: transcriptProbe });
+    vi.spyOn(cliTranscript, "claudeCliSessionTranscriptHasContent").mockImplementation(
+      transcriptProbe,
+    );
     const artifactDir = autoCleanupTempDirs.make("openclaw-live-retry-artifacts-");
     const mcpConfigPath = path.join(artifactDir, "mcp.json");
     const skillsDir = path.join(artifactDir, "skills-plugin");
@@ -3079,9 +3081,9 @@ describe("runCliAgent reliability", () => {
       timestamp: Date.now(),
     });
 
-    setCliRunnerTestDeps({
-      claudeCliSessionTranscriptHasContent: async () => true,
-    });
+    vi.spyOn(cliTranscript, "claudeCliSessionTranscriptHasContent").mockImplementation(
+      async () => true,
+    );
     const context = makeClaudePreparedContext({
       model: "claude-opus-4-6",
       openClawHistoryPrompt: CLI_RESEED_PROMPT,

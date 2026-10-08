@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 // SSH sandbox backend tests cover runtime description/removal, remote seeding,
 // command execution, bind validation, and backend config plumbing.
 import os from "node:os";
@@ -8,7 +9,9 @@ import {
   createSandboxSshConfig,
 } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import type { OpenClawConfig } from "../../config/config.js";
+import { setActiveDegradedSecretOwners } from "../../secrets/runtime-degraded-state.js";
 import { captureFullEnv } from "../../test-utils/env.js";
 import { resolveSshRuntimePaths } from "./ssh-backend.js";
 import type { SandboxConfig } from "./types.js";
@@ -38,7 +41,9 @@ vi.mock("./ssh.js", async () => {
   };
 });
 
-const { createSshSandboxBackend, sshSandboxBackendManager } = await import("./ssh-backend.js");
+const { createPreprovisionedSshSandboxBackend, createSshSandboxBackend, sshSandboxBackendManager } =
+  await import("./ssh-backend.js");
+const tempDirs = createTempDirTracker();
 
 function createConfig(): OpenClawConfig {
   return {
