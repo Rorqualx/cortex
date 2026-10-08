@@ -692,3 +692,21 @@ branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07),
 no land, no fresh merge of the same e25a9815 batch. Branch re-pushed with this
 entry. main untouched (fbf8ba16758). Backlog now 1708 first-parent commits
 behind the full upstream tip; batch stays e25a9815054.
+
+## 2026-10-08 13:35Z resume: decision check only — block stands
+
+Tenth check. All record surfaces re-verified: no ledger entry below the decision
+line; baseline on main still updatedAt 2026-09-29 (590540 B / cap 590848 B);
+2026-10-08 daily now exists (deploy testgate hold note — a SEPARATE pending
+decision) and carries no A/B verdict; 2026-10-06 daily remains the only block
+record; MEMORY.md and reports carry no verdict. Decision A (accept upstream
+client typebox, baseline 626209 B, cap 577->612 KiB, recommended) vs B (trim
+startup path, ~589603 B) remains UNRECORDED. No re-proof on the code-unchanged
+branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07),
+no land, no fresh merge of the same e25a9815 batch. NEW since ninth check: main
+advanced +3 to e11f53338a5 (daily-research memory-l3 only; 13:36Z route
+MAIN-SYNC pushed them to origin) — the branch no longer contains main, so the
+land sequence once the decision is recorded is: stage-resume (absorb main) ->
+apply A/B -> preflight + huey proof (test:fast behavior gate + autoreview still
+owed at land time) -> finish-land. Branch re-pushed with this entry. Backlog
+1773 first-parent commits behind full tip eea11f9739d; batch stays e25a9815054.
