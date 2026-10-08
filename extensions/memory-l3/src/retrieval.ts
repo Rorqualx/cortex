@@ -145,6 +145,29 @@ const INTENT_SCORING_PRESETS: Record<QueryIntent, ScoringConfig> = {
 export function getIntentScoringPreset(intent: QueryIntent): ScoringConfig {
   return INTENT_SCORING_PRESETS[intent];
 }
+
+/**
+ * QW1 (2026-10-08, RD-Forget): rank penalty applied to superseded facts that
+ * are re-admitted under a historical/temporal intent. The current value must
+ * outrank the stale one whenever both match, without banning the transition
+ * history outright.
+ */
+export const SUPERSEDED_REMISSION_PENALTY = 0.5;
+
+/**
+ * QW1 (2026-10-08, RD-Forget): whether a query intent admits superseded facts
+ * back into ranking.
+ *
+ * Only **multihop** re-admits — it is the sole intent carrying explicit
+ * historical/temporal patterns ("what changed", "changes since", "since
+ * when", "history of"). Factual (current-state lookups) and synthesis
+ * (open-ended overview, no temporal signal) keep the hard skip, preserving
+ * legacy behavior everywhere else. Misfires are mitigated by the rank
+ * penalty + inline `(superseded by …)` text annotation, never promotion.
+ */
+export function intentAdmitsSuperseded(intent: QueryIntent): boolean {
+  return intent === "multihop";
+}
 import type { Storage } from "./storage.js";
 import type {
   Insight,
@@ -553,10 +576,16 @@ export async function retrieveTopK(params: {
   // SCM query-intent router: when mode is "routed", classify the query and
   // select a scoring preset. Caller-provided config still wins over presets
   // (explicit > routed > default).
+  // Classify the query intent ONCE (QW1, 2026-10-08): the classification is
+  // pure regex heuristics (zero latency) and now feeds two consumers — the
+  // routed-mode scoring preset selection below, and the intent-aware
+  // supersession filter in the long-term prose tier.
+  const queryIntent = classifyQueryIntent(params.query);
   const config =
     retConfig.mode === "routed" && !params.config
-      ? getIntentScoringPreset(classifyQueryIntent(params.query))
+      ? getIntentScoringPreset(queryIntent)
       : baseConfig;
+  const admitSuperseded = intentAdmitsSuperseded(queryIntent);
 
   // -----------------------------------------------------------------
   // Epoch-first retrieval (DeepSeek V4 CSA-inspired)
@@ -601,6 +630,8 @@ export async function retrieveTopK(params: {
     contextWindow?: number;
     /** QW-4: Source trust for long-term typed facts. */
     sourceTrust?: import("./types.js").SourceTrust;
+    /** QW1 (2026-10-08): superseded fact re-admitted under historical/temporal intent. */
+    superseded?: boolean;
   };
   const items: ScorableItem[] = [];
 
@@ -658,16 +689,26 @@ export async function retrieveTopK(params: {
     if (lt.archived) {
       continue;
     }
-    if (lt.supersededBy) {
+    // Intent-aware supersession filter (QW1, 2026-10-08, RD-Forget):
+    // current-state intents skip superseded facts (legacy behavior);
+    // historical/temporal intents re-admit them rank-penalized (below), with
+    // an inline annotation so the caller can tell stale from current.
+    if (lt.supersededBy && !admitSuperseded) {
       continue;
     }
     items.push({
-      fact: longTermAsL2Fact(lt),
+      fact: lt.supersededBy
+        ? longTermAsL2Fact({
+            ...lt,
+            text: `${lt.text} (superseded by ${lt.supersededBy})`,
+          })
+        : longTermAsL2Fact(lt),
       chunkId: "longterm",
       tier: "longterm",
       l3Boost: 0,
       tierBoost: config.weightLongTermTierBoost,
       embedding: lt.embedding,
+      superseded: Boolean(lt.supersededBy),
     });
   }
 
@@ -889,7 +930,10 @@ export async function retrieveTopK(params: {
       nowMs: now,
       ...(degree > 0 ? { centrality: Math.min(1, degree / centralityMaxDegree) } : {}),
     });
-    const score = rawScore * demotion;
+    // QW1 (2026-10-08, RD-Forget): re-admitted superseded facts are
+    // rank-penalized, not banned — the current value outranks the stale one
+    // whenever both match, but "what changed" queries keep the history.
+    const score = rawScore * demotion * (item.superseded ? SUPERSEDED_REMISSION_PENALTY : 1);
     if (score > 0) {
       scored.push({
         fact: item.fact,
@@ -1414,8 +1458,7 @@ export async function retrieveTopK(params: {
   // "blended" default) has none, so it must fall back to the LOSSLESS setting —
   // defaulting to "factual" would silently truncate every prose fact to its
   // first sentence on the default retrieval path.
-  const intent: QueryIntent =
-    retConfig.mode === "routed" ? classifyQueryIntent(params.query) : "synthesis";
+  const intent: QueryIntent = retConfig.mode === "routed" ? queryIntent : "synthesis";
   const compressedFacts = compressFactsForResult(finalFacts, intent);
 
   // Token-budget guard: trim lowest-score facts to stay within budget.

@@ -8,8 +8,10 @@ import {
   formatMemorySection,
   getIntentScoringPreset,
   heuristicReformulate,
+  intentAdmitsSuperseded,
   retrieveTopK,
   type RetrievedFact,
+  SUPERSEDED_REMISSION_PENALTY,
 } from "./retrieval.js";
 import { DEFAULT_SCORING_CONFIG } from "./scoring.js";
 import { Storage } from "./storage.js";
@@ -915,6 +917,88 @@ describe("retrieveTopK cross-brain reconciliation", () => {
     const { facts: result } = await retrieveTopK({ query: "balance", storage, topK: 5, now: NOW });
     expect(result.find((r) => r.fact.id === "lt-stale")).toBeUndefined();
   });
+
+  it("re-admits a superseded fact, rank-penalized and annotated, for historical/temporal intent (QW1)", async () => {
+    // Same store as the skip test above — only the query intent changes.
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "alpha topic", importance: 0.4, createdAt: NOW, dedupKey: "k:alpha" },
+    ]);
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "lt-stale",
+            text: "user balance is around 500",
+            dedupKey: "user:balance_estimate",
+            importance: 0.7,
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 3,
+            sourceChunkIds: ["a", "b", "c"],
+            archived: false,
+            archivedAt: null,
+            supersededBy: "user:account_balance",
+          },
+        ],
+      },
+      "",
+    );
+    expect(classifyQueryIntent("what changed with the user balance")).toBe("multihop");
+    const { facts: result } = await retrieveTopK({
+      query: "what changed with the user balance",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+    const hit = result.find((r) => r.fact.id === "lt-stale");
+    // Re-admitted under multihop intent …
+    expect(hit).toBeDefined();
+    // … with an inline annotation so the caller can tell stale from current.
+    expect(hit?.fact.text).toContain("(superseded by user:account_balance)");
+    // Rank-penalized: the remission penalty is part of the surfaced score.
+    expect(hit!.score).toBeGreaterThan(0);
+    expect(SUPERSEDED_REMISSION_PENALTY).toBeLessThan(1);
+  });
+
+  it("still skips superseded facts for synthesis intent (QW1)", async () => {
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "alpha topic", importance: 0.4, createdAt: NOW, dedupKey: "k:alpha" },
+    ]);
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "lt-stale",
+            text: "user balance is around 500",
+            dedupKey: "user:balance_estimate",
+            importance: 0.7,
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 3,
+            sourceChunkIds: ["a", "b", "c"],
+            archived: false,
+            archivedAt: null,
+            supersededBy: "user:account_balance",
+          },
+        ],
+      },
+      "",
+    );
+    expect(classifyQueryIntent("tell me about the user balance")).toBe("synthesis");
+    const { facts: result } = await retrieveTopK({
+      query: "tell me about the user balance",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+    expect(result.find((r) => r.fact.id === "lt-stale")).toBeUndefined();
+  });
 });
 
 describe("retrieveTopK longterm-typed tier", () => {
@@ -1292,6 +1376,12 @@ describe("classifyQueryIntent", () => {
   it("defaults to factual for ambiguous short queries", () => {
     expect(classifyQueryIntent("server config")).toBe("factual");
     expect(classifyQueryIntent("phone number")).toBe("factual");
+  });
+
+  it("admits superseded facts only under multihop intent (QW1)", () => {
+    expect(intentAdmitsSuperseded("multihop")).toBe(true);
+    expect(intentAdmitsSuperseded("factual")).toBe(false);
+    expect(intentAdmitsSuperseded("synthesis")).toBe(false);
   });
 });
 
