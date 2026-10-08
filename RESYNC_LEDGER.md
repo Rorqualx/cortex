@@ -710,3 +710,25 @@ land sequence once the decision is recorded is: stage-resume (absorb main) ->
 apply A/B -> preflight + huey proof (test:fast behavior gate + autoreview still
 owed at land time) -> finish-land. Branch re-pushed with this entry. Backlog
 1773 first-parent commits behind full tip eea11f9739d; batch stays e25a9815054.
+
+## 2026-10-08 16:35Z resume: decision check only — block stands
+
+Eleventh check. All record surfaces re-verified: no ledger entry below the
+decision line; baseline on main still updatedAt 2026-09-29 (590540 B / cap
+590848 B); 2026-10-08 daily carries only the deploy-testgate hold note (a
+SEPARATE pending operator decision, day 6) and no A/B verdict; 2026-10-06
+daily remains the only block record; MEMORY.md carries no verdict; origin/main
+@ e11f53338a5 unchanged since 13:36Z and origin staged branch == local @
+9b2510eb5a7 — maintainer has not touched either. Decision A (accept upstream
+client typebox, baseline 626209 B, cap 577->612 KiB, recommended) vs B (trim
+startup path, ~589603 B) remains UNRECORDED. No re-proof on the code-unchanged
+branch (identical-tree verdicts on file: 12:09Z, 15:59Z 10-06; 13:27Z 10-07),
+no land. DEVIATION NOTE: 16:37Z stage-init (run before this session read the
+log) reclaimed the worktree and briefly created resync-staging/2026-10-08 as a
+fresh unresolved merge of the same e25a9815 batch — aborted and branch deleted
+within the same session; worktree restored to THIS branch, no resolution
+redone, no huey cycle burned. Land sequence once the decision is recorded is
+unchanged: stage-resume (absorb main) -> apply A/B -> preflight + huey proof
+(test:fast behavior gate + autoreview still owed at land time) -> finish-land.
+Branch re-pushed with this entry. Backlog 1816 first-parent commits behind
+full tip 1fe2aa03fe4; batch stays e25a9815054.
