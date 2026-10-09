@@ -15,6 +15,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { computeCompactionProxyMetrics } from "./compaction-proxy-metrics.mjs";
 
 const HOME = os.homedir();
 const DEFAULT_ARCHIVE = path.join(
@@ -316,6 +317,10 @@ async function main() {
   );
   console.log(
     `  by role: ${JSON.stringify(summary.counts)}, ${summary.totalChars.toLocaleString()} chars total, ${summary.heartbeats} heartbeat-like`,
+  );
+  const proxy = computeCompactionProxyMetrics(messages);
+  console.log(
+    `  REMORY proxy: ${proxy.toolMessages} tool msgs, ${proxy.distinctToolOutputs} distinct, ${proxy.repeatedToolOutputs} repeated (rate ${proxy.repeatedToolOutputRate.toFixed(3)}), ${proxy.toolErrors} errors (rate ${proxy.toolErrorRate.toFixed(3)})`,
   );
 
   const { key, source } = await resolveZaiKey();

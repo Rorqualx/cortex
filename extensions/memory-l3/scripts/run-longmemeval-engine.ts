@@ -69,6 +69,12 @@ import {
 import { DEFAULT_SCORING_CONFIG, type ScoringConfig } from "../src/scoring.js";
 import { Storage } from "../src/storage.js";
 import type { L3State } from "../src/types.js";
+// REMORY compaction proxy metrics (QW2, 2026-10-09): repeated tool outputs +
+// tool errors over the replayed session log, emitted alongside recall scores.
+import {
+  computeCompactionProxyMetrics,
+  sumCompactionProxyMetrics,
+} from "./compaction-proxy-metrics.mjs";
 
 const HOME = os.homedir();
 const BATCH_TOKENS = 4000; // mirrors AFTER_TURN_COMPACTION_THRESHOLD_TOKENS
@@ -326,6 +332,8 @@ type QResult = {
   answer_in_context: boolean;
   retrieved: number;
   memory_chars: number;
+  /** REMORY compaction proxy metrics over the replayed haystack log (QW2, 2026-10-09). */
+  proxy?: ReturnType<typeof computeCompactionProxyMetrics>;
   /** Token usage for this question (prompt + completion). */
   token_usage?: { promptTokens: number; completionTokens: number };
   error?: string;
@@ -501,6 +509,7 @@ async function runQuestion(
       answer_in_context: checkAnswerInContext(q.answer, memorySection),
       retrieved: top.facts.length,
       memory_chars: memorySection.length,
+      proxy: computeCompactionProxyMetrics(q.haystack_sessions.flat() as never),
       token_usage: {
         promptTokens: deps.costTracker.promptTokens - tokenBefore.promptTokens,
         completionTokens: deps.costTracker.completionTokens - tokenBefore.completionTokens,
@@ -663,6 +672,9 @@ async function main(): Promise<void> {
   const aicHits = results.filter((r) => r.answer_in_context).length;
   const avgRetrieved = (results.reduce((s, r) => s + r.retrieved, 0) / results.length).toFixed(1);
   const avgMemChars = Math.round(results.reduce((s, r) => s + r.memory_chars, 0) / results.length);
+  // REMORY proxy totals across questions (zeros for tool-free LongMemEval haystacks;
+  // live signal when the harness replays tool-bearing agent traces).
+  const proxyTotals = sumCompactionProxyMetrics(results.flatMap((r) => (r.proxy ? [r.proxy] : [])));
   console.log(
     `  ${"OVERALL".padEnd(28)} ${hits}/${results.length} (${Math.round((hits / results.length) * 100)}%)  AIC:${aicHits}/${results.length} (${Math.round((aicHits / results.length) * 100)}%)`,
   );
@@ -671,6 +683,10 @@ async function main(): Promise<void> {
   );
   console.log(
     `  tokens: ${totalTokens} (in ${totalPrompt} / out ${totalCompletion}) · est cost $${estimatedCostUsd.toFixed(4)}`,
+  );
+  // Deliberately not `type hits/total (pct%)` shaped — optimize-weights.ts parses that pattern.
+  console.log(
+    `  proxy metrics: ${proxyTotals.toolMessages} tool msgs, ${proxyTotals.repeatedToolOutputs} repeated outputs (rate ${proxyTotals.repeatedToolOutputRate.toFixed(3)}), ${proxyTotals.toolErrors} tool errors (rate ${proxyTotals.toolErrorRate.toFixed(3)})`,
   );
 
   const tag =
@@ -701,6 +717,7 @@ async function main(): Promise<void> {
         overall: { hits, aic: aicHits, total: results.length },
         avgRetrieved: Number(avgRetrieved),
         avgMemChars,
+        proxyMetrics: proxyTotals,
         wallClockMin: Number(elapsedMin),
         cost_breakdown: {
           promptTokens: totalPrompt,
