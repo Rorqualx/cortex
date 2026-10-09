@@ -835,7 +835,6 @@ apply A and proceed stage-resume (absorb main) -> apply A -> local preflight
 e25a98150544, then continue the bounded-batch loop toward full-tip
 convergence (~1988 first-parent behind at the fourteenth check).
 
-
 ## 2026-10-09 application (nightly run)
 
 Applied DECISION A on a fresh stage of the same batch e25a9815054: overlay of the
@@ -846,3 +845,23 @@ the recorded resolutions (workboard extension + sessions-board contract kept
 deleted per standing decision). Decision A applied: checker cap 577->612 KiB,
 startupJsRequests 28->30, baseline 626209 B (measured). Regen clean (kysely .mts
 renamed script, protocol-gen unchanged). Next: preflight + huey proof + finish-land.
+
+## 2026-10-09 22:5xZ — batch 0e728fb6, huey proof round 2 fix (MIRROR restore)
+
+STAGE-PROOF (21:43Z, commit 31cff82b) failed tsgo:extensions new=3: memory-l3
+cross-context.ts/storage.ts TS2305 `ensureDir`/`parseEmbedding` missing from
+`openclaw/plugin-sdk/memory-core-host-engine-storage`. Provenance: upstream
+extracted parseEmbedding/cosineSimilarity into
+packages/memory-host-sdk/src/host/embedding-vector.ts and pruned both facades'
+re-export lists (plugin-sdk shim + engine-storage.ts). memory-l3 is
+fork-exclusive and imports both through the shim — MIRROR class (fork-kept
+importer needs symbols an upstream-adopted provider dropped). Verdict:
+ENHANCE-OURS on the provider surface, consumer untouched.
+
+- engine-storage.ts: re-export parseEmbedding from ./host/embedding-vector.js
+  (ensureDir was still re-exported from ./host/internal.js).
+- plugin-sdk shim: graft ensureDir + parseEmbedding into the engine-storage
+  re-export block.
+  Local tsgo:extensions single-lane run post-graft: 0 of the 3 TS2305 remain;
+  the 5 remaining errors are the known memory-l3 baseline drift (Signals
+  temporalAlignment, FactEdge, TS2538) — memory-l3 untouched by this batch.

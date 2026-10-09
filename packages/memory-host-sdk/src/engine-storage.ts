@@ -24,6 +24,9 @@ export {
   type MemoryChunk,
   type MemoryFileEntry,
 } from "./host/internal.js";
+// Fork graft (2026-10-09 resync): memory-l3 imports parseEmbedding through this facade;
+// upstream moved it to ./host/embedding-vector.js and pruned the re-export.
+export { parseEmbedding } from "./host/embedding-vector.js";
 export { readMemoryFile } from "./host/read-file.js";
 export { retryTransientMemoryRead } from "./host/read-retry.js";
 export {
