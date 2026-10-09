@@ -143,7 +143,6 @@ describe("watchTrajectoryForSessionEnd", () => {
         sessionKey: "agent:main:main",
         workspaceDir: "/workspace",
         trigger: "session-end",
-        runtimeFile: trajectoryFile,
       }),
     );
 

@@ -2,12 +2,15 @@
 import type { Command } from "commander";
 import { formatDocsLink } from "../../packages/terminal-core/src/links.js";
 import { theme } from "../../packages/terminal-core/src/theme.js";
+import { createLazyRuntimeModule } from "../shared/lazy-runtime.js";
 import { registerModelsAccountsCli } from "./models-accounts-cli.js";
 import type { GlobalOnlyModelCommandName } from "./models-cli.runtime.js";
 import { isModelsStatusJsonOutput } from "./models-output-mode.js";
 import { setCommandJsonMode } from "./program/json-mode.js";
 
 type ModelsCliRuntime = typeof import("./models-cli.runtime.js");
+
+const loadModelsRuntime = createLazyRuntimeModule(() => import("./models-cli.runtime.js"));
 
 async function withModelsRuntime(
   action: (runtime: ModelsCliRuntime) => Promise<void>,

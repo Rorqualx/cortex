@@ -131,7 +131,6 @@ export function watchTrajectoryForSessionEnd(input: WatchTrajectoryInput): Traje
           sessionKey: input.sessionKey,
           workspaceDir: input.workspaceDir,
           trigger: "session-end",
-          runtimeFile: input.trajectoryFile,
           env: input.env,
         });
         const result = await captureInFlight;

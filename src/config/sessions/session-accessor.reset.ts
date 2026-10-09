@@ -32,10 +32,7 @@ import { resolveReplySessionInitializationUpserts } from "./session-reset-entry.
 import type { ReplySessionInitializationUpsertDescriptor } from "./session-reset.types.js";
 import { resolveSessionStorePathForScope } from "./session-store-path.js";
 import { normalizeStoreSessionKey } from "./store-entry.js";
-import type {
-  ResolvedSessionMaintenanceConfig,
-  SessionMaintenanceWarning,
-} from "./store-maintenance.js";
+import type { ResolvedSessionMaintenanceConfig } from "./store-maintenance.js";
 import type { SessionEntry } from "./types.js";
 
 type SessionEntryRetirement = {
@@ -154,7 +151,6 @@ export async function commitReplySessionInitialization(params: {
   expectedRevision: string;
   maintenanceConfig?: ResolvedSessionMaintenanceConfig;
   onArchiveError?: (error: unknown, sourcePath: string) => void;
-  onMaintenanceWarning?: (warning: SessionMaintenanceWarning) => void | Promise<void>;
   prepareSessionEntry?: (
     context: ReplySessionInitializationCommitContext,
   ) => Promise<SessionEntry> | SessionEntry;

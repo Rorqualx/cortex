@@ -16,7 +16,6 @@ export type CaptureSessionToForgeParams = {
   workspaceDir: string;
   trigger: CaptureTrigger;
   sessionKey?: string;
-  runtimeFile?: string;
   now?: Date;
   env?: NodeJS.ProcessEnv;
 };
@@ -37,7 +36,6 @@ export async function captureSessionToForge(
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
       workspaceDir: params.workspaceDir,
-      runtimeFile: params.runtimeFile,
     });
     const manifest: SkillForgeCaptureManifest = {
       forgeSchema: FORGE_SCHEMA,

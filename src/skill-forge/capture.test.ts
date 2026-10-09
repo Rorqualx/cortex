@@ -30,7 +30,6 @@ function fakeBundleResult(outputDir: string) {
     outputDir,
     events: [],
     header: null,
-    runtimeFile: undefined,
     supplementalFiles: ["metadata.json", "artifacts.json"],
   };
 }
@@ -134,7 +133,7 @@ describe("captureSessionToForge", () => {
     expect(result.error).toBeInstanceOf(Error);
   });
 
-  it("forwards sessionKey and runtimeFile to the underlying exporter", async () => {
+  it("forwards sessionKey to the underlying exporter", async () => {
     exportTrajectoryBundleMock.mockImplementation(async (input: { outputDir: string }) => {
       await fsp.mkdir(input.outputDir, { recursive: true });
       return fakeBundleResult(input.outputDir);
@@ -144,7 +143,6 @@ describe("captureSessionToForge", () => {
       sessionFile: "/workspace/session.jsonl",
       sessionId: "sess-4",
       sessionKey: "agent:sub:42",
-      runtimeFile: "/workspace/session.trajectory.jsonl",
       workspaceDir: "/workspace",
       trigger: "subagent-end",
       env: { OPENCLAW_STATE_DIR: stateDir, OPENCLAW_TEST_FAST: "1" },
@@ -156,7 +154,6 @@ describe("captureSessionToForge", () => {
         sessionFile: "/workspace/session.jsonl",
         sessionId: "sess-4",
         sessionKey: "agent:sub:42",
-        runtimeFile: "/workspace/session.trajectory.jsonl",
         workspaceDir: "/workspace",
       }),
     );

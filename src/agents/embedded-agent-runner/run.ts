@@ -2252,7 +2252,7 @@ export async function runEmbeddedAgent(
             }
             continue;
           }
-          const requestedSelection = shouldSwitchToLiveModel({
+          const requestedSelection = await shouldSwitchToLiveModel({
             cfg: params.config,
             sessionKey: resolvedSessionKey,
             agentId: params.agentId,

@@ -2,7 +2,7 @@
 import type { Command } from "commander";
 import { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text.js";
 import { getTerminalTableWidth, renderTable } from "../../packages/terminal-core/src/table.js";
-import { theme } from "../../packages/terminal-core/src/theme.js";
+import { isRich, theme } from "../../packages/terminal-core/src/theme.js";
 import { AgentSelectionRequiredError, listAgentIds } from "../agents/agent-scope-config.js";
 import { readConfigFileSnapshot, replaceConfigFile } from "../config/config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";

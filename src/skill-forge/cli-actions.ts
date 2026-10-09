@@ -149,7 +149,6 @@ export async function actionCaptureDir(params: {
       sessionId: meta.sessionId,
       sessionKey: meta.sessionKey,
       workspaceDir: meta.workspaceDir,
-      runtimeFile: trajectoryPath,
       trigger: "manual",
       env,
     });
@@ -312,7 +311,6 @@ export async function actionDaemonScan(params: {
       sessionId: meta.sessionId,
       sessionKey: meta.sessionKey,
       workspaceDir: meta.workspaceDir,
-      runtimeFile: trajectoryPath,
       trigger: "session-end",
       env,
     });

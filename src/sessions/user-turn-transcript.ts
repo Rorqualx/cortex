@@ -243,7 +243,7 @@ async function persistUserTurnTranscriptToFile(params: {
       ...(target.agentId ? { agentId: target.agentId } : {}),
     };
     await waitForSessionTranscriptProjection(anchorScope);
-    const anchor = readActiveTranscriptEntryAnchor({
+    const anchor = await readActiveTranscriptEntryAnchorAsync({
       ...anchorScope,
       entryId: appended.messageId,
     });
