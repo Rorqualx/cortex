@@ -789,3 +789,24 @@ Route tonight measured backlog 1977 first-parent commits behind full tip;
 batch stays e25a98150544. Land sequence once the decision is recorded is
 unchanged: stage-resume (absorb main) -> apply A/B -> preflight + huey proof
 -> finish-land.
+
+## 2026-10-09 03:40Z resume: fourteenth decision check — block stands
+
+Fourteenth check (03:40Z, ~1h after the thirteenth). All record surfaces
+re-verified: no ledger entry below the decision line (staged branch on origin
+still @ 2d7302f31ba — maintainer has not pushed); origin/main @ e11f53338a5
+unchanged since 10-07 13:36Z; baseline on main unchanged (590540 B / cap
+590848 B, updatedAt 2026-09-29); MEMORY.md re-grepped — no verdict; no
+2026-10-09 daily; 2026-10-08 daily carries no budget decision. Decision A
+(accept upstream client typebox, baseline 626209 B, cap 577->612 KiB +
+startupJsRequests 28->30, recommended) vs B (trim startup path, ~589603 B)
+remains UNRECORDED. Branch unchanged from 2d7302f31ba (clean tree, no merge
+in progress; local preflight PASS verdict on 3c3ca22ef73 carries — ledger
+commits since added only text). No huey proof re-run on the unchanged branch
+(standing instruction; structural budget red, three identical verdicts on
+file: 10-06 12:09Z/15:59Z, 10-07 13:27Z); full preflight + huey proof
+(test:fast + autoreview) owed at land time. No land (cap raise is a playbook
+hard-block). Route tonight measured backlog 1988 first-parent commits behind
+full tip 15305ccd53 (1977 at the thirteenth); batch stays e25a98150544. Land
+sequence once the decision is recorded is unchanged: stage-resume (absorb
+main) -> apply A/B -> preflight + huey proof -> finish-land.
