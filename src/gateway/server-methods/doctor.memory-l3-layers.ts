@@ -9,6 +9,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { resolveAgentWorkspaceDir } from "../../agents/agent-scope.js";
+import { listAgentEntries } from "../../commands/agents.config.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { requireNodeSqlite } from "../../infra/node-sqlite.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
@@ -286,7 +287,7 @@ async function renderGlobalLayer(layerId: string): Promise<string> {
 
 /** Distinct L3 roots across all configured agents (agents often share a workspace). */
 function uniqueL3Roots(cfg: OpenClawConfig): string[] {
-  const list = Array.isArray(cfg.agents?.list) ? cfg.agents.list : [];
+  const list = listAgentEntries(cfg);
   const seen = new Set<string>();
   const roots: string[] = [];
   for (const entry of list) {

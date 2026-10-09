@@ -78,12 +78,9 @@ describe("resolveExtraParams", () => {
     const result = resolveExtraParams({
       cfg: {
         agents: {
-          list: [
-            {
-              id: "risk-reviewer",
-              params: { cacheRetention: "none" },
-            },
-          ],
+          entries: {
+            "risk-reviewer": { params: { cacheRetention: "none" } },
+          },
         },
       },
       provider: "anthropic",
@@ -108,12 +105,7 @@ describe("resolveExtraParams", () => {
               },
             },
           },
-          list: [
-            {
-              id: "risk-reviewer",
-              params: { cacheRetention: "none" },
-            },
-          ],
+          entries: { "risk-reviewer": { params: { cacheRetention: "none" } } },
         },
       },
       provider: "anthropic",
@@ -140,14 +132,13 @@ describe("resolveExtraParams", () => {
               },
             },
           },
-          list: [
-            {
-              id: "main",
+          entries: {
+            main: {
               params: {
                 parallelToolCalls: false,
               },
             },
-          ],
+          },
         },
       },
       provider: "openai",
@@ -173,14 +164,13 @@ describe("resolveExtraParams", () => {
               },
             },
           },
-          list: [
-            {
-              id: "main",
+          entries: {
+            main: {
               params: {
                 textVerbosity: "low",
               },
             },
-          ],
+          },
         },
       },
       provider: "openai",
@@ -208,14 +198,13 @@ describe("resolveExtraParams", () => {
               },
             },
           },
-          list: [
-            {
-              id: "main",
+          entries: {
+            main: {
               params: {
                 responseFormat: { type: "json_object" },
               },
             },
-          ],
+          },
         },
       },
       provider: "openai",
@@ -235,12 +224,7 @@ describe("resolveExtraParams", () => {
     const result = resolveExtraParams({
       cfg: {
         agents: {
-          list: [
-            {
-              id: "risk-reviewer",
-              params: { cacheRetention: "none" },
-            },
-          ],
+          entries: { "risk-reviewer": { params: { cacheRetention: "none" } } },
         },
       },
       provider: "anthropic",

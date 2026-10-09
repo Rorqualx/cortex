@@ -88,7 +88,7 @@ async function withDiscoveryState(
     let cfg: OpenClawConfig = {
       plugins: { enabled: false },
       skills: { load: { watch: false } },
-      agents: { list: [{ id: "main", workspace: state.workspaceDir }] },
+      agents: { entries: { main: { workspace: state.workspaceDir } } },
     };
     await seed();
     const projection = await createSessionRowProjection({ cfg, modelCatalog: [] });

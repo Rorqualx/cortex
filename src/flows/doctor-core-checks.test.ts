@@ -9,7 +9,7 @@ import type { SecurityAuditFinding } from "../security/audit.types.js";
 import type { SkillStatusEntry } from "../skills/discovery/status.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import { CORE_HEALTH_CHECKS, createCoreHealthChecks } from "./doctor-core-checks.js";
-import type { HealthCheck, HealthFinding } from "./health-checks.js";
+import type { HealthRepairEffect, HealthCheck, HealthFinding } from "./health-checks.js";
 
 const mocks = vi.hoisted(() => ({
   loadModelCatalog: vi.fn(async () => []),
@@ -201,7 +201,7 @@ describe("CORE_HEALTH_CHECKS", () => {
       check.detect({
         mode: "lint",
         runtime,
-        cfg: { agents: { list: [{ id: "alpha", default: true }, { id: "beta" }] } },
+        cfg: { agents: { entries: { alpha: {}, beta: {} } } },
       }),
     ).resolves.toEqual([]);
     expect(detectUnavailableSkills).not.toHaveBeenCalled();

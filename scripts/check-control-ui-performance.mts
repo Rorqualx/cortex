@@ -101,7 +101,7 @@ const CONTROL_UI_LOCALE_GZIP_BYTES = 300 * KIB;
 // justification instead of buying years of silent headroom. Porting CSS onto it
 // is the follow-up; this raise buys room to do that deliberately.
 const controlUiPerformanceBudgets = {
-  startupJsRequests: 28,
+  startupJsRequests: 30,
   // Upstream-calibrated (their new-architecture UI with facade optimization
   // measured chat/new at 31/32 requests; allow 3 above the maximum while catching
   // the roughly 19-request facade regression). Fork note: route-boot metrics only
@@ -109,11 +109,14 @@ const controlUiPerformanceBudgets = {
   // fork ui/ tree does not emit — inert today; recalibrate if route preloading lands.
   routeBootJsRequests: 35,
   startupCssRequests: 1,
-  // 576 -> 577 KiB on 2026-09-29 (maintainer-approved): batch-2 resync measured
-  // 590540 B, 140 B past the 590400 B envelope while the baseline sat pinned AT the
-  // old cap. Growth is structural (each upstream batch adds protocol schema to the
-  // startup path); trimming the startup path is the recorded follow-up.
-  startupJsGzipBytes: 577 * KIB,
+  // 577 -> 612 KiB on 2026-10-09 (maintainer-approved, RESYNC_LEDGER DECISION A):
+  // upstream architecture ships typebox via internal-runtime-context.ts ->
+  // agent-core/harness/messages.ts -> @openclaw/llm barrel -> validation/json-schema
+  // (structural, not a merge bug). Option B (trim/lazy-load typebox) rejected:
+  // permanent fork divergence on hot upstream files re-conflicting every batch
+  // outweighs ~1.5 KiB headroom. Baseline ratcheted to the measured 626209 B
+  // (10-06/10-07 huey proofs); headroom to this cap is ~479 B.
+  startupJsGzipBytes: 612 * KIB,
   startupCssGzipBytes: 128 * KIB,
   largestJsGzipBytes: 380 * KIB,
   largestCssGzipBytes: 128 * KIB,

@@ -117,14 +117,13 @@ describe("resolveCronFallbacksOverride", () => {
                 },
               },
             },
-            list: [
-              {
-                id: "research",
+            entries: {
+              research: {
                 model: {
                   primary: "anthropic/claude-opus-4-6",
                 },
               },
-            ],
+            },
           },
         },
         agentId: "research",

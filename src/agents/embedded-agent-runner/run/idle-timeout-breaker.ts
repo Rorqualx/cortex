@@ -2,7 +2,7 @@
 // across every fallback profile (#76293). Partial billed tokens are not progress.
 export const MAX_CONSECUTIVE_IDLE_TIMEOUTS_BEFORE_OUTPUT = 5;
 
-type IdleTimeoutBreakerState = {
+export type IdleTimeoutBreakerState = {
   consecutiveIdleTimeoutsBeforeOutput: number;
 };
 
@@ -15,10 +15,7 @@ export function createIdleTimeoutBreakerState(): IdleTimeoutBreakerState {
 export function stepIdleTimeoutBreaker(
   state: IdleTimeoutBreakerState,
   input: { idleTimedOut: boolean; completedModelProgress: boolean; outputTokens?: number },
-  options?: { cap?: number },
 ) {
-  const cap = options?.cap ?? MAX_CONSECUTIVE_IDLE_TIMEOUTS_BEFORE_OUTPUT;
-
   if (input.idleTimedOut && !input.completedModelProgress) {
     state.consecutiveIdleTimeoutsBeforeOutput += 1;
   } else if (input.completedModelProgress) {
@@ -27,6 +24,7 @@ export function stepIdleTimeoutBreaker(
 
   return {
     consecutive: state.consecutiveIdleTimeoutsBeforeOutput,
-    tripped: cap > 0 && state.consecutiveIdleTimeoutsBeforeOutput >= cap,
+    tripped:
+      state.consecutiveIdleTimeoutsBeforeOutput >= MAX_CONSECUTIVE_IDLE_TIMEOUTS_BEFORE_OUTPUT,
   };
 }
