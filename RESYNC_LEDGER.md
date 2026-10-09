@@ -768,3 +768,24 @@ eleventh check today, 1346 at 10-07 04:40Z); batch stays e25a98150544. Land
 sequence once the decision is recorded is unchanged: stage-resume (absorb main) ->
 apply A/B -> preflight + huey proof (test:fast behavior gate + autoreview owed at
 land time) -> finish-land.
+
+## 2026-10-09 02:40Z resume: thirteenth decision check — block stands
+
+Thirteenth check (02:40Z, ~5h after the twelfth). All record surfaces re-verified:
+no ledger entry below the decision line (staged branch on origin still @
+383b1f41804 — maintainer has not pushed); baseline on main unchanged
+(590540 B / cap 590848 B, updatedAt 2026-09-29); origin/main @ e11f53338a5
+unchanged since 10-07 13:36Z; MEMORY.md carries no verdict; 2026-10-08 daily
+still carries only the separate deploy-testgate hold note; 2026-10-06 daily
+remains the only block record. Decision A (accept upstream client typebox,
+baseline 626209 B, cap 577->612 KiB + startupJsRequests 28->30, recommended)
+vs B (trim startup path, ~589603 B) remains UNRECORDED. Branch unchanged from
+383b1f41804 (clean tree, no merge in progress; local preflight PASS verdict
+on 3c3ca22ef73 carries — 383b1f41804 added only this ledger). No huey proof
+re-run on the unchanged branch (standing instruction; structural budget red,
+three identical verdicts on file); full preflight + huey proof (test:fast +
+autoreview) owed at land time. No land (cap raise is a playbook hard-block).
+Route tonight measured backlog 1977 first-parent commits behind full tip;
+batch stays e25a98150544. Land sequence once the decision is recorded is
+unchanged: stage-resume (absorb main) -> apply A/B -> preflight + huey proof
+-> finish-land.
