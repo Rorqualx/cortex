@@ -242,6 +242,10 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
         agentId: sessionAgentId,
         messageActionTurnCapability:
           options?.messageToolTurnCapability?.token ?? options?.messageActionTurnCapability,
+        // Upstream contract: scheduled authority arrives under the factory-option
+        // name; without this mapping the message tool sees no admission callback
+        // and fails closed on every scheduled send (cron announce, isolated runs).
+        admitScheduledInvocation: options?.admitScheduledMessageInvocation,
         config: options?.config,
         preparedMessageToolCatalog: options?.preparedModelRuntime?.messageToolCatalog,
         currentMessagingTarget:
@@ -556,9 +560,9 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
       ? [
           createSessionsSpawnTool({
             agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
-          // Upstream: only a keyed parent has a stored incarnation for spawn to check.
-          expectedParentSessionId:
-            (options?.runSessionKey ?? options?.agentSessionKey) ? options?.sessionId : undefined,
+            // Upstream: only a keyed parent has a stored incarnation for spawn to check.
+            expectedParentSessionId:
+              (options?.runSessionKey ?? options?.agentSessionKey) ? options?.sessionId : undefined,
             requesterTurnRunId: options?.runId,
             requesterThinkingLevel: options?.requesterThinkingLevel,
             completionOwnerKey: options?.runSessionKey,
