@@ -32,8 +32,4 @@ export const defaultLlmRuntime = defaultRuntime.runtime;
 export const { registerApiProvider, getApiProvider, getApiProviders, unregisterApiProviders } =
   defaultApiRegistry;
 
-export function clearApiProviders(): void {
-  defaultApiRegistry.clearApiProviders();
-}
-
 export const { stream, complete, streamSimple, completeSimple } = defaultLlmRuntime;

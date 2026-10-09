@@ -69,18 +69,7 @@ function trimDreamingStatsEntries(
   entries: ShortTermDreamingStatsEntry[],
   compare: (a: ShortTermDreamingStatsEntry, b: ShortTermDreamingStatsEntry) => number,
 ): ShortTermDreamingStatsEntry[] {
-  const selected: ShortTermDreamingStatsEntry[] = [];
-  for (const entry of entries) {
-    const match = selected.findIndex((current) => compare(entry, current) < 0);
-    const insertAt = match < 0 ? selected.length : match;
-    if (insertAt < DREAMING_ENTRY_LIST_LIMIT) {
-      selected.splice(insertAt, 0, entry);
-      if (selected.length > DREAMING_ENTRY_LIST_LIMIT) {
-        selected.pop();
-      }
-    }
-  }
-  return selected;
+  return entries.toSorted(compare).slice(0, DREAMING_ENTRY_LIST_LIMIT);
 }
 
 export async function loadShortTermPromotionDreamingStats(params: {
@@ -121,9 +110,9 @@ export async function loadShortTermPromotionDreamingStats(params: {
       continue;
     }
     const range = parseEntryRangeFromKey(entryKey, entry.startLine, entry.endLine);
-    const recallCount = Math.max(0, toFiniteNonNegativeInt(entry.recallCount));
-    const dailyCount = Math.max(0, toFiniteNonNegativeInt(entry.dailyCount));
-    const groundedCount = Math.max(0, toFiniteNonNegativeInt(entry.groundedCount));
+    const recallCount = toFiniteNonNegativeInt(entry.recallCount);
+    const dailyCount = toFiniteNonNegativeInt(entry.dailyCount);
+    const groundedCount = toFiniteNonNegativeInt(entry.groundedCount);
     const totalEntrySignalCount = recallCount + dailyCount + groundedCount;
     const normalizedEntryPath = normalizeMemoryPathForWorkspace(workspaceDir, entry.path);
     const detail: ShortTermDreamingStatsEntry = {
@@ -172,8 +161,8 @@ export async function loadShortTermPromotionDreamingStats(params: {
     if (!detail) {
       continue;
     }
-    const lightHits = Math.max(0, toFiniteNonNegativeInt(phaseEntry.lightHits));
-    const remHits = Math.max(0, toFiniteNonNegativeInt(phaseEntry.remHits));
+    const lightHits = toFiniteNonNegativeInt(phaseEntry.lightHits);
+    const remHits = toFiniteNonNegativeInt(phaseEntry.remHits);
     lightPhaseHitCount += lightHits;
     remPhaseHitCount += remHits;
     phaseSignalCount += lightHits + remHits;

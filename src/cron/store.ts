@@ -10,7 +10,6 @@ import {
   runOpenClawStateWriteTransaction,
 } from "../state/openclaw-state-db.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
-import { runOpenClawStateWorkerOperation } from "../state/openclaw-state-worker-store.js";
 import { runCronRuntimeMutation } from "./service/runtime-mutation.js";
 import { invalidateCronJobNames, publishCronJobNames } from "./store/job-name.js";
 import { readCronJobNamesInDatabase } from "./store/job-name.kernel.js";
@@ -18,6 +17,7 @@ import { cronStoreKey } from "./store/key.js";
 import { restoreCronLoadError } from "./store/load-error.js";
 import { loadCronStoreFromDatabase } from "./store/load.kernel.js";
 import { resolveCronJobsStorePath } from "./store/paths.js";
+import { runCronStoreAuthorityOperation } from "./store/receipt-authority-operation.js";
 import {
   assertCronStoreCanPersist,
   readCronJobsFingerprint,
@@ -77,7 +77,7 @@ export async function loadCronJobsStoreWithConfigJobs(storePath: string): Promis
   const context = captureOpenClawStateWorkerContext();
   let received = false;
   try {
-    return await runOpenClawStateWorkerOperation(context, async (scope) => {
+    return await runCronStoreAuthorityOperation(context, async (scope) => {
       const result = await scope.execute({ type: "cron.loadMutable", input: { storeKey } });
       received = true;
       for (let index = 0; index < result.repairCommits; index += 1) {
@@ -243,7 +243,7 @@ async function saveCronStoreWithWorker<Value>(
   const context = captureOpenClawStateWorkerContext();
   let received = false;
   try {
-    return await runOpenClawStateWorkerOperation(context, async (scope) => {
+    return await runCronStoreAuthorityOperation(context, async (scope) => {
       const result = await operation(scope);
       received = true;
       const revision =
