@@ -810,3 +810,27 @@ hard-block). Route tonight measured backlog 1988 first-parent commits behind
 full tip 15305ccd53 (1977 at the thirteenth); batch stays e25a98150544. Land
 sequence once the decision is recorded is unchanged: stage-resume (absorb
 main) -> apply A/B -> preflight + huey proof -> finish-land.
+
+## MAINTAINER DECISION RECORDED 2026-10-09 ~03:50Z (joederas, via Claude Code session): **Option A — accept upstream client typebox**
+
+The maintainer approved decision A for the Control-UI startup-JS budget block
+(2026-10-06 root cause: upstream architecture ships typebox via
+internal-runtime-context.ts -> agent-core/harness/messages.ts -> @openclaw/llm
+barrel -> validation/json-schema; NOT a merge bug):
+
+- Raise the fork startup-JS cap 577 KiB -> 612 KiB (626,688 B) and
+  startupJsRequests 28 -> 30, in the fork-owned checker/budget files
+  (check-control-ui-performance.mts + budget baseline JSON, KEEP-OURS).
+- Set the committed baseline to the measured value at land time (~626,209 B
+  per the 10-06/10-07 proofs; re-measure if the land-time build differs).
+- Do NOT trim or lazy-load typebox (option B rejected: permanent fork
+  divergence on hot upstream files re-conflicting every batch outweighs
+  ~1.5 KiB headroom).
+- The startup-JS gate still blocks future growth past the new 612 KiB cap;
+  headroom after this land is ~479 B over the 626,209 B measurement.
+
+Standing instruction satisfied: on this recorded decision, the next run may
+apply A and proceed stage-resume (absorb main) -> apply A -> local preflight
+-> huey proof (test:fast + autoreview) -> finish-land for batch
+e25a98150544, then continue the bounded-batch loop toward full-tip
+convergence (~1988 first-parent behind at the fourteenth check).
