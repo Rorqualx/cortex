@@ -1,3 +1,6 @@
+// MemoType type-dispatched retrieval (QW3, 2026-10-09): per-category scoring
+// presets for typed-fact items, following the intent-preset pattern above.
+import { getCategoryScoringPreset, resolveTypedFactCategory } from "./category-presets.js";
 import { readSharedFacts } from "./cross-context.js";
 import { recordRetrievalSignals } from "./entities.js";
 import {
@@ -632,6 +635,8 @@ export async function retrieveTopK(params: {
     sourceTrust?: import("./types.js").SourceTrust;
     /** QW1 (2026-10-08): superseded fact re-admitted under historical/temporal intent. */
     superseded?: boolean;
+    /** QW3 (2026-10-09, MemoType): resolved typed-fact category for preset dispatch. */
+    category?: string;
   };
   const items: ScorableItem[] = [];
 
@@ -664,6 +669,7 @@ export async function retrieveTopK(params: {
         l3Boost: 0,
         tierBoost: config.weightTypedFactTierBoost,
         contextWindow: doc.frontmatter.contextWindow,
+        category: resolveTypedFactCategory(typed.slot),
       });
     }
   }
@@ -680,6 +686,7 @@ export async function retrieveTopK(params: {
       l3Boost: 0,
       tierBoost: config.weightLongTermTierBoost,
       sourceTrust: ltt.sourceTrust,
+      category: resolveTypedFactCategory(ltt.slot),
     });
   }
 
@@ -786,8 +793,15 @@ export async function retrieveTopK(params: {
   type PrescoredItem = {
     item: ScorableItem;
     signals: Signals;
+    /** QW3 (2026-10-09): per-item scoring config (category preset when dispatched). */
+    config: ScoringConfig;
   };
   const prescored: PrescoredItem[] = [];
+  // MemoType type-dispatched retrieval (QW3, 2026-10-09): typed-fact items
+  // with a resolvable category are scored with their category preset instead
+  // of the global config. Explicit caller config always wins (explicit >
+  // preset), mirroring the intent-preset priority.
+  const allowCategoryPresets = !params.config;
 
   // QW-2: Wall-clock deadline for scoring. When set, bail out of the scoring
   // loop early if the deadline is exceeded. Items not scored are simply
@@ -812,11 +826,15 @@ export async function retrieveTopK(params: {
       }
       break;
     }
+    const itemConfig =
+      allowCategoryPresets && item.category
+        ? getCategoryScoringPreset(item.category)
+        : effectiveConfig;
     const signals = scoreFact({
       queryTokens,
       fact: item.fact,
       now,
-      config: effectiveConfig,
+      config: itemConfig,
       l3Boost: item.l3Boost,
       corpusStats,
       significant: item.fact.significant,
@@ -853,7 +871,7 @@ export async function retrieveTopK(params: {
       signals.bm25 = 0;
       signals.lexical = 0;
     }
-    prescored.push({ item, signals });
+    prescored.push({ item, signals, config: itemConfig });
   }
 
   // QW-1: Reciprocal Rank Fusion — when enabled, fuse BM25 and semantic
@@ -896,7 +914,7 @@ export async function retrieveTopK(params: {
   const centralityMaxDegree = Math.max(1, config.staleCentralityMaxDegree ?? 6);
 
   const scored: RetrievedFact[] = [];
-  for (const { item, signals } of prescored) {
+  for (const { item, signals, config: itemConfig } of prescored) {
     let baseScore: number;
     if (rrfScores) {
       // RRF mode: replace bm25 + semantic weighted contributions with the
@@ -911,10 +929,10 @@ export async function retrieveTopK(params: {
         bm25: 0,
         semantic: 0,
       };
-      const zeroedWeights = effectiveConfig.weightBm25 + effectiveConfig.weightSemantic;
-      baseScore = composite(adjustedSignals, effectiveConfig) + rrfScore * zeroedWeights;
+      const zeroedWeights = itemConfig.weightBm25 + itemConfig.weightSemantic;
+      baseScore = composite(adjustedSignals, itemConfig) + rrfScore * zeroedWeights;
     } else {
-      baseScore = composite(signals, effectiveConfig);
+      baseScore = composite(signals, itemConfig);
     }
     const rawScore = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
     // Stale-utility demotion: facts never retrieved across multiple epochs

@@ -2118,3 +2118,93 @@ describe("retrieveTopK with query reformulation", () => {
     expect(Math.max(result.facts[1]!.signals.bm25, result.facts[1]!.signals.semantic)).toBe(0);
   });
 });
+
+describe("retrieveTopK type-dispatched retrieval (MemoType, QW3)", () => {
+  const writeTypedChunk = async (
+    chunkId: string,
+    typedFacts: TypedFact[],
+    createdAt: number = NOW,
+  ): Promise<void> => writeChunk(chunkId, [], createdAt, typedFacts);
+
+  it("scores a lexically-matching infra typed fact higher under category dispatch than under an explicit config", async () => {
+    await writeTypedChunk("c1", [
+      {
+        id: "t1",
+        slot: "infra:gateway_ip",
+        value: "192.168.50.1",
+        sourceSpan: "the gateway is 192.168.50.1",
+        unit: null,
+        confidence: 0.9,
+        createdAt: NOW,
+      },
+    ]);
+    const query = "gateway ip 192.168.50.1";
+    // Dispatched (no explicit config): keyword-first preset for infra —
+    // BM25 weight 0.5 vs the default 0.3, with an exact-term match.
+    const dispatched = await retrieveTopK({ query, storage, topK: 5, now: NOW });
+    // Explicit config: caller wins, category presets suppressed.
+    const explicit = await retrieveTopK({
+      query,
+      storage,
+      topK: 5,
+      now: NOW,
+      config: DEFAULT_SCORING_CONFIG,
+    });
+    expect(dispatched.facts).toHaveLength(1);
+    expect(explicit.facts).toHaveLength(1);
+    expect(dispatched.facts[0]!.tier).toBe("typed");
+    expect(dispatched.facts[0]!.score).toBeGreaterThan(explicit.facts[0]!.score);
+  });
+
+  it("scores a fresh task typed fact higher under recency-weighted category dispatch", async () => {
+    await writeTypedChunk("c1", [
+      {
+        id: "t2",
+        slot: "task:gateway_migration",
+        value: "in progress",
+        sourceSpan: "the gateway migration is in progress",
+        unit: null,
+        confidence: 0.9,
+        createdAt: NOW,
+      },
+    ]);
+    const query = "gateway migration";
+    const dispatched = await retrieveTopK({ query, storage, topK: 5, now: NOW });
+    const explicit = await retrieveTopK({
+      query,
+      storage,
+      topK: 5,
+      now: NOW,
+      config: DEFAULT_SCORING_CONFIG,
+    });
+    // Recency-weighted preset (0.25 vs 0.05 default) dominates for a fact
+    // created at `now` (retrievability ~1), with lexical weight only
+    // slightly reduced.
+    expect(dispatched.facts[0]!.score).toBeGreaterThan(explicit.facts[0]!.score);
+  });
+
+  it("leaves un-namespaced typed facts on the effective config (no dispatch)", async () => {
+    await writeTypedChunk("c1", [
+      {
+        id: "t3",
+        slot: "gateway",
+        value: "192.168.50.1",
+        sourceSpan: "the gateway is 192.168.50.1",
+        unit: null,
+        confidence: 0.9,
+        createdAt: NOW,
+      },
+    ]);
+    const query = "gateway 192.168.50.1";
+    const dispatched = await retrieveTopK({ query, storage, topK: 5, now: NOW });
+    const explicit = await retrieveTopK({
+      query,
+      storage,
+      topK: 5,
+      now: NOW,
+      config: DEFAULT_SCORING_CONFIG,
+    });
+    // No inferable category: both runs use the same config for this fact.
+    expect(dispatched.facts[0]!.score).toBe(explicit.facts[0]!.score);
+  });
+});
