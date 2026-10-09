@@ -258,6 +258,34 @@ describe("deepseek provider plugin", () => {
     });
   });
 
+  it("flags retired v4-flash ids as deprecated with deepseek-flash replacements", () => {
+    // 2026-09 DeepSeek alias consolidation: pins on retired v4-flash names must
+    // carry catalog-level deprecation + replacedBy so doctor --fix repoints them
+    // (reassign-runtime reads replacedBy from the prepared runtime catalog, which
+    // takes priority over the advisory provider-index preview catalog).
+    const retiredByProvider = Object.entries(manifest.modelCatalog.providers).map(
+      ([providerId, provider]) => ({
+        providerId,
+        retired: (provider.models ?? [])
+          .filter((model) => model.status === "deprecated")
+          .map((model) => ({ id: model.id, replacedBy: model.replacedBy })),
+      }),
+    );
+    expect(retiredByProvider).toEqual([
+      {
+        providerId: "deepseek",
+        retired: [
+          { id: "deepseek-v4-flash", replacedBy: "deepseek-flash" },
+          { id: "deepseek-v4-flash-vision-exp", replacedBy: "deepseek-flash" },
+        ],
+      },
+      {
+        providerId: "deepseek-anthropic",
+        retired: [{ id: "deepseek-v4-flash-vision-exp", replacedBy: "deepseek-flash" }],
+      },
+    ]);
+  });
+
   it("resolves API-key usage auth from DeepSeek config sources", async () => {
     const provider = await registerSingleProviderPlugin(deepseekPlugin);
 

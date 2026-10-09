@@ -67,9 +67,11 @@ export const OPENCLAW_PROVIDER_INDEX = {
             // 2026-09 DeepSeek alias consolidation: deepseek-v4-flash (and the
             // experimental vision variant) were folded into `deepseek-flash`.
             // Pins on the retired ids are repointed here by doctor --fix.
+            // 2026-10-09: aligned with the plugin manifest — V4.1 Flash is the
+            // current served generation and accepts image input.
             id: "deepseek-flash",
-            name: "DeepSeek Flash",
-            input: ["text"],
+            name: "DeepSeek V4.1 Flash",
+            input: ["text", "image"],
             reasoning: true,
             contextWindow: 1000000,
           },
@@ -94,7 +96,7 @@ export const OPENCLAW_PROVIDER_INDEX = {
             contextWindow: 1000000,
             status: "deprecated",
             statusReason:
-              "Retired by the deepseek-flash consolidation. deepseek-flash is text-only: repointing this alias silently drops image input.",
+              "Retired by the deepseek-flash consolidation. V4.1 Flash accepts image input, so repointing preserves modality.",
             replacedBy: "deepseek-flash",
           },
           {

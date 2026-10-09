@@ -40,6 +40,9 @@
           {
             "id": "deepseek-v4-flash",
             "name": "DeepSeek V4 Flash",
+            "status": "deprecated",
+            "statusReason": "Consolidated into deepseek-flash by DeepSeek's 2026-09 alias rename.",
+            "replacedBy": "deepseek-flash",
             "reasoning": true,
             "input": ["text"],
             "contextWindow": 1000000,
@@ -80,6 +83,9 @@
           {
             "id": "deepseek-v4-flash-vision-exp",
             "name": "DeepSeek V4 Flash Vision (Experimental)",
+            "status": "deprecated",
+            "statusReason": "Retired by the deepseek-flash consolidation; V4.1 Flash accepts image input, so doctor --fix repointing preserves modality.",
+            "replacedBy": "deepseek-flash",
             "reasoning": true,
             "input": ["text", "image"],
             "contextWindow": 1000000,
@@ -161,6 +167,9 @@
           {
             "id": "deepseek-v4-flash-vision-exp",
             "name": "DeepSeek V4 Flash Vision (Experimental)",
+            "status": "deprecated",
+            "statusReason": "Retired by the deepseek-flash consolidation; V4.1 Flash accepts image input, so doctor --fix repointing preserves modality.",
+            "replacedBy": "deepseek-flash",
             "reasoning": true,
             "input": ["text", "image"],
             "contextWindow": 1000000,
