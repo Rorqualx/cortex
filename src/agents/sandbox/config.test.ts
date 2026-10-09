@@ -78,16 +78,15 @@ describe("sandbox osSandbox config resolution", () => {
             },
           },
         },
-        list: [
-          {
-            id: "worker",
+        entries: {
+          worker: {
             sandbox: {
               osSandbox: {
                 extraWritableRoots: ["/agent/path"],
               },
             },
           },
-        ],
+        },
       },
     };
     const resolved = resolveSandboxConfigForAgent(cfg, "worker");
@@ -104,16 +103,15 @@ describe("sandbox osSandbox config resolution", () => {
             },
           },
         },
-        list: [
-          {
-            id: "worker",
+        entries: {
+          worker: {
             sandbox: {
               osSandbox: {
                 extraProtectedMetadata: [".vault-token"],
               },
             },
           },
-        ],
+        },
       },
     };
     const resolved = resolveSandboxConfigForAgent(cfg, "worker");
@@ -130,16 +128,15 @@ describe("sandbox osSandbox config resolution", () => {
             },
           },
         },
-        list: [
-          {
-            id: "worker",
+        entries: {
+          worker: {
             sandbox: {
               osSandbox: {
                 network: "allow",
               },
             },
           },
-        ],
+        },
       },
     };
     const resolved = resolveSandboxConfigForAgent(cfg, "worker");
