@@ -37,6 +37,11 @@ import { createRequesterYieldCallback } from "./openclaw-tools.requester-yield.j
 import { createOpenClawSwarmToolGroups } from "./openclaw-tools.swarm.js";
 import type { OpenClawToolsOptions } from "./openclaw-tools.types.js";
 import { resolveWidgetPresentationForRun } from "./openclaw-tools.widget-presentation.js";
+import {
+  withPreparedToolConstruction,
+  type PreparedToolConstruction,
+  type ToolConstructionPreparationOptions,
+} from "./tool-construction-preparation.js";
 import { createSessionAwarenessTool } from "./sessions/tools/session-awareness-tool.js";
 import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
@@ -72,6 +77,7 @@ import { createMessageTool } from "./tools/message-tool-execution.js";
 import { createMobileUiTool } from "./tools/mobile-ui-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
+import { createOpenClawDelegateToolsForRunAsync } from "./tools/openclaw-delegate-tool.js";
 import { createPdfTool } from "./tools/pdf-tool.js";
 import { createAvailablePortalTools } from "./tools/portal-tool.js";
 import { createProgressCardTool } from "./tools/progress-card-tool.js";
@@ -98,7 +104,47 @@ import { createWorkboardTools } from "./tools/workboard-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
 export { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
-export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentTool[] {
+export async function createOpenClawToolsAsync(
+  options?: OpenClawToolsOptions,
+  preparation: ToolConstructionPreparationOptions = {},
+): Promise<AnyAgentTool[]> {
+  return withPreparedToolConstruction(
+    options?.config,
+    {
+      ...preparation,
+      assertCurrent: () => {
+        preparation.assertCurrent?.();
+        options?.assertInvocationCurrent?.();
+      },
+    },
+    (shared) => createOpenClawToolsWithPreparation(options, shared),
+  );
+}
+
+/** Coding-tool assembly retains this same scope across its construction boundary. */
+export async function createOpenClawToolsWithPreparation(
+  options: OpenClawToolsOptions | undefined,
+  shared: PreparedToolConstruction,
+): Promise<AnyAgentTool[]> {
+  const captured = { ...options, config: shared.config };
+  const { sessionAgentId } = resolveSessionAgentIds({
+    sessionKey: captured.runSessionKey ?? captured.agentSessionKey,
+    config: captured.config,
+    agentId: captured.requesterAgentIdOverride,
+  });
+  const delegated = isEmbeddedMode()
+    ? []
+    : await createOpenClawDelegateToolsForRunAsync({ ...captured, sessionAgentId }, shared);
+  shared.assertCurrent();
+  captured.assertInvocationCurrent?.();
+  return createOpenClawTools(captured, delegated);
+}
+
+/** @deprecated Use createOpenClawToolsAsync for runtime construction. */
+export function createOpenClawTools(
+  options?: OpenClawToolsOptions,
+  preparedDelegateTools?: AnyAgentTool[],
+): AnyAgentTool[] {
   const resolvedConfig = options?.config;
   const sessionConfig = options?.sessionConfigSource === "runtime" ? undefined : resolvedConfig;
   const activeProjectKeys = options?.preparedModelRuntime?.activeProjectKeys ?? [];
@@ -461,7 +507,7 @@ export function createOpenClawTools(options?: OpenClawToolsOptions): AnyAgentToo
       workspaceDir,
       agentSessionKey: options?.agentSessionKey,
     }),
-    ...createHostedGatewayTools(embedded, sessionAgentId, options),
+    ...createHostedGatewayTools(embedded, sessionAgentId, options, preparedDelegateTools),
     createAgentsListTool({
       agentSessionKey: options?.agentSessionKey,
       requesterAgentIdOverride: options?.requesterAgentIdOverride,

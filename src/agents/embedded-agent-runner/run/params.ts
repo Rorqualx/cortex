@@ -143,6 +143,8 @@ export type RunEmbeddedAgentParams = {
   enableHeartbeatTool?: boolean;
   /** Keep the heartbeat response tool available even when a narrow profile would omit it. */
   forceHeartbeatTool?: boolean;
+  /** Heartbeat-transported turn that continues a conversation (its own command completion). */
+  continuesConversation?: boolean;
   /** Allow runtime plugins for this run to late-bind the gateway subagent. */
   allowGatewaySubagentBinding?: boolean;
   // Optional: upstream deprecated sessionFile in favor of sessionTarget, and throwaway
@@ -384,6 +386,7 @@ export type EmbeddedForegroundPromptContext = Pick<
   | "forceMessageTool"
   | "enableHeartbeatTool"
   | "forceHeartbeatTool"
+  | "continuesConversation"
   | "allowGatewaySubagentBinding"
   | "extraSystemPrompt"
   | "gitCoauthorPrompt"

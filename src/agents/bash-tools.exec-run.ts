@@ -44,12 +44,12 @@ import {
   DEFAULT_MAX_OUTPUT,
   DEFAULT_PENDING_MAX_OUTPUT,
   type ExecProcessHandle,
-  ExecProcessPreflightError,
   execSchema,
   normalizePathPrepend,
   resolveApprovalRunningNoticeMs,
   resolveExecTarget,
   runExecProcess,
+  ExecProcessPreflightError,
 } from "./bash-tools.exec-runtime.js";
 import {
   shouldSkipExecScriptPreflight,
@@ -226,7 +226,7 @@ export function createExecTool(
       let params = requestPreparation.normalizeParams(args);
       // A required command remains an owned tool call until its terminal result is collected.
       // Explicit detached services retain their existing independent process lifetime.
-      const allowBackground = backgroundAvailable && params.required !== true;
+      const allowBackground = backgroundAvailable && params.awaitResults !== true;
       const resolveExecEnvPrepared = requestPreparation.isResolveExecEnvPrepared(
         args as ExecToolArgs,
       );
@@ -413,7 +413,7 @@ export function createExecTool(
       }
       let run: ExecProcessHandle;
       let settled = false;
-      let effectiveTimeout: number;
+      const effectiveTimeout = params.timeoutSeconds ?? defaultTimeoutSec;
       try {
         if (elevatedRequested) {
           logInfo(`exec: elevated command ${truncateMiddle(params.command, 120)}`);
@@ -508,7 +508,7 @@ export function createExecTool(
             : undefined;
 
         if (host === "gateway" && !bypassApprovals) {
-          const gatewayResult = await processGatewayAllowlist({
+          gatewayApproval = await processGatewayAllowlist({
             command: params.command,
             workdir,
             env,
@@ -557,15 +557,14 @@ export function createExecTool(
             processContinuationAvailable: allowBackground,
             trustedSafeBinDirs,
           });
-          const immediateResult = gatewayResult.pendingResult ?? gatewayResult.deniedResult;
+          const immediateResult = gatewayApproval.pendingResult ?? gatewayApproval.deniedResult;
           if (immediateResult) {
             return attachExecApprovalReview(immediateResult, approvalReview);
           }
           signal?.throwIfAborted();
-          gatewayApproval = gatewayResult;
-          execCommandOverride = gatewayResult.allowWithoutEnforcedCommand
+          execCommandOverride = gatewayApproval.allowWithoutEnforcedCommand
             ? undefined
-            : gatewayResult.execCommandOverride;
+            : gatewayApproval.execCommandOverride;
         }
 
         // Pending approvals have not started the command. Add fallback warnings only
@@ -574,7 +573,6 @@ export function createExecTool(
           warnings.push(foregroundFallbackWarning);
         }
 
-        effectiveTimeout = params.timeoutSeconds ?? defaultTimeoutSec;
         const usePty = params.pty === true && !sandbox;
 
         // Preflight: check Python shell-syntax mistakes and ambiguous interpreter commands
@@ -624,6 +622,7 @@ export function createExecTool(
         });
         discardPreparedSandboxWorkdir = null;
       } catch (error) {
+        gatewayApproval?.releaseSpawn?.();
         discardPreparedSandboxWorkdir?.();
         return attachExecApprovalReview(ExecProcessPreflightError.unwrap(error), approvalReview);
       }

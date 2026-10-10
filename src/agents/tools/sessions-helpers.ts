@@ -147,7 +147,7 @@ export function resolveSessionToolContext(opts?: {
   const cfg = opts?.config ?? getRuntimeConfig();
   return {
     cfg,
-    a2aPolicy: createAgentToAgentPolicy(cfg),
+    a2aPolicy: createAgentToAgentPolicy(cfg, { sandboxed: opts?.sandboxed }),
     sessionVisibility: resolveEffectiveSessionToolsVisibility({
       cfg,
       sandboxed: opts?.sandboxed === true,

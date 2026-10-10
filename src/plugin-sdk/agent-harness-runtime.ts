@@ -48,6 +48,13 @@ import { maxAsk, minSecurity } from "../infra/exec-approvals-policy.js";
 import type { ImageContent } from "../llm/types.js";
 import type { PromptImageOrderEntry } from "../media/prompt-image-order.js";
 
+export type {
+  AgentExecutorBinding,
+  AgentExecutorContext,
+  AgentExecutorController,
+} from "../plugins/agent-executor-controller.types.js";
+export { resolveAgentExecutorController } from "../plugins/agent-executor-controller.js";
+
 export { projectAgentActivityItem } from "../agents/agent-activity-presentation.js";
 export { projectAgentToolActivity } from "../infra/agent-activity-events.js";
 
@@ -129,6 +136,7 @@ export type {
 export { prepareAgentRuntimeAuth } from "../agents/runtime-plan/prepare-auth.js";
 export {
   AgentHarnessPreflightError,
+  AgentHarnessSessionCleanupError,
   AgentHarnessSessionSupersededError,
 } from "../agents/harness/errors.js";
 export { projectSettledTurnFinalizationAttemptResult } from "../agents/harness/settled-turn-finalization-result.js";

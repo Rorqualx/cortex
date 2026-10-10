@@ -425,7 +425,7 @@ export function buildEmbeddedRunPayloads(params: {
           )
         : false;
       if (!duplicateWarning) {
-        replyItems.push({
+        const warning = {
           text: failureWarning.text,
           ...(!isRestartStatus
             ? {
@@ -434,7 +434,11 @@ export function buildEmbeddedRunPayloads(params: {
                   hasUserFacingReply && failureWarning.nonTerminalToolErrorWarning,
               }
             : {}),
-        });
+        };
+        if (isRestartStatus) {
+          setReplyPayloadMetadata(warning, { hostNotice: true });
+        }
+        replyItems.push(warning);
       }
     }
   }

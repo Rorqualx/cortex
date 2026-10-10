@@ -8,7 +8,7 @@ import type { ToolDisplaySpec as ToolDisplaySpecBase } from "./tool-display-comm
 import { MESSAGE_TOOL_DISPLAY_SPEC } from "./tool-display-message-config.js";
 
 type ToolDisplaySpec = ToolDisplaySpecBase & {
-  emoji?: string;
+  icon: string;
 };
 
 type ToolDisplayConfig = {
@@ -17,8 +17,8 @@ type ToolDisplayConfig = {
   tools: Record<string, ToolDisplaySpec>;
 };
 
-function displayTool(emoji: string, title: string, detailKeys?: string[]): ToolDisplaySpec {
-  return detailKeys === undefined ? { emoji, title } : { emoji, title, detailKeys };
+function displayTool(icon: string, title: string, detailKeys?: string[]): ToolDisplaySpec {
+  return detailKeys === undefined ? { icon, title } : { icon, title, detailKeys };
 }
 
 function displayAction(label: string, detailKeys?: string[]) {
@@ -29,7 +29,7 @@ function displayAction(label: string, detailKeys?: string[]) {
 export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
   version: 1,
   fallback: {
-    emoji: "🧩",
+    icon: "puzzle",
     detailKeys: [
       "command",
       "path",
@@ -53,8 +53,8 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
     ],
   },
   tools: {
-    bash: displayTool("🛠️", "Bash", ["command"]),
-    computer: displayTool("🖱️", "Computer", [
+    bash: displayTool("squareTerminal", "Bash", ["command"]),
+    computer: displayTool("monitor", "Computer", [
       "action",
       "coordinate",
       "text",
@@ -62,7 +62,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       "nodeId",
       "screenIndex",
     ]),
-    mobile_ui: displayTool("📱", "Mobile UI", [
+    mobile_ui: displayTool("monitorSmartphone", "Mobile UI", [
       "action",
       "mobileAction",
       "snapshotId",
@@ -78,7 +78,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
     write: displayTool("✍️", "Write", ["path"]),
     edit: displayTool("📝", "Edit", ["path"]),
     personal_instructions: {
-      emoji: "📝",
+      icon: "penLine",
       title: "Personal Instructions",
       detailKeys: ["action", "agentId"],
       actions: {
@@ -89,7 +89,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
     presence: displayTool("🧩", "Presence"),
     attach: displayTool("📎", "Attach", ["path", "url", "fileName"]),
     browser: {
-      emoji: "🌐",
+      icon: "globe",
       title: "Browser",
       actions: {
         status: displayAction("status"),
@@ -116,7 +116,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       },
     },
     canvas: {
-      emoji: "🖼️",
+      icon: "image",
       title: "Canvas",
       actions: {
         present: displayAction("present", ["target", "node", "nodeId"]),
@@ -129,7 +129,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       },
     },
     nodes: {
-      emoji: "📱",
+      icon: "monitorSmartphone",
       title: "Nodes",
       actions: {
         status: displayAction("status"),
@@ -165,7 +165,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       },
     },
     cron: {
-      emoji: "⏰",
+      icon: "calendarClock",
       title: "Cron",
       actions: {
         status: displayAction("status"),
@@ -198,7 +198,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
     github_publish: displayTool("🔀", "GitHub Publish", ["title"]),
     github_identity_status: displayTool("🔐", "GitHub Identity Status", []),
     sessions: {
-      emoji: "🗂️",
+      icon: "layers",
       title: "Session Settings",
       actions: {
         patch: displayAction("update", [
@@ -215,7 +215,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
         group_delete: displayAction("delete group", ["name"]),
       },
     },
-    sessions_list: displayTool("🗂️", "Sessions", [
+    sessions_list: displayTool("layers", "Sessions", [
       "kinds",
       "label",
       "agentId",
@@ -226,22 +226,26 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       "includeLastMessage",
       "messageLimit",
     ]),
-    conversations_list: displayTool("💬", "Conversations", ["channel", "limit"]),
-    conversations_send: displayTool("📨", "Conversation Send", ["conversationRef"]),
-    conversations_turn: displayTool("↔️", "Conversation Turn", [
+    conversations_list: displayTool("messageSquare", "Conversations", ["channel", "limit"]),
+    conversations_send: displayTool("send", "Conversation Send", ["conversationRef"]),
+    conversations_turn: displayTool("arrowLeftRight", "Conversation Turn", [
       "conversationRef",
       "timeoutSeconds",
     ]),
-    sessions_send: displayTool("📨", "Session Send", [
+    sessions_send: displayTool("send", "Session Send", [
       "label",
       "sessionKey",
       "agentId",
       "timeoutSeconds",
     ]),
-    sessions_history: displayTool("🧾", "Session History", ["sessionKey", "limit", "includeTools"]),
-    sessions_search: displayTool("🔎", "Session Search", ["query", "sessionKey", "limit"]),
+    sessions_history: displayTool("fileText", "Session History", [
+      "sessionKey",
+      "limit",
+      "includeTools",
+    ]),
+    sessions_search: displayTool("search", "Session Search", ["query", "sessionKey", "limit"]),
     transcripts: {
-      emoji: "🎙️",
+      icon: "mic",
       title: "Transcripts",
       actions: {
         start: displayAction("start", [
@@ -265,7 +269,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
         summarize: displayAction("summarize", ["sessionId"]),
       },
     },
-    sessions_spawn: displayTool("🧑‍🔧", "Sub-agent", [
+    sessions_spawn: displayTool("bot", "Sub-agent", [
       "label",
       "taskName",
       "agentId",
@@ -274,10 +278,10 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       "runTimeoutSeconds",
       "cleanup",
     ]),
-    agents_wait: displayTool("⏳", "Wait for Agents", ["ids", "timeoutSeconds"]),
-    structured_output: displayTool("🧾", "Structured Output", ["result"]),
+    agents_wait: displayTool("clock", "Wait for Agents", ["ids", "timeoutSeconds"]),
+    structured_output: displayTool("fileText", "Structured Output", ["result"]),
     subagents: {
-      emoji: "🤖",
+      icon: "users",
       title: "Subagents",
       actions: {
         list: displayAction("list", ["recentMinutes"]),
@@ -297,11 +301,11 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
     code_execution: displayTool("🧮", "Code Execution", ["task"]),
     decision_evaluate: displayTool("⚖️", "Decision Evaluation", []),
     message: MESSAGE_TOOL_DISPLAY_SPEC,
-    apply_patch: displayTool("🩹", "Apply Patch", []),
+    apply_patch: displayTool("fileDiff", "Apply Patch", []),
     // Historical transcripts retain the old name. This display-only entry
     // preserves their presentation without restoring a runtime tool alias.
-    image: displayTool("🖼️", "Image", ["path", "paths", "url", "urls", "prompt", "model"]),
-    view_image: displayTool("🖼️", "View Image", [
+    image: displayTool("image", "Image", ["path", "paths", "url", "urls", "prompt", "model"]),
+    view_image: displayTool("image", "View Image", [
       "path",
       "paths",
       "url",
@@ -310,7 +314,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       "model",
     ]),
     image_generate: {
-      emoji: "🎨",
+      icon: "image",
       title: "Image Generation",
       actions: {
         generate: displayAction("generate", [
@@ -324,7 +328,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       },
     },
     music_generate: {
-      emoji: "🎵",
+      icon: "music",
       title: "Music Generation",
       actions: {
         generate: displayAction("generate", [
@@ -338,7 +342,7 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       },
     },
     video_generate: {
-      emoji: "🎬",
+      icon: "play",
       title: "Video Generation",
       actions: {
         generate: displayAction("generate", [

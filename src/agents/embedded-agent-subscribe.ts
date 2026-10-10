@@ -69,6 +69,7 @@ import {
 } from "./embedded-agent-utils.js";
 import type { AgentMessage } from "./runtime/index.js";
 import type { AgentSessionEvent } from "./sessions/index.js";
+import { sessionManagerReadTranscriptStart } from "./sessions/session-manager-current-turn.js";
 import { setSessionModelUsageSink } from "./sessions/session-model-usage.js";
 import { hasNonzeroUsage, hasObservedModelUsage, normalizeUsage, type UsageLike } from "./usage.js";
 
@@ -154,7 +155,30 @@ function splitTrailingFenceFragment(
 
 export type { SubscribeEmbeddedAgentSessionParams } from "./embedded-agent-subscribe.types.js";
 
-export function subscribeEmbeddedAgentSession(params: SubscribeEmbeddedAgentSessionParams) {
+export function subscribeEmbeddedAgentSession(input: SubscribeEmbeddedAgentSessionParams) {
+  let params = input;
+  const onAgentEvent = params.onAgentEvent;
+  if (onAgentEvent) {
+    let transcriptStartPublished = false;
+    const sessionManager = params.session.sessionManager;
+    params = {
+      ...params,
+      onAgentEvent: (event) => {
+        if (
+          transcriptStartPublished ||
+          (event.stream === "lifecycle" && typeof event.data.phase !== "string")
+        ) {
+          return onAgentEvent(event);
+        }
+        const transcriptStart = sessionManager[sessionManagerReadTranscriptStart]();
+        transcriptStartPublished = true;
+        return onAgentEvent({
+          ...event,
+          transcriptStart,
+        });
+      },
+    };
+  }
   const log = resolveEmbeddedAgentSessionLogger(params.messageChannel);
   const toolResultFormat = params.toolResultFormat ?? "markdown";
   const useMarkdown = toolResultFormat === "markdown";
