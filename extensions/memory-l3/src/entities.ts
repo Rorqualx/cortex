@@ -44,6 +44,70 @@ export const ENTITY_CATEGORIES = [
 ] as const;
 export type EntityCategory = (typeof ENTITY_CATEGORIES)[number];
 
+// High-precision entity-candidate patterns shared by the entity extractor
+// and the no-unasserted-entities validator, so both use identical candidate
+// definitions (a validator stricter or looser than the extractor drifts).
+/** IPv4 address candidates (192.168.50.128). */
+const IPV4_CANDIDATE = /\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g;
+/** Dotted-hostname candidates (rorqualx.asuscomm.com, huey.local). */
+const HOSTNAME_CANDIDATE = /\b([a-zA-Z][a-zA-Z0-9]*(?:\.[a-zA-Z][a-zA-Z0-9]*)+)\b/g;
+/** Hyphenated lowercase service/container-name candidates (transmission-web). */
+const DOCKER_NAME_CANDIDATE = /\b([a-z][a-z0-9]*(?:-[a-z0-9]+)+)\b/g;
+/** Common English hyphenated words that look like service names. */
+const DOCKER_NAME_NOISE = new Set([
+  "well-known",
+  "self-signed",
+  "long-term",
+  "short-term",
+  "cross-session",
+  "one-off",
+  "built-in",
+  "pre-computed",
+  "non-trivial",
+]);
+/** Common English fragments that look like dotted hostnames. */
+const HOSTNAME_NOISE = /^(e\.g|etc|i\.e|vs)\.$/i;
+
+/** A high-precision entity candidate extracted from free text. */
+export type EntityCandidate = { value: string; category: EntityCategory };
+
+/**
+ * Extract high-precision entity candidates — IPv4 addresses, dotted
+ * hostnames, hyphenated service names — from free text. Shared by the
+ * entity extractor and the no-unasserted-entities validator.
+ */
+export function extractEntityCandidates(text: string): EntityCandidate[] {
+  const out: EntityCandidate[] = [];
+  for (const m of text.matchAll(IPV4_CANDIDATE)) {
+    if (m[1] !== undefined) {
+      out.push({ value: m[1], category: "infrastructure" });
+    }
+  }
+  for (const m of text.matchAll(HOSTNAME_CANDIDATE)) {
+    const host = m[1];
+    if (host === undefined) {
+      continue;
+    }
+    // Skip common English words that look like hostnames
+    if (HOSTNAME_NOISE.test(host)) {
+      continue;
+    }
+    if (host.includes(".") && !host.endsWith(".")) {
+      out.push({ value: host, category: "infrastructure" });
+    }
+  }
+  for (const m of text.matchAll(DOCKER_NAME_CANDIDATE)) {
+    const name = m[1];
+    if (name === undefined) {
+      continue;
+    }
+    if (!DOCKER_NAME_NOISE.has(name) && name.length > 4) {
+      out.push({ value: name, category: "tool" });
+    }
+  }
+  return out;
+}
+
 /**
  * Extract entities from a set of facts by looking for known patterns:
  * - Infrastructure: IP addresses, hostnames, URLs
@@ -130,29 +194,10 @@ export function extractEntitiesFromFacts(params: {
   for (const fact of params.facts) {
     const text = fact.text;
 
-    // Infrastructure: IP-like patterns
-    const ipMatches = text.matchAll(/\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b/g);
-    for (const m of ipMatches) {
-      const ip = m[1];
-      if (ip !== undefined) {
-        addEntity(ip, "infrastructure");
-      }
-    }
-
-    // Hostnames: word.word pattern (e.g., HueyTheDestroyer, rorqualx.asuscomm.com)
-    const hostnameMatches = text.matchAll(/\b([a-zA-Z][a-zA-Z0-9]*(?:\.[a-zA-Z][a-zA-Z0-9]*)+)\b/g);
-    for (const m of hostnameMatches) {
-      const host = m[1];
-      if (host === undefined) {
-        continue;
-      }
-      // Skip common English words that look like hostnames
-      if (/^(e\.g|etc|i\.e|vs)\.$/i.test(host)) {
-        continue;
-      }
-      if (host.includes(".") && !host.endsWith(".")) {
-        addEntity(host, "infrastructure");
-      }
+    // High-precision candidates (IPs, dotted hostnames, hyphenated service
+    // names) — shared with the no-unasserted-entities validator.
+    for (const candidate of extractEntityCandidates(text)) {
+      addEntity(candidate.value, candidate.category);
     }
 
     // Named entities after "project", "repo", "server", "device" keywords
@@ -181,32 +226,76 @@ export function extractEntitiesFromFacts(params: {
       }
     }
 
-    // Docker/service names (typically lowercase with hyphens)
-    const dockerMatches = text.matchAll(/\b([a-z][a-z0-9]*(?:-[a-z0-9]+)+)\b/g);
-    for (const m of dockerMatches) {
-      const name = m[1];
-      if (name === undefined) {
-        continue;
-      }
-      // Filter out common English hyphenated words
-      const noise = new Set([
-        "well-known",
-        "self-signed",
-        "long-term",
-        "short-term",
-        "cross-session",
-        "one-off",
-        "built-in",
-        "pre-computed",
-        "non-trivial",
-      ]);
-      if (!noise.has(name) && name.length > 4) {
-        addEntity(name, "tool");
-      }
-    }
+    // Docker/service names (typically lowercase with hyphens) are covered by
+    // extractEntityCandidates above (same pattern + noise filter).
   }
 
   return Array.from(entities.values());
+}
+
+// -----------------------------------------------------------------
+// No-Unasserted-Entities Validation (Gated Memory)
+// -----------------------------------------------------------------
+
+/** One violation of the no-unasserted-entities rule. */
+export type UnassertedEntityViolation = {
+  /** Identifies the offending fact — slot for typed facts, id for prose. */
+  factRef: string;
+  factKind: "typed" | "prose";
+  entity: string;
+  category: EntityCategory;
+};
+
+function containsCaseInsensitive(haystack: string, needle: string): boolean {
+  return haystack.toLowerCase().includes(needle.toLowerCase());
+}
+
+/**
+ * Gated Memory no-unasserted-entities rule: a fact may not assert entities
+ * absent from its source context. Prose facts are LLM-written (never
+ * verbatim-grounded), so hallucinated IPs, hostnames, and service names can
+ * slip into fact text; typed-fact values are verbatim-grounded at
+ * extraction, but facts written before the grounding gate or imported from
+ * legacy stores carry no such guarantee. Returns one violation per
+ * high-precision entity candidate found in the fact's assertion surface
+ * (prose text / typed value) but absent from the source context — typed
+ * facts additionally check their own sourceSpan. Diagnostic only: callers
+ * surface warnings; never drop a fact on this rule alone.
+ */
+export function findUnassertedEntities(params: {
+  facts?: ReadonlyArray<{ id: string; text: string }>;
+  typedFacts?: ReadonlyArray<TypedFact>;
+  sourceContext: string;
+}): UnassertedEntityViolation[] {
+  const out: UnassertedEntityViolation[] = [];
+  for (const fact of params.facts ?? []) {
+    for (const candidate of extractEntityCandidates(fact.text)) {
+      if (!containsCaseInsensitive(params.sourceContext, candidate.value)) {
+        out.push({
+          factRef: fact.id,
+          factKind: "prose",
+          entity: candidate.value,
+          category: candidate.category,
+        });
+      }
+    }
+  }
+  for (const tf of params.typedFacts ?? []) {
+    for (const candidate of extractEntityCandidates(tf.value)) {
+      const asserted =
+        containsCaseInsensitive(tf.sourceSpan, candidate.value) ||
+        containsCaseInsensitive(params.sourceContext, candidate.value);
+      if (!asserted) {
+        out.push({
+          factRef: tf.slot,
+          factKind: "typed",
+          entity: candidate.value,
+          category: candidate.category,
+        });
+      }
+    }
+  }
+  return out;
 }
 
 /**

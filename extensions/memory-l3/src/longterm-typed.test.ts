@@ -264,6 +264,92 @@ describe("consolidateLongTermTyped", () => {
     expect(ltt.facts[0]!.recallCount).toBe(2);
   });
 
+  it("threads applicability scope conditions through promotion, reaffirmation, and supersession (Gated Memory)", async () => {
+    // Scoped emission → promoted with its applicability tokens intact.
+    await writeChunkWithTyped(
+      "chunk-scope-a",
+      [
+        {
+          id: "tf-scope-1",
+          slot: "infra:fire_tv_addr",
+          value: "192.168.50.35",
+          sourceSpan: "duckie is at 192.168.50.35",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 5 * DAY,
+          applicability: ["duckie", "lan"],
+        },
+      ],
+      NOW - 5 * DAY,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 5 * DAY });
+    let ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.applicability).toEqual(["duckie", "lan"]);
+
+    // Reaffirm WITHOUT conditions → keeps the prior scope (conservative).
+    await writeChunkWithTyped(
+      "chunk-scope-b",
+      [
+        {
+          id: "tf-scope-2",
+          slot: "infra:fire_tv_addr",
+          value: "192.168.50.35",
+          sourceSpan: "still at 192.168.50.35",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 2 * DAY,
+        },
+      ],
+      NOW - 2 * DAY,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 2 * DAY });
+    ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.applicability).toEqual(["duckie", "lan"]);
+
+    // Reaffirm WITH conditions → latest scope wins.
+    await writeChunkWithTyped(
+      "chunk-scope-c",
+      [
+        {
+          id: "tf-scope-3",
+          slot: "infra:fire_tv_addr",
+          value: "192.168.50.35",
+          sourceSpan: "duckie still at 192.168.50.35",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW - 1 * DAY,
+          applicability: ["duckie"],
+        },
+      ],
+      NOW - 1 * DAY,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW - 1 * DAY });
+    ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.applicability).toEqual(["duckie"]);
+
+    // Supersession → the new value's scope replaces the prior one.
+    await writeChunkWithTyped(
+      "chunk-scope-d",
+      [
+        {
+          id: "tf-scope-4",
+          slot: "infra:fire_tv_addr",
+          value: "192.168.50.99",
+          sourceSpan: "duckie moved to 192.168.50.99",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+          applicability: ["duckie", "vlan-iot"],
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+    ltt = await storage.readLongTermTyped();
+    expect(ltt.facts[0]!.value).toBe("192.168.50.99");
+    expect(ltt.facts[0]!.applicability).toEqual(["duckie", "vlan-iot"]);
+  });
+
   it("threads episodic attribution (eventTime/participants/mentionTime) through promotion, reaffirmation, and supersession", async () => {
     // First emission with full attribution → promoted with attribution intact.
     await writeChunkWithTyped(

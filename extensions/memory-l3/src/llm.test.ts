@@ -207,6 +207,53 @@ describe("parseExtractResponse", () => {
     expect(result.typedFacts[1]!.confidence).toBe(0);
   });
 
+  it("normalizes applicability scope tokens (Gated Memory)", () => {
+    const raw = JSON.stringify({
+      typedFacts: [
+        {
+          slot: "infra:fire_tv_addr",
+          value: "192.168.50.35",
+          sourceSpan: "duckie is at 192.168.50.35",
+          unit: null,
+          confidence: 0.9,
+          applicability: [" duckie ", "", "DUCKIE", "lan"],
+        },
+        {
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my number is 555-1234",
+          unit: null,
+          confidence: 0.9,
+        },
+        {
+          slot: "proj:repo",
+          value: "openclaw",
+          sourceSpan: "repo openclaw",
+          unit: null,
+          confidence: 0.9,
+          applicability: "work-laptop; office",
+        },
+        {
+          slot: "infra:host",
+          value: "huey",
+          sourceSpan: "host huey",
+          unit: null,
+          confidence: 0.9,
+          applicability: ["a", "b", "c", "d", "e", "f", "g"],
+        },
+      ],
+    });
+    const result = parseExtractResponse(raw);
+    // trims, drops empties, dedupes case-insensitively
+    expect(result.typedFacts[0]!.applicability).toEqual(["duckie", "lan"]);
+    // absent stays absent (unconstrained)
+    expect(result.typedFacts[1]!.applicability).toBeUndefined();
+    // single comma/semicolon-joined string is split
+    expect(result.typedFacts[2]!.applicability).toEqual(["work-laptop", "office"]);
+    // capped at 5 tokens
+    expect(result.typedFacts[3]!.applicability).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
   it("normalizes a valid activeConstraints array", () => {
     const raw = JSON.stringify({
       activeConstraints: [
@@ -265,7 +312,7 @@ describe("extractFacts", () => {
     expect(result.typedFacts[0]!.slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0]![0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=18");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=19");
     // QW1 (2026-08-16): extraction prompts must demand verbatim temporal expressions.
     expect(call.systemPrompt).toContain("TEMPORAL");
     // QW-1 (2026-10-07): AgentMemGate speculation gate — fact|plan|correction modality.
@@ -276,6 +323,8 @@ describe("extractFacts", () => {
     expect(call.systemPrompt).toContain("HEDGE");
     // QW-2 (2026-10-06): LAPSE time-bounded vs. standing validity preservation.
     expect(call.systemPrompt).toContain("VALIDITY");
+    // QW-4 (2026-10-10): Gated Memory applicability scope conditions.
+    expect(call.systemPrompt).toContain("APPLICABILITY");
     // QW3 (2026-08-24): MCB persist/verify policy guard — unambiguous durable facts only.
     expect(call.systemPrompt).toContain("PERSIST");
     expect(call.systemPrompt).toContain("verification bar");

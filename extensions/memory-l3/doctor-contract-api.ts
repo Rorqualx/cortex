@@ -139,9 +139,8 @@ const ARCHIVED_INDEX_FILES = [
 
 /** L3 root for each configured agent workspace. */
 async function legacyL3Roots(config: OpenClawConfig, env: NodeJS.ProcessEnv): Promise<string[]> {
-  const { resolveMemoryDreamingWorkspaces } = await import(
-    "openclaw/plugin-sdk/memory-core-host-status"
-  );
+  const { resolveMemoryDreamingWorkspaces } =
+    await import("openclaw/plugin-sdk/memory-core-host-status");
   const seen = new Set<string>();
   const roots: string[] = [];
   for (const entry of resolveMemoryDreamingWorkspaces(config, { env })) {
@@ -354,6 +353,40 @@ const perAgentMigration: PluginDoctorStateMigration = {
           continue;
         }
         changes.push(`Migrated memory-l3 tiers at ${root} -> l3.sqlite (${imported} row(s))`);
+        // Gated Memory no-unasserted-entities audit (post-import warnings):
+        // imported tiers predate the extraction-time verbatim-grounding gate,
+        // so surface any entity candidates their facts assert that the
+        // source context never contained — hallucinated IPs, hostnames, and
+        // service names. Diagnostic only; never blocks the import.
+        try {
+          const { findUnassertedEntities } = await import("./src/entities.js");
+          const violations = [];
+          for (const filePath of await storage.listL2ChunkPaths()) {
+            const doc = await storage.readL2ChunkAtPath(filePath);
+            if (!doc) {
+              continue;
+            }
+            violations.push(
+              ...findUnassertedEntities({
+                facts: (doc.frontmatter.facts ?? []).map((f) => ({ id: f.id, text: f.text })),
+                typedFacts: doc.frontmatter.typedFacts ?? [],
+                sourceContext: doc.body,
+              }),
+            );
+          }
+          if (violations.length > 0) {
+            const sample = violations
+              .slice(0, 5)
+              .map((v) => `${v.factKind} ${v.factRef}: ${v.entity}`)
+              .join("; ");
+            const suffix = violations.length > 5 ? "; ..." : "";
+            warnings.push(
+              `memory-l3 tiers at ${root}: ${violations.length} fact entity assertion(s) absent from source context (possible hallucinated entities): ${sample}${suffix}`,
+            );
+          }
+        } catch {
+          // Best-effort audit — never fail the import over validation.
+        }
         await archiveL3Indexes(root, changes, warnings);
       } finally {
         storage.close();

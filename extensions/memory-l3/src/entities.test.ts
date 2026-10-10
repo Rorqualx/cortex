@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractEntitiesFromFacts,
+  findUnassertedEntities,
   mergeEntities,
   adjustImportance,
   recordRetrievalSignals,
@@ -107,6 +108,90 @@ describe("extractEntitiesFromFacts", () => {
     const [ipEntity] = ipEntities;
     if (!ipEntity) throw new Error("expected deduplicated ip entity");
     expect(ipEntity.mentionCount).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// -----------------------------------------------------------------
+// No-unasserted-entities validation (Gated Memory)
+// -----------------------------------------------------------------
+
+describe("findUnassertedEntities", () => {
+  it("flags a prose fact asserting an IP absent from the source context", () => {
+    const violations = findUnassertedEntities({
+      facts: [{ id: "f-halluc", text: "The Pi-hole moved to 10.0.0.99 last week" }],
+      sourceContext: "the pi-hole is still at 192.168.50.128",
+    });
+    expect(violations).toEqual([
+      { factRef: "f-halluc", factKind: "prose", entity: "10.0.0.99", category: "infrastructure" },
+    ]);
+  });
+
+  it("passes when the asserted entity appears in the source context (case-insensitive)", () => {
+    const violations = findUnassertedEntities({
+      facts: [{ id: "f-ok", text: "HueyTheDestroyer hosts the docker stack" }],
+      sourceContext: "hueythedestroyer (192.168.50.185) hosts the docker stack",
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("flags a typed fact whose value entity is absent from both span and context (pre-grounding fact)", () => {
+    const violations = findUnassertedEntities({
+      typedFacts: [
+        {
+          id: "tf-legacy",
+          slot: "infra:gateway_ip",
+          value: "10.99.99.99",
+          sourceSpan: "gateway is 192.168.50.1",
+          unit: null,
+          confidence: 0.9,
+          createdAt: Date.now(),
+        },
+      ],
+      sourceContext: "gateway is 192.168.50.1 on the lan",
+    });
+    expect(violations).toEqual([
+      {
+        factRef: "infra:gateway_ip",
+        factKind: "typed",
+        entity: "10.99.99.99",
+        category: "infrastructure",
+      },
+    ]);
+  });
+
+  it("passes a typed fact whose value entity is grounded in its own sourceSpan", () => {
+    const violations = findUnassertedEntities({
+      typedFacts: [
+        {
+          id: "tf-grounded",
+          slot: "infra:pi_hole_ip",
+          value: "192.168.50.128",
+          sourceSpan: "pi-hole at 192.168.50.128",
+          unit: null,
+          confidence: 0.9,
+          createdAt: Date.now(),
+        },
+      ],
+      sourceContext: "unrelated context that never mentions the ip",
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("flags hallucinated service names in prose but not noise hyphenations", () => {
+    const violations = findUnassertedEntities({
+      facts: [
+        { id: "f-svc", text: "Runs nzbget-exporter for metrics" },
+        { id: "f-noise", text: "This is a long-term preference" },
+      ],
+      sourceContext: "installed portainer and transmission on the host",
+    });
+    expect(violations).toEqual([
+      { factRef: "f-svc", factKind: "prose", entity: "nzbget-exporter", category: "tool" },
+    ]);
+  });
+
+  it("returns empty when no facts are provided", () => {
+    expect(findUnassertedEntities({ sourceContext: "anything" })).toEqual([]);
   });
 });
 

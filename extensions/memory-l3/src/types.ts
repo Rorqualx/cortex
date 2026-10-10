@@ -193,6 +193,15 @@ export type TypedFact = {
    * absent as standing, same pattern as `lastVerifiedAt`.
    */
   validity?: FactValidity;
+  /**
+   * Applicability conditions (Gated Memory scope predicate): short scope
+   * tokens naming the context in which this value holds — a host, project,
+   * or environment (e.g. ["duckie", "lan"]). Prevents scoped facts from
+   * firing out of scope at retrieval. Emitted per the APPLICABILITY rule
+   * (PROMPT_VERSION=19); absent = unconstrained. Absent on facts extracted
+   * before this feature.
+   */
+  applicability?: string[];
 };
 
 /**
@@ -433,6 +442,11 @@ export type LongTermTypedFact = {
    * Absent = standing; a closed window demotes the fact in retrieval
    * scoring even without a contradicting emission. */
   validity?: FactValidity;
+  /** Applicability scope conditions threaded from the winning emission at
+   * promotion/supersession (Gated Memory scope predicate); a reaffirm
+   * without conditions keeps the prior set (conservative). Absent =
+   * unconstrained. Absent on facts created before PROMPT_VERSION=19. */
+  applicability?: string[];
   archivedAt: number | null;
   /** Epoch ms when this fact was last explicitly verified / reaffirmed.
    * Used for temporal-currency scoring in retrieval and archival.

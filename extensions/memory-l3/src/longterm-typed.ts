@@ -573,6 +573,8 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     archivedAt: null,
     lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
     validity: c.latest.validity,
+    // QW-4 (Gated Memory): the winning emission's applicability scope wins.
+    applicability: c.latest.applicability,
     lastAccessedAt: c.latest.createdAt,
     volatilityClass: deriveVolatilityClass(c.slot, c.latest.value),
     sourceSessionId: sessionId,
@@ -626,6 +628,9 @@ function reaffirm(
     // QW-2 (LAPSE): the latest emission's validity window wins; a reaffirm
     // without a validity marker keeps the prior window (conservative).
     validity: c.latest.validity ?? prior.validity,
+    // QW-4 (Gated Memory): same conservative threading as validity — a
+    // reaffirm without applicability conditions keeps the prior scope.
+    applicability: c.latest.applicability ?? prior.applicability,
     recallCount: merged.length,
     sourceChunkIds: merged,
     validFrom: prior.validFrom,
@@ -679,6 +684,9 @@ function supersede(
     lastConfirmedAt: c.latest.createdAt,
     lastVerifiedAt: c.latest.lastVerifiedAt ?? c.latest.createdAt,
     validity: c.latest.validity,
+    // QW-4 (Gated Memory): the superseding value's scope replaces the prior
+    // one — the old scope died with the old value.
+    applicability: c.latest.applicability,
     recallCount: merged.length,
     sourceChunkIds: merged,
     history: [...prior.history, { value: prior.value, supersededAt: now }],
@@ -756,8 +764,14 @@ export function formatBody(facts: ReadonlyArray<LongTermTypedFact>): string {
       const unit = f.unit ? ` ${f.unit}` : "";
       const hist =
         f.history.length > 0 ? ` _was: ${f.history.map((h) => h.value).join(" → ")}_` : "";
+      // QW-4 (Gated Memory): surface the applicability scope in the
+      // human-readable export so scoped facts read as conditional.
+      const scope =
+        f.applicability && f.applicability.length > 0
+          ? ` _(if: ${f.applicability.join(", ")})_`
+          : "";
       lines.push(
-        `- \`${f.slot}\` = \`${f.value}\`${unit} (recall ${f.recallCount}, conf ${f.confidence.toFixed(2)})${hist}`,
+        `- \`${f.slot}\` = \`${f.value}\`${unit} (recall ${f.recallCount}, conf ${f.confidence.toFixed(2)})${hist}${scope}`,
       );
     }
   }

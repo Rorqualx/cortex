@@ -228,6 +228,12 @@ export function createAnthropicCaller(config: AnthropicCallerConfig): LlmCaller 
   };
 }
 
+// PROMPT_VERSION = 19 — adds APPLICABILITY rule (Gated Memory applicability
+// conditions): typed facts that only hold within a scope (a host, project,
+// environment) emit "applicability": ["<scope token>"] — short verbatim scope
+// tokens retrieval can use to keep stale facts from firing out of scope.
+// Absent = unconstrained; threads into LongTermTypedFact.applicability at
+// consolidation.
 // PROMPT_VERSION = 18 — adds MODALITY rule (AgentMemGate speculation gate):
 // every prose fact is classified fact|plan|correction so consolidation can
 // land plans as status "pending" and expire abandoned ones — speculative
@@ -275,11 +281,12 @@ Failure-pattern signals to watch for:
 - Incorrect assumptions that led to wasted work
 - Commands that failed and had to be rolled back
 
-Rules (PROMPT_VERSION=18):
+Rules (PROMPT_VERSION=19):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - PERSIST: persist only unambiguous, durable facts — statements that remain true across future sessions (identity, preferences, decisions, infrastructure, verified knowledge). Do NOT persist transient/changing state ("currently", "right now", in-progress task status, session-scoped values) or ambiguous statements (unclear referent, hedged wording, unresolved questions) as confirmed facts: skip them entirely when they are pure session context, otherwise emit with certainty "tentative" AND importance ≤0.4 so the verification bar holds them until re-observed. Erroneous persistence is worse than delayed persistence.
 - TEMPORAL: preserve dates and times verbatim; do not abbreviate or drop temporal expressions (keep "2026-08-16", "9:00 AM MT", "every Tuesday", "last week" exactly as stated) — temporal anchors drive later retrieval.
 - VALIDITY: preserve the time-bounded vs. standing distinction. Keep the temporal qualifier verbatim inside the fact text ("since 2026-06", "currently", "until March", "expires 2027-01") — never drop it or rewrite a bounded statement into an unqualified standing one. Typed facts whose value is explicitly time-bounded ("until ...", "through ...", "expires ...") must additionally emit "validity": { "kind": "time-bounded", "validThrough": "<end date as YYYY-MM-DD or YYYY-MM, or null when no explicit end date>" }; standing facts omit validity entirely.
+- APPLICABILITY: typed facts whose value only holds within a scope — a specific host, device, project, or environment — must emit "applicability": ["<scope>"] with 1-3 short scope tokens taken VERBATIM from the conversation (e.g. ["duckie"], ["work-laptop", "office"]). Facts that hold everywhere omit applicability entirely. Never invent scope tokens: each token must appear in the sourceSpan or the surrounding conversation.
 - ASPECT: preserve verb aspect exactly as stated — keep the distinction between ongoing ("is migrating"), habitual ("runs every Tuesday"), and completed ("migrated") actions; never flatten ongoing/habitual forms into completed ones.
 - HEDGE: keep hedged wording from the source ("might", "plans to", "reportedly", "unconfirmed") inside the fact text itself — never rewrite a hedged source into a definitive statement; also mark certainty "tentative".
 - MODALITY: classify every fact as "fact" (settled statement), "plan" (stated intention or future action — hedged or not: "plans to", "might", "intends to", "will maybe"), or "correction" (supersedes a previously stated value). Modality is orthogonal to certainty — a firmly-grounded plan is still a plan. Default "fact".
@@ -337,11 +344,12 @@ const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Rea
 
 Failure-pattern signals: repeated tool errors (doom loop), irrelevant search results followed by re-query (dead-end), approaches tried then abandoned, incorrect assumptions causing wasted work, commands that failed and were rolled back.
 
-Rules (PROMPT_VERSION=18-NATIVE):
+Rules (PROMPT_VERSION=19-NATIVE):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - PERSIST: persist only unambiguous, durable facts (true across future sessions: identity, preferences, decisions, infrastructure, verified knowledge). Transient/changing state ("currently", in-progress status, session-scoped values) and ambiguous statements (unclear referent, hedged wording, unresolved questions) must NOT be persisted as confirmed — skip when pure session context, else certainty "tentative" + importance ≤0.4 for the verification bar. Erroneous persistence is worse than delayed persistence.
 - TEMPORAL: dates and times must stay verbatim even under compression — never abbreviate or drop temporal expressions ("2026-08-16", "9:00 AM MT", "every Tuesday", "last week"); temporal anchors drive later retrieval.
 - VALIDITY: keep the time-bounded vs. standing distinction — temporal qualifiers ("since 2026-06", "currently", "until March") stay verbatim in fact text; typed facts with an explicit end emit "validity": { "kind": "time-bounded", "validThrough": "YYYY-MM-DD | YYYY-MM | null" }; standing facts omit validity.
+- APPLICABILITY: typed facts true only within a scope (host/device/project/environment) emit "applicability": ["<scope>"] — 1-3 short tokens VERBATIM from the sourceSpan or conversation (e.g. ["duckie"]); universal facts omit it; never invent scope tokens.
 - ASPECT: verb aspect survives compression — ongoing ("is migrating"), habitual ("runs every Tuesday"), completed ("migrated") stay distinct; never flatten progressive/habitual into completed.
 - HEDGE: hedged source wording ("might", "plans to", "reportedly", "unconfirmed") stays in the fact text — never launder a hedge into a definitive statement; certainty "tentative".
 - MODALITY: classify each fact fact|plan|correction — "plan" = stated intention/future action ("plans to", "might", "intends to"); "correction" = supersedes a prior value; default "fact". Orthogonal to certainty: a firmly-grounded plan is still a plan.
@@ -414,6 +422,10 @@ export type ExtractedTypedFact = {
   /** QW-2 (LAPSE): emitted per the VALIDITY rule for explicitly time-bounded
    * values; absent = standing. */
   validity?: FactValidity;
+  /** Applicability scope conditions (Gated Memory): emitted per the
+   * APPLICABILITY rule (PROMPT_VERSION=19) for values that only hold within
+   * a scope; absent = unconstrained. */
+  applicability?: string[];
 };
 
 export type ExtractResult = {
@@ -627,6 +639,7 @@ function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[
     const confidenceRaw = typeof o.confidence === "number" ? o.confidence : 0.5;
     const unit = typeof o.unit === "string" && o.unit.trim().length > 0 ? o.unit.trim() : null;
     const validity = normalizeFactValidity(o.validity);
+    const applicability = normalizeApplicability(o.applicability);
     out.push({
       slot,
       value: valueRaw,
@@ -634,9 +647,50 @@ function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[
       unit,
       confidence: Math.max(0, Math.min(1, confidenceRaw)),
       ...(validity ? { validity } : {}),
+      ...(applicability ? { applicability } : {}),
     });
   }
   return out;
+}
+
+/**
+ * QW-4 (Gated Memory applicability conditions): coerce the LLM-emitted
+ * applicability scope list into a normalized string[]. Tolerant of drift:
+ * accepts an array of strings or a single comma/semicolon-joined string;
+ * trims, drops empties, dedupes case-insensitively, and caps at 5 tokens
+ * (the prompt allows 1-3 — the cap only guards pathological output).
+ */
+function normalizeApplicability(raw: unknown): string[] | undefined {
+  const parts: string[] = [];
+  if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (typeof entry === "string") {
+        parts.push(entry);
+      }
+    }
+  } else if (typeof raw === "string") {
+    parts.push(...raw.split(/[,;]+/));
+  } else {
+    return undefined;
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of parts) {
+    const token = part.trim();
+    if (token.length === 0) {
+      continue;
+    }
+    const key = token.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(token);
+    if (out.length >= 5) {
+      break;
+    }
+  }
+  return out.length > 0 ? out : undefined;
 }
 
 /**
