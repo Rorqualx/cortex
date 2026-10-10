@@ -42,11 +42,7 @@ SSH_OPTS="${SSH_OPTS:--o BatchMode=yes -o ConnectTimeout=8}"
 # run while it was still green. The remote job keeps running past this poll cap.
 PROOF_TIMEOUT="${PROOF_TIMEOUT:-10800}"
 POLL="${POLL:-25}"
-# Direct lanes are one tsgo project each; sharded lanes are views over the core test
-# shards. The candidate runs the two groups in separate checkouts (see "Candidate").
-LANES_DIRECT="tsgo:core tsgo:extensions tsgo:extensions:test"
-LANES_SHARDED="tsgo:core:test tsgo:test:src tsgo:test:ui tsgo:test:packages"
-LANES="$LANES_DIRECT $LANES_SHARDED"
+LANES="tsgo:core tsgo:extensions tsgo:core:test tsgo:extensions:test tsgo:test:src tsgo:test:ui tsgo:test:packages"
 
 log() { echo "[remote-proof] $*" >&2; }
 rsh() { ssh $SSH_OPTS "$REMOTE_HOST" "$@"; }
@@ -104,8 +100,6 @@ export OPENCLAW_VITEST_MAX_WORKERS=\${OPENCLAW_VITEST_MAX_WORKERS:-3}
 export OPENCLAW_TSDOWN_MAX_OLD_SPACE_MB=\${OPENCLAW_TSDOWN_MAX_OLD_SPACE_MB:-8192}
 PROOF_DIR=$PROOF_DIR
 LANES="$LANES"
-LANES_DIRECT="$LANES_DIRECT"
-LANES_SHARDED="$LANES_SHARDED"
 BASELINE_REF=$BASELINE_REF
 
 # Failing test files only. Match vitest's per-file summary line
@@ -162,33 +156,13 @@ lane_errors() {
   fi
   sort -u "\$acc"; rm -f "\$acc"
 }
-# Error sets for the named lanes, computed from the tree in the cwd into \$1. The
-# stderr capture is per lane so two callers can fill one directory concurrently.
-lane_sets_into() {
-  local dir="\$1" lane; shift
-  for lane in "\$@"; do
-    lane_errors "\$lane" > "\$dir/\$lane.txt" 2>"\$dir/\$lane.err" || {
-      cat "\$dir/\$lane.err"; echo "EXIT=98 (tsgo lane \$lane did not typecheck)"; return 98; }
-  done
-}
 write_lane_sets() {
   rm -rf "\$SHARD_CACHE" "\$1"; mkdir -p "\$1"
-  lane_sets_into "\$1" \$LANES || exit 98
+  for lane in \$LANES; do
+    lane_errors "\$lane" > "\$1/\$lane.txt" 2>/tmp/rp-lane-err.txt || {
+      cat /tmp/rp-lane-err.txt; echo "EXIT=98 (tsgo lane \$lane did not typecheck)"; exit 98; }
+  done
   rm -rf "\$SHARD_CACHE" .artifacts/tsgo-cache
-}
-# A typecheck-only checkout of the candidate beside \$PROOF_DIR. Build, tests, and every
-# tsgo run take the checkout's exclusive dist-artifact lock, so one tree can only run
-# them back to back; separate trees are what lets them overlap. The proof flock above
-# means no live process can own a lock found here, so a leftover one is from a killed
-# run and is cleared rather than failing every lane.
-side_tree() {
-  if [ ! -e "\$1/.git" ]; then
-    git -C "\$PROOF_DIR" worktree prune
-    git -C "\$PROOF_DIR" worktree add -f --detach "\$1" proof-$STAMP || return 1
-  fi
-  ( cd "\$1" && git checkout -f --detach proof-$STAMP -q \
-      && rm -rf .artifacts/tsgo-cache .artifacts/dist-artifacts.lock \
-      && CI=1 nice -n 19 corepack pnpm install --frozen-lockfile )
 }
 
 if [ ! -d "\$PROOF_DIR/.git" ]; then
@@ -274,46 +248,22 @@ for old in \$(git for-each-ref --format='%(refname:short)' 'refs/heads/proof-*' 
 done
 rm -rf .artifacts/tsgo-cache
 CI=1 nice -n 19 corepack pnpm install --frozen-lockfile >/tmp/rp-install.log 2>&1 || { echo 'EXIT=96 (install)'; exit 96; }
-# The candidate's three long phases are independent, so they overlap: build then tests
-# in \$PROOF_DIR, direct tsgo lanes in one side tree, sharded lanes in another (~75 min
-# of typecheck used to sit serially between a 16 min build and the test run). The side
-# trees are never built, like the baseline tree when its sets were taken.
-TSGO_A="\$PROOF_DIR-tsgo-a"; TSGO_B="\$PROOF_DIR-tsgo-b"
-: >/tmp/rp-side-install.log
-for tree in "\$TSGO_A" "\$TSGO_B"; do
-  side_tree "\$tree" >>/tmp/rp-side-install.log 2>&1 || { echo 'EXIT=96 (side-tree install)'; exit 96; }
-done
-rm -rf "\$SHARD_CACHE" /tmp/rp-cand-sets; mkdir -p /tmp/rp-cand-sets
-( cd "\$TSGO_A" && lane_sets_into /tmp/rp-cand-sets \$LANES_DIRECT ) >/tmp/rp-tsgo-a.log 2>&1 &
-TSGO_A_PID=\$!
-( cd "\$TSGO_B" && lane_sets_into /tmp/rp-cand-sets \$LANES_SHARDED ) >/tmp/rp-tsgo-b.log 2>&1 &
-TSGO_B_PID=\$!
-
 BUILD_EXIT=0
 nice -n 19 corepack pnpm build >/tmp/rp-build.log 2>&1 || BUILD_EXIT=\$?
 echo "BUILD_EXIT=\$BUILD_EXIT"
 
-# behavior net-new failing-file diff
-corepack pnpm test:fast >/tmp/rp-test.log 2>&1 || true
-fail_files /tmp/rp-test.log > /tmp/rp-cand-testfail.txt
-
-TSGO_A_RC=0; wait "\$TSGO_A_PID" || TSGO_A_RC=\$?
-TSGO_B_RC=0; wait "\$TSGO_B_PID" || TSGO_B_RC=\$?
-if [ "\$TSGO_A_RC" != 0 ] || [ "\$TSGO_B_RC" != 0 ]; then
-  grep -hE '^EXIT-DETAIL ' /tmp/rp-tsgo-a.log /tmp/rp-tsgo-b.log
-  echo "EXIT=98 (\$(grep -hE '^EXIT=98' /tmp/rp-tsgo-a.log /tmp/rp-tsgo-b.log | head -1 | sed -E 's/^EXIT=98 \(//; s/\)\$//'))"; exit 98
-fi
-
 # tsgo net-new diff: an error is a regression only when the candidate's error set
-# gains an entry the baseline lacks. A lane with new entries is recomputed once from a
-# clean cache before it counts (transient first-run errors, 2026-08-12).
+# gains an entry the baseline lacks. Candidate lanes run right after \`pnpm build\`, whose
+# emitted dist/tsbuildinfo can inflate the first typecheck with transient errors
+# (2026-08-12), so a lane with new entries is recomputed once from a clean cache.
 TSGO_REGRESS=0
+write_lane_sets /tmp/rp-cand-sets
 for lane in \$LANES; do
   base_set="\$BDIR/tsgo-sets/\$lane.txt"; cand_set="/tmp/rp-cand-sets/\$lane.txt"
   new=\$(comm -13 "\$base_set" "\$cand_set" | wc -l | tr -d ' ')
   if [ "\$new" -gt 0 ]; then
     rm -rf "\$SHARD_CACHE"
-    ( cd "\$TSGO_B" && lane_errors "\$lane" ) > "\$cand_set" 2>/tmp/rp-lane-err.txt || {
+    lane_errors "\$lane" > "\$cand_set" 2>/tmp/rp-lane-err.txt || {
       cat /tmp/rp-lane-err.txt; echo "EXIT=98 (tsgo lane \$lane did not typecheck)"; exit 98; }
     rm -rf "\$SHARD_CACHE"
     new=\$(comm -13 "\$base_set" "\$cand_set" | wc -l | tr -d ' ')
@@ -324,7 +274,11 @@ for lane in \$LANES; do
     comm -13 "\$base_set" "\$cand_set" | head -20 | sed 's/^/TSGO   + /'
   fi
 done
-rm -rf "\$SHARD_CACHE"
+rm -rf .artifacts/tsgo-cache
+
+# behavior net-new failing-file diff
+corepack pnpm test:fast >/tmp/rp-test.log 2>&1 || true
+fail_files /tmp/rp-test.log > /tmp/rp-cand-testfail.txt
 NEWFAIL=\$(comm -13 "\$BDIR/testfail.txt" /tmp/rp-cand-testfail.txt)
 TEST_REGRESS=0
 if [ -n "\$NEWFAIL" ]; then TEST_REGRESS=1; while read -r f; do [ -n "\$f" ] && echo "NEWFAIL \$f"; done <<<"\$NEWFAIL"; fi
