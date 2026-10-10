@@ -72,6 +72,11 @@ it("hydrates only old scoped candidates while protecting out-of-scope history re
     usageFamilySessionIds: ["protected-usage"],
     compactionCheckpoints: [
       {
+        // The fork keeps the full checkpoint record type; upstream's legacy shape omits these.
+        checkpointId: "protected-checkpoint-id",
+        sessionKey,
+        createdAt: 1,
+        reason: "manual" as const,
         sessionId: "protected-checkpoint",
         preCompaction: { sessionId: "protected-pre" },
         postCompaction: { sessionId: "protected-post" },

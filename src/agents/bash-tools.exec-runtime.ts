@@ -44,6 +44,7 @@ export {
 } from "../infra/exec-approvals.js";
 import fs from "node:fs";
 import { logWarn } from "../logger.js";
+import type { SpawnInitiation } from "../process/spawn-initiation.js";
 import type { ManagedRun } from "../process/supervisor/index.js";
 import { getProcessSupervisor } from "../process/supervisor/index.js";
 import type { RunExit, TerminationReason } from "../process/supervisor/types.js";
@@ -69,6 +70,7 @@ import {
   resolveProcessCleanupMs,
   tail,
 } from "./bash-process-registry.js";
+import { createExecLaunchLifecycle, ExecProcessPreflightError } from "./bash-tools.exec-launch.js";
 import {
   compactNotifyOutput,
   renderExecExitLabel,
@@ -84,19 +86,6 @@ import { createStreamingBinaryOutputSanitizer, getShellConfig } from "./shell-ut
 import { registerTrustedToolNoStartError } from "./tool-result-error.js";
 
 export { execSchema } from "./bash-tools.schemas.js";
-
-export class ExecProcessPreflightError extends Error {
-  constructor(readonly result: AgentToolResult<ExecToolDetails>) {
-    super("exec denied by final preflight");
-  }
-
-  static unwrap(error: unknown): AgentToolResult<ExecToolDetails> {
-    if (error instanceof ExecProcessPreflightError) {
-      return error.result;
-    }
-    throw error;
-  }
-}
 
 function resolveExecTimeoutMs(timeoutSec: number | null | undefined): number | undefined {
   if (typeof timeoutSec !== "number" || !Number.isFinite(timeoutSec) || timeoutSec <= 0) {
@@ -721,6 +710,8 @@ export async function runExecProcess(opts: {
   beforeSpawn?: () => Promise<AgentToolResult<ExecToolDetails> | undefined>;
   /** Rechecks host policy at the supervisor's final synchronous spawn boundary. */
   assertCurrent?: () => void;
+  initiateSpawn?: SpawnInitiation;
+  releaseSpawn?: (reason?: "retry") => void;
 }): Promise<ExecProcessHandle> {
   let assertSourceActive: (() => void) | undefined = captureAgentToolSourceExecutionGuard(
     opts.startupSignal,
@@ -1007,6 +998,10 @@ export async function runExecProcess(opts: {
 
   let managedRun: ManagedRun | null = null;
   let usingPty = spawnSpec.mode === "pty";
+  // Launch custody (upstream spawn initiation): the caller's grant is held from
+  // consumption to native launch and released on every exit from startup.
+  const launchLifecycle = createExecLaunchLifecycle(opts.initiateSpawn, opts.releaseSpawn);
+  const initiateSpawn = launchLifecycle.wrap(() => assertSourceActive?.(), opts.assertCurrent);
 
   const assertPreSpawnAuthorized = async () => {
     opts.startupSignal?.throwIfAborted();
@@ -1034,6 +1029,7 @@ export async function runExecProcess(opts: {
       onStderr: handleStderr,
       // Host approval policy is rechecked by the supervisor at native launch.
       beforeSpawn: opts.assertCurrent,
+      initiateSpawn,
     };
     // Revalidate authorization after async preparation, immediately before the
     // first spawn attempt (upstream pre-spawn preflight).
@@ -1057,7 +1053,9 @@ export async function runExecProcess(opts: {
   } catch (err) {
     // Startup cancellation is terminal: rethrow instead of retrying without PTY.
     opts.startupSignal?.throwIfAborted();
-    if (spawnSpec.mode === "pty") {
+    // A launch that reached native initiation is never replayed without PTY.
+    if (spawnSpec.mode === "pty" && !launchLifecycle.initiated) {
+      launchLifecycle.release("retry");
       const warning = `Warning: PTY spawn failed (${String(err)}); retrying without PTY for \`${opts.command}\`.`;
       logWarn(
         `exec: PTY spawn failed (${String(err)}); retrying without PTY for "${opts.command}".`,
@@ -1081,8 +1079,10 @@ export async function runExecProcess(opts: {
           onStdout: handleStdout,
           onStderr: handleStderr,
           beforeSpawn: opts.assertCurrent,
+          initiateSpawn,
         });
       } catch (retryErr) {
+        launchLifecycle.release();
         assertSourceActive?.();
         markExited(session, null, null, "failed");
         const outcome = buildExecRuntimeErrorOutcome({
@@ -1112,6 +1112,7 @@ export async function runExecProcess(opts: {
         throw retryErr;
       }
     } else {
+      launchLifecycle.release();
       markExited(session, null, null, "failed");
       const outcome = buildExecRuntimeErrorOutcome({
         error: err,
@@ -1138,6 +1139,8 @@ export async function runExecProcess(opts: {
       });
       throw err;
     }
+  } finally {
+    launchLifecycle.dispose();
   }
   session.stdin = managedRun.stdin;
   session.pid = managedRun.pid;
