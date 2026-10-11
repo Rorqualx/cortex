@@ -38,6 +38,7 @@ import {
   DEFAULT_REASONING_ONLY_RETRY_LIMIT,
   resolveEmptyResponseRetryInstruction,
   resolveReasoningOnlyRetryInstruction,
+  resolveSettledToolBatchEvidence,
   resolveSettledToolTerminalContinuationInstruction,
   shouldTreatEmptyAssistantReplyAsSilent,
 } from "./incomplete-turn-recovery.js";
@@ -243,6 +244,11 @@ export async function resolveEmbeddedRunTerminal(input: {
     timedOut: terminalTimedOut,
     attempt,
   };
+  const intentionalTerminalCompletion =
+    !terminalAborted &&
+    !terminalTimedOut &&
+    payloadCount === 0 &&
+    resolveSettledToolBatchEvidence(attempt).intentionalTermination;
   // A failed isolated finalization is terminal for this user turn. Do not let
   // its settled side effects cascade into any ordinary retry family.
   const settledTurnFinalizationAttempted = input.settledTurnFinalizationOutcome !== "not-attempted";
@@ -327,6 +333,7 @@ export async function resolveEmbeddedRunTerminal(input: {
           ...terminalFacts,
           externalAbort: externalAbort || signalOwnedInterruption,
           hadPotentialSideEffects: input.replayState.hadPotentialSideEffects,
+          hasIntentionalTerminalCompletion: intentionalTerminalCompletion,
           terminalAuthFailure: input,
         });
   const incompleteTurnFallbackSafe = Boolean(
@@ -442,6 +449,7 @@ export async function resolveEmbeddedRunTerminal(input: {
     payloadCount,
     payloadsForTerminalPath,
     emptyAssistantReplyIsSilent,
+    intentionalTerminalCompletion,
   });
 }
 

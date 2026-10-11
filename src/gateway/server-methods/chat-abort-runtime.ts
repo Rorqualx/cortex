@@ -445,6 +445,11 @@ function prepareChatSessionAbort(
       persistedSessionId &&
       params.sessionKey !== "global" &&
       !embeddedController &&
+      // Fork: a lifecycle caller's excluded run must survive the session-wide stop.
+      !(
+        params.excludeRunIds?.size &&
+        (!sessionEmbeddedRun || params.excludeRunIds.has(sessionEmbeddedRun.runId))
+      ) &&
       (sessionEmbeddedRun
         ? sessionEmbeddedRun.abort()
         : params.requiredSessionId === undefined && abortEmbeddedAgentRun(persistedSessionId)),
