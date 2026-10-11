@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import {
   bindSessionPendingInputSources,
+  persistSessionTranscriptTurn,
   stageSessionPendingInput,
   withSessionPendingInputPersistence,
   resolveSessionTranscriptRuntimeTarget,
@@ -15,6 +16,8 @@ import {
   type SessionInputActorBinding,
 } from "../config/sessions/session-input-actor.js";
 import { createDynamicSessionSourceAssertion } from "../config/sessions/session-source-authority.js";
+import { readActiveTranscriptEntryAnchorAsync } from "../config/sessions/session-transcript-anchor-read.js";
+import { waitForSessionTranscriptProjection } from "../config/sessions/session-transcript-reconcile.js";
 import { runInDetachedAsyncContext } from "../shared/detached-async-context.js";
 import {
   getUserTurnTranscriptAdmissionOwner,
@@ -421,7 +424,15 @@ export function createUserTurnTranscriptRecorder(
       return persistedResult;
     }
     const persistencePromise = (async () => {
-      if (!options.message && committedInput && resolvedPersistenceTarget) {
+      if (
+        !options.message &&
+        committedInput &&
+        resolvedPersistenceTarget &&
+        // Fork: file targets never stage pending input (see stageApproved), so a
+        // committed-input resolve is store-backed by construction; the guard also
+        // satisfies upstream's stricter PersistUserTurnTranscriptParams type.
+        !isUserTurnTranscriptFileTarget(resolvedPersistenceTarget)
+      ) {
         const result = await resolveCommittedUserTurnTranscript(committedInput, {
           ...resolvedPersistenceTarget,
           logicalTurnId,

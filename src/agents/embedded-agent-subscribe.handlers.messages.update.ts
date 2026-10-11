@@ -471,11 +471,7 @@ export function handleMessageUpdate(
       const textWasVisible = ctx.state.blockState.textIsVisible;
       if (undrained) {
         ctx.blockChunker.reset();
-        ctx.state.blockState = {
-          thinking: false,
-          final: false,
-          inlineCode: createInlineCodeState(),
-        };
+        ctx.state.blockState = createAssistantStreamBlockState();
       }
       const textIsVisible =
         !ctx.params.enforceFinalTag &&
