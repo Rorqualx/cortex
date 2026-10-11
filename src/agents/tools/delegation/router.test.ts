@@ -296,3 +296,76 @@ describe("delegation router adaptive latency balancing", () => {
     expect(order.indexOf(b!)).toBeLessThan(order.indexOf(a!));
   });
 });
+
+// QW-D (2026-10-11): operation-class routing — read/write/synthesize is a
+// dimension orthogonal to kind. Read-shaped calls prefer the provider's
+// cheap/fast variant; write/synthesize keep the full-strength tier default;
+// unconfigured fast variants fall through so unseen configs are unaffected.
+describe("operation-class routing (QW-D)", () => {
+  const WITH_FAST = cfgWith({
+    zai: ["glm-5.1", "glm-5-turbo", "glm-4.7"],
+    kimi: ["kimi-for-coding"],
+    deepseek: ["deepseek-v4-pro", "deepseek-v4-flash"],
+  });
+
+  it("read-shaped backbone calls prefer the cheap/fast variant", () => {
+    expect(resolveRoute({ kind: "research", cfg: WITH_FAST, opClass: "read" }).primary).toEqual({
+      provider: "zai",
+      model: "glm-5-turbo",
+    });
+  });
+
+  it("write and synthesize keep the full-strength tier default", () => {
+    expect(resolveRoute({ kind: "research", cfg: WITH_FAST, opClass: "write" }).primary).toEqual({
+      provider: "zai",
+      model: "glm-5.1",
+    });
+    expect(
+      resolveRoute({ kind: "research", cfg: WITH_FAST, opClass: "synthesize" }).primary,
+    ).toEqual({ provider: "zai", model: "glm-5.1" });
+  });
+
+  it("absent opClass is exactly today's kind-only routing", () => {
+    expect(resolveRoute({ kind: "research", cfg: WITH_FAST }).primary).toEqual({
+      provider: "zai",
+      model: "glm-5.1",
+    });
+  });
+
+  it("unconfigured fast variant falls back to the tier default (EscapeGuard)", () => {
+    // FULL has no glm-5-turbo — read must not regress to a weaker choice.
+    expect(resolveRoute({ kind: "research", cfg: FULL, opClass: "read" }).primary).toEqual({
+      provider: "zai",
+      model: "glm-5.1",
+    });
+  });
+
+  it("explicit per-kind preference beats opClass (vision reads need vision)", () => {
+    expect(resolveRoute({ kind: "vision", cfg: FULL, opClass: "read" }).primary).toEqual({
+      provider: "zai",
+      model: "glm-4.6v",
+    });
+  });
+
+  it("read preference applies per provider (deepseek flash)", () => {
+    expect(
+      resolveRoute({ kind: "research", cfg: FULL, provider: "deepseek", opClass: "read" }).primary,
+    ).toEqual({ provider: "deepseek", model: "deepseek-v4-flash" });
+  });
+
+  it("read routing never collapses the fallback chain", () => {
+    const route = resolveRoute({ kind: "research", cfg: WITH_FAST, opClass: "read" });
+    const chain = [route.primary, ...route.fallbacks];
+    const models = new Set(chain.map((c) => `${c.provider}/${c.model}`));
+    // Every configured model stays reachable (no-collapse contract).
+    for (const id of [
+      "zai/glm-5.1",
+      "zai/glm-5-turbo",
+      "zai/glm-4.7",
+      "deepseek/deepseek-v4-pro",
+      "deepseek/deepseek-v4-flash",
+    ]) {
+      expect(models.has(id)).toBe(true);
+    }
+  });
+});

@@ -149,15 +149,36 @@ export function tierForKind(kind: DelegationKind): "backbone" | "execution" {
 }
 
 /**
+ * Operation class (QW-D, 2026-10-11) — a routing dimension ORTHOGONAL to kind.
+ * Kind captures task shape (plan/code/review/…); opClass captures mutability:
+ * does the delegated call only READ information, WRITE/change state, or
+ * SYNTHESIZE across many sources? Read-shaped calls don't need the strongest
+ * model — they prefer the provider's cheap/fast variant. Write-shaped calls
+ * keep the full-strength default (errors are expensive); synthesize keeps the
+ * backbone strength (capacity-sensitive). Absent = today's behavior exactly.
+ */
+export type OperationClass = "read" | "write" | "synthesize";
+
+/**
  * Tier-default model per provider: backbone → strongest, execution → fastest.
  * Used when PREFERRED doesn't have an explicit per-kind entry (e.g. vision
  * needs the -v variant regardless of tier, so it stays explicit).
+ *
+ * QW-D: the `read` key is the cheap/fast model read-shaped calls prefer when
+ * `opClass: "read"` is set on the request. It only applies when that model is
+ * actually configured — an unconfigured fast variant falls through to the
+ * tier default, so unseen provider configs keep today's behavior
+ * (EscapeGuard caution: routing tuned on one config must not regress others).
  */
-const TIER_DEFAULT: Record<string, Record<"backbone" | "execution", string>> = {
-  zai: { backbone: "glm-5.1", execution: "glm-4.7" },
-  kimi: { backbone: "kimi-for-coding", execution: "kimi-for-coding" },
-  deepseek: { backbone: "deepseek-v4-pro", execution: "deepseek-v4-pro" },
-  moonshot: { backbone: "kimi-k2.6", execution: "kimi-k2.6" },
+const TIER_DEFAULT: Record<string, Record<"backbone" | "execution" | "read", string>> = {
+  zai: { backbone: "glm-5.1", execution: "glm-4.7", read: "glm-5-turbo" },
+  kimi: { backbone: "kimi-for-coding", execution: "kimi-for-coding", read: "kimi-for-coding" },
+  deepseek: {
+    backbone: "deepseek-v4-pro",
+    execution: "deepseek-v4-pro",
+    read: "deepseek-v4-flash",
+  },
+  moonshot: { backbone: "kimi-k2.6", execution: "kimi-k2.6", read: "kimi-k2.5" },
 };
 
 /** A provider+model candidate. `provider` is an OpenClaw config provider id. */
@@ -245,6 +266,13 @@ export type RouteRequest = {
    * order (zai → kimi → deepseek → moonshot).
    */
   effectiveCostPerMtok?: Record<string, number> | undefined;
+  /**
+   * QW-D (2026-10-11): operation class — read/write/synthesize, orthogonal to
+   * kind. `read` prefers the provider's cheap/fast model (TIER_DEFAULT.read)
+   * when configured; `write` and `synthesize` keep the tier default. Absent =
+   * kind-only routing, exactly today's behavior.
+   */
+  opClass?: OperationClass | undefined;
 };
 
 export type Route = {
@@ -310,24 +338,39 @@ function orderedProviders(
 /**
  * Pick a provider's model for a kind. Resolution order:
  * 1. Explicit per-kind preference (PREFERRED[kind]) — e.g. vision → glm-4.6v.
- * 2. Tier default (TIER_DEFAULT[tier]) — backbone → strongest, execution → fastest.
- * 3. Provider default (PREFERRED[default]) — legacy catch-all.
- * 4. First configured model.
+ *    (Always wins over opClass: a vision READ still needs a vision model.)
+ * 2. Operation-class preference — `read` prefers the cheap/fast variant
+ *    (QW-D). Only applies when that model is actually configured.
+ * 3. Tier default (TIER_DEFAULT[tier]) — backbone → strongest, execution → fastest.
+ * 4. Provider default (PREFERRED[default]) — legacy catch-all.
+ * 5. First configured model.
  */
-function pickModel(providerId: string, kind: DelegationKind, models: string[]): string {
+function pickModel(
+  providerId: string,
+  kind: DelegationKind,
+  models: string[],
+  opClass?: OperationClass,
+): string {
   // providerId is a dynamic string, so go through the string-keyed view rather
   // than PREFERRED's literal-keyed table.
   const providerPrefs = PREFERRED_BY_PROVIDER[providerId];
   // 1. Explicit per-kind preference
   const explicit = providerPrefs?.[kind];
   if (explicit && models.includes(explicit)) return explicit;
-  // 2. Tier-based preference (backbone → strongest, execution → fastest)
+  // 2. Operation-class preference (QW-D): read-shaped calls prefer the
+  // provider's cheap/fast variant when configured; write/synthesize keep the
+  // full-strength tier default below. Unconfigured variant → fall through.
+  if (opClass === "read") {
+    const readModel = TIER_DEFAULT[providerId]?.read;
+    if (readModel && models.includes(readModel)) return readModel;
+  }
+  // 3. Tier-based preference (backbone → strongest, execution → fastest)
   const tierModel = TIER_DEFAULT[providerId]?.[ROLE_TIER[kind]];
   if (tierModel && models.includes(tierModel)) return tierModel;
-  // 3. Provider default
+  // 4. Provider default
   const def = providerPrefs?.default;
   if (def && models.includes(def)) return def;
-  // 4. First configured
+  // 5. First configured
   return models[0]!;
 }
 
@@ -357,7 +400,9 @@ export function resolveRoute(req: RouteRequest): Route {
     const models = configuredModels(req.cfg, provider);
     if (models.length === 0) continue;
     const picked =
-      provider === primaryProvider && req.model ? req.model : pickModel(provider, req.kind, models);
+      provider === primaryProvider && req.model
+        ? req.model
+        : pickModel(provider, req.kind, models, req.opClass);
     push(fast, provider, picked);
     // Same-provider secondary retry, inserted right after the primary so a
     // transient primary failure retries on a sibling before crossing providers.

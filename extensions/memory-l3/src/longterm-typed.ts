@@ -575,6 +575,8 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     validity: c.latest.validity,
     // QW-4 (Gated Memory): the winning emission's applicability scope wins.
     applicability: c.latest.applicability,
+    // QW-A (LAPSE Finding 2 delta): winning emission's aspect class wins.
+    temporalAspect: c.latest.temporalAspect,
     lastAccessedAt: c.latest.createdAt,
     volatilityClass: deriveVolatilityClass(c.slot, c.latest.value),
     sourceSessionId: sessionId,
@@ -631,6 +633,9 @@ function reaffirm(
     // QW-4 (Gated Memory): same conservative threading as validity — a
     // reaffirm without applicability conditions keeps the prior scope.
     applicability: c.latest.applicability ?? prior.applicability,
+    // QW-A (LAPSE Finding 2 delta): same conservative threading — a reaffirm
+    // without an aspect class keeps the prior one (absent stays absent).
+    temporalAspect: c.latest.temporalAspect ?? prior.temporalAspect,
     recallCount: merged.length,
     sourceChunkIds: merged,
     validFrom: prior.validFrom,
@@ -687,6 +692,7 @@ function supersede(
     // QW-4 (Gated Memory): the superseding value's scope replaces the prior
     // one — the old scope died with the old value.
     applicability: c.latest.applicability,
+    temporalAspect: c.latest.temporalAspect,
     recallCount: merged.length,
     sourceChunkIds: merged,
     history: [...prior.history, { value: prior.value, supersededAt: now }],
@@ -770,8 +776,11 @@ export function formatBody(facts: ReadonlyArray<LongTermTypedFact>): string {
         f.applicability && f.applicability.length > 0
           ? ` _(if: ${f.applicability.join(", ")})_`
           : "";
+      // QW-A: surface the structured aspect class so progressive/habitual
+      // facts read as such in the regenerated Markdown export.
+      const aspect = f.temporalAspect ? ` _(${f.temporalAspect})_` : "";
       lines.push(
-        `- \`${f.slot}\` = \`${f.value}\`${unit} (recall ${f.recallCount}, conf ${f.confidence.toFixed(2)})${hist}${scope}`,
+        `- \`${f.slot}\` = \`${f.value}\`${unit} (recall ${f.recallCount}, conf ${f.confidence.toFixed(2)})${hist}${scope}${aspect}`,
       );
     }
   }

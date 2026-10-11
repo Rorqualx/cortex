@@ -1115,7 +1115,7 @@ function liftToTypedFact(
     lastVerifiedAt: createdAt,
     validity: extracted.validity,
     applicability: extracted.applicability,
-    eventTime: episodic?.eventTime,
+    temporalAspect: extracted.temporalAspect,
     sessionId: episodic?.sessionId,
     participants: episodic?.participants,
     mentionTime: episodic?.mentionTime,

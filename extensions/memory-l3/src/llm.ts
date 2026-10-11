@@ -1,5 +1,5 @@
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
-import type { FactCertainty, FactModality, FactValidity } from "./types.js";
+import type { FactCertainty, FactModality, FactValidity, TemporalAspect } from "./types.js";
 
 export type LlmCaller = (params: {
   systemPrompt: string;
@@ -228,6 +228,10 @@ export function createAnthropicCaller(config: AnthropicCallerConfig): LlmCaller 
   };
 }
 
+// PROMPT_VERSION = 20 — adds TEMPORAL_ASPECT structured field (QW-A, LAPSE
+// Finding 2 delta): typed facts with a verbal value now emit temporal_aspect
+// (progressive|habitual|stative|event|expired) so the aspect distinction the
+// ASPECT rule (v16) preserves in wording is also addressable as structure.
 // PROMPT_VERSION = 19 — adds APPLICABILITY rule (Gated Memory applicability
 // conditions): typed facts that only hold within a scope (a host, project,
 // environment) emit "applicability": ["<scope token>"] — short verbatim scope
@@ -281,13 +285,14 @@ Failure-pattern signals to watch for:
 - Incorrect assumptions that led to wasted work
 - Commands that failed and had to be rolled back
 
-Rules (PROMPT_VERSION=19):
+Rules (PROMPT_VERSION=20):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - PERSIST: persist only unambiguous, durable facts — statements that remain true across future sessions (identity, preferences, decisions, infrastructure, verified knowledge). Do NOT persist transient/changing state ("currently", "right now", in-progress task status, session-scoped values) or ambiguous statements (unclear referent, hedged wording, unresolved questions) as confirmed facts: skip them entirely when they are pure session context, otherwise emit with certainty "tentative" AND importance ≤0.4 so the verification bar holds them until re-observed. Erroneous persistence is worse than delayed persistence.
 - TEMPORAL: preserve dates and times verbatim; do not abbreviate or drop temporal expressions (keep "2026-08-16", "9:00 AM MT", "every Tuesday", "last week" exactly as stated) — temporal anchors drive later retrieval.
 - VALIDITY: preserve the time-bounded vs. standing distinction. Keep the temporal qualifier verbatim inside the fact text ("since 2026-06", "currently", "until March", "expires 2027-01") — never drop it or rewrite a bounded statement into an unqualified standing one. Typed facts whose value is explicitly time-bounded ("until ...", "through ...", "expires ...") must additionally emit "validity": { "kind": "time-bounded", "validThrough": "<end date as YYYY-MM-DD or YYYY-MM, or null when no explicit end date>" }; standing facts omit validity entirely.
 - APPLICABILITY: typed facts whose value only holds within a scope — a specific host, device, project, or environment — must emit "applicability": ["<scope>"] with 1-3 short scope tokens taken VERBATIM from the conversation (e.g. ["duckie"], ["work-laptop", "office"]). Facts that hold everywhere omit applicability entirely. Never invent scope tokens: each token must appear in the sourceSpan or the surrounding conversation.
 - ASPECT: preserve verb aspect exactly as stated — keep the distinction between ongoing ("is migrating"), habitual ("runs every Tuesday"), and completed ("migrated") actions; never flatten ongoing/habitual forms into completed ones.
+- TEMPORAL_ASPECT: typed facts whose value or sourceSpan contains a verbal form must additionally emit "temporal_aspect": one of "progressive" (ongoing: "is migrating"), "habitual" (recurring: "runs every Tuesday"), "stative" (standing state: "lives in Denver"), "event" (completed one-off: "migrated", "moved"), "expired" (no longer true: "used to", "no longer"). Typed facts with no verbal component omit the field. Never guess: classify only from the wording in the sourceSpan.
 - HEDGE: keep hedged wording from the source ("might", "plans to", "reportedly", "unconfirmed") inside the fact text itself — never rewrite a hedged source into a definitive statement; also mark certainty "tentative".
 - MODALITY: classify every fact as "fact" (settled statement), "plan" (stated intention or future action — hedged or not: "plans to", "might", "intends to", "will maybe"), or "correction" (supersedes a previously stated value). Modality is orthogonal to certainty — a firmly-grounded plan is still a plan. Default "fact".
 - CONFLICT: when sources give conflicting values for the same fact or slot, do NOT force one definitive value — emit each alternative separately: typed facts repeat the slot with each conflicting value at confidence ≤0.5 (each with its own sourceSpan), and the prose fact carries certainty "tentative". Supersession arbitration happens downstream; extraction must preserve all sides of the conflict.
@@ -344,13 +349,14 @@ const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Rea
 
 Failure-pattern signals: repeated tool errors (doom loop), irrelevant search results followed by re-query (dead-end), approaches tried then abandoned, incorrect assumptions causing wasted work, commands that failed and were rolled back.
 
-Rules (PROMPT_VERSION=19-NATIVE):
+Rules (PROMPT_VERSION=20-NATIVE):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - PERSIST: persist only unambiguous, durable facts (true across future sessions: identity, preferences, decisions, infrastructure, verified knowledge). Transient/changing state ("currently", in-progress status, session-scoped values) and ambiguous statements (unclear referent, hedged wording, unresolved questions) must NOT be persisted as confirmed — skip when pure session context, else certainty "tentative" + importance ≤0.4 for the verification bar. Erroneous persistence is worse than delayed persistence.
 - TEMPORAL: dates and times must stay verbatim even under compression — never abbreviate or drop temporal expressions ("2026-08-16", "9:00 AM MT", "every Tuesday", "last week"); temporal anchors drive later retrieval.
 - VALIDITY: keep the time-bounded vs. standing distinction — temporal qualifiers ("since 2026-06", "currently", "until March") stay verbatim in fact text; typed facts with an explicit end emit "validity": { "kind": "time-bounded", "validThrough": "YYYY-MM-DD | YYYY-MM | null" }; standing facts omit validity.
 - APPLICABILITY: typed facts true only within a scope (host/device/project/environment) emit "applicability": ["<scope>"] — 1-3 short tokens VERBATIM from the sourceSpan or conversation (e.g. ["duckie"]); universal facts omit it; never invent scope tokens.
 - ASPECT: verb aspect survives compression — ongoing ("is migrating"), habitual ("runs every Tuesday"), completed ("migrated") stay distinct; never flatten progressive/habitual into completed.
+- TEMPORAL_ASPECT: verbal typed facts emit "temporal_aspect": "progressive|habitual|stative|event|expired" (ongoing | recurring | standing state | completed one-off | no longer true); non-verbal typed facts omit it; classify only from sourceSpan wording, never guess.
 - HEDGE: hedged source wording ("might", "plans to", "reportedly", "unconfirmed") stays in the fact text — never launder a hedge into a definitive statement; certainty "tentative".
 - MODALITY: classify each fact fact|plan|correction — "plan" = stated intention/future action ("plans to", "might", "intends to"); "correction" = supersedes a prior value; default "fact". Orthogonal to certainty: a firmly-grounded plan is still a plan.
 - CONFLICT: conflicting values for the same slot → emit each alternative separately (same slot, each value, confidence ≤0.5, own sourceSpan; prose certainty "tentative"). Never force one winner — supersession arbitration is downstream.
@@ -426,6 +432,9 @@ export type ExtractedTypedFact = {
    * APPLICABILITY rule (PROMPT_VERSION=19) for values that only hold within
    * a scope; absent = unconstrained. */
   applicability?: string[];
+  /** Structured verb-aspect class (TEMPORAL_ASPECT rule, PROMPT_VERSION=20);
+   * absent = unclassified (non-verbal value or pre-v20 extraction). */
+  temporalAspect?: TemporalAspect;
 };
 
 export type ExtractResult = {
@@ -640,6 +649,9 @@ function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[
     const unit = typeof o.unit === "string" && o.unit.trim().length > 0 ? o.unit.trim() : null;
     const validity = normalizeFactValidity(o.validity);
     const applicability = normalizeApplicability(o.applicability);
+    const temporalAspect = normalizeTemporalAspect(
+      o.temporal_aspect ?? o.temporalAspect ?? o.aspect,
+    );
     out.push({
       slot,
       value: valueRaw,
@@ -648,6 +660,7 @@ function normalizeTypedFacts(facts: ReadonlyArray<unknown>): ExtractedTypedFact[
       confidence: Math.max(0, Math.min(1, confidenceRaw)),
       ...(validity ? { validity } : {}),
       ...(applicability ? { applicability } : {}),
+      ...(temporalAspect ? { temporalAspect } : {}),
     });
   }
   return out;
@@ -691,6 +704,28 @@ function normalizeApplicability(raw: unknown): string[] | undefined {
     }
   }
   return out.length > 0 ? out : undefined;
+}
+
+/**
+ * QW-A (LAPSE Finding 2 delta): coerce the LLM-emitted verb-aspect class
+ * into a TemporalAspect. Tolerant of drift: accepts the snake_case prompt
+ * field (temporal_aspect), camelCase, and the bare `aspect` alias; values
+ * are matched case-insensitively; an unknown value drops the field
+ * entirely (absent = unknown) rather than guessing a class.
+ */
+function normalizeTemporalAspect(raw: unknown): TemporalAspect | undefined {
+  const TEMPORAL_ASPECTS: ReadonlySet<string> = new Set([
+    "progressive",
+    "habitual",
+    "stative",
+    "event",
+    "expired",
+  ]);
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+  const value = raw.trim().toLowerCase();
+  return TEMPORAL_ASPECTS.has(value) ? (value as TemporalAspect) : undefined;
 }
 
 /**

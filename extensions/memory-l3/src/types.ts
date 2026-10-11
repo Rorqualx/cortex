@@ -202,7 +202,26 @@ export type TypedFact = {
    * before this feature.
    */
   applicability?: string[];
+  /**
+   * QW-A (LAPSE Finding 2 delta): structured verb-aspect class emitted per
+   * the TEMPORAL_ASPECT rule (PROMPT_VERSION=20) — progressive ("is
+   * migrating"), habitual ("runs every Tuesday"), stative ("lives in
+   * Denver"), event ("migrated" — completed one-off), expired ("used to",
+   * "no longer"). Absent = unknown (facts extracted before this feature or
+   * with no verbal value); readers treat absent as unclassified.
+   */
+  temporalAspect?: TemporalAspect;
 };
+
+/**
+ * Structured verb-aspect classification (QW-A, 2026-10-11). Orthogonal to
+ * FactValidity (which bounds WHEN a value holds): temporal_aspect captures
+ * HOW the action unfolds, so progressive/habitual distinctions survive
+ * compaction as queryable structure instead of relying on prose wording
+ * alone. The ASPECT prompt rule (PROMPT_VERSION=16) preserves the wording;
+ * this field makes the distinction addressable.
+ */
+export type TemporalAspect = "progressive" | "habitual" | "stative" | "event" | "expired";
 
 /**
  * LAPSE-inspired validity window on a fact: whether it is standing (true
@@ -447,6 +466,11 @@ export type LongTermTypedFact = {
    * without conditions keeps the prior set (conservative). Absent =
    * unconstrained. Absent on facts created before PROMPT_VERSION=19. */
   applicability?: string[];
+  /** QW-A (LAPSE Finding 2 delta): structured verb-aspect class threaded
+   * from the winning emission (TEMPORAL_ASPECT rule, PROMPT_VERSION=20);
+   * a reaffirm without an aspect keeps the prior class (conservative —
+   * same threading as validity/applicability). Absent = unclassified. */
+  temporalAspect?: TemporalAspect;
   archivedAt: number | null;
   /** Epoch ms when this fact was last explicitly verified / reaffirmed.
    * Used for temporal-currency scoring in retrieval and archival.
