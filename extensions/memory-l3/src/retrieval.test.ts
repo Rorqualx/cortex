@@ -3,8 +3,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  buildEvidenceExpansionTerms,
   classifyQueryIntent,
   critiqueStaleFacts,
+  extractQueryAnchors,
+  findMissingPacketAnchors,
   formatMemorySection,
   getIntentScoringPreset,
   heuristicReformulate,
@@ -2206,5 +2209,135 @@ describe("retrieveTopK type-dispatched retrieval (MemoType, QW3)", () => {
     });
     // No inferable category: both runs use the same config for this fact.
     expect(dispatched.facts[0]!.score).toBe(explicit.facts[0]!.score);
+  });
+});
+
+describe("retrieveTopK evidence-conditioned drill (QW-C)", () => {
+  it("extractQueryAnchors captures proper nouns and numeric anchors, not stopwords", () => {
+    const anchors = extractQueryAnchors("What did Joe order at Sushi Den on 2026-08-16?");
+    expect(anchors).toContain("Joe");
+    expect(anchors).toContain("Sushi");
+    expect(anchors).toContain("Den");
+    expect(anchors).toContain("2026-08-16");
+    expect(anchors).not.toContain("What");
+  });
+
+  it("extractQueryAnchors keeps dotted numerics whole and dedupes case-insensitively", () => {
+    const anchors = extractQueryAnchors("ping 192.168.50.185 from Joe and joe");
+    expect(anchors).toContain("192.168.50.185");
+    expect(anchors.filter((a) => a.toLowerCase() === "joe")).toHaveLength(1);
+  });
+
+  it("extractQueryAnchors returns [] for anchor-free queries", () => {
+    expect(extractQueryAnchors("where are the lodging reservations")).toEqual([]);
+  });
+
+  it("findMissingPacketAnchors is case-insensitive and reports only absent anchors", () => {
+    expect(findMissingPacketAnchors(["Kyoto", "Joe"], "joe booked a ryokan")).toEqual(["Kyoto"]);
+    expect(findMissingPacketAnchors(["Kyoto"], "KYOTO trip")).toEqual([]);
+  });
+
+  it("buildEvidenceExpansionTerms excludes query tokens/stopwords and ranks deterministically", () => {
+    const terms = buildEvidenceExpansionTerms("where are the kyoto lodging reservations", [
+      "trip lodging plans cover japan temple towns in autumn",
+    ]);
+    // All candidate terms tie at count 1 → alphabetical tie-break, capped at 4.
+    expect(terms).toEqual(["autumn", "cover", "japan", "plans"]);
+  });
+
+  it("buildEvidenceExpansionTerms promotes terms that repeat across facts", () => {
+    const terms = buildEvidenceExpansionTerms("where are the kyoto lodging reservations", [
+      "japan temple towns",
+      "japan autumn colors",
+    ]);
+    expect(terms[0]).toBe("japan");
+  });
+
+  it("drills once and reports drillDepth when a query anchor is missing from the packet", async () => {
+    await writeChunk("chunk-drill", [
+      {
+        id: "f-a",
+        text: "trip lodging plans cover japan temple towns in autumn",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "k:a",
+      },
+      {
+        id: "f-b",
+        text: "japan temple towns guide saved for the trip",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "k:b",
+      },
+    ]);
+    const drilled = await retrieveTopK({
+      query: "Where are the Kyoto lodging reservations?",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: {
+        useEpochFirst: false,
+        epochExpandTopN: 3,
+        useSubmodularSelect: false,
+        submodularDiversityWeight: 0.3,
+        submodularCoverageWeight: 0.3,
+        submodularTokenBudget: null,
+        mode: "blended",
+        evidenceDrillRounds: 1,
+      },
+    });
+    expect(drilled.drillDepth).toBe(1);
+
+    const control = await retrieveTopK({
+      query: "Where are the Kyoto lodging reservations?",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: {
+        useEpochFirst: false,
+        epochExpandTopN: 3,
+        useSubmodularSelect: false,
+        submodularDiversityWeight: 0.3,
+        submodularCoverageWeight: 0.3,
+        submodularTokenBudget: null,
+        mode: "blended",
+        evidenceDrillRounds: 0,
+      },
+    });
+    expect(control.drillDepth).toBeUndefined();
+    // The drill only ever widens the packet: control ⊆ drilled (2 facts, topK 5).
+    const drilledKeys = new Set(drilled.facts.map((f) => f.fact.dedupKey));
+    for (const key of control.facts.map((f) => f.fact.dedupKey)) {
+      expect(drilledKeys.has(key)).toBe(true);
+    }
+  });
+
+  it("does not drill when the packet already carries the anchors", async () => {
+    await writeChunk("chunk-anchor-present", [
+      {
+        id: "f-c",
+        text: "kyoto lodging reservations are booked at the ryokan",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "k:c",
+      },
+    ]);
+    const result = await retrieveTopK({
+      query: "Where are the Kyoto lodging reservations?",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: {
+        useEpochFirst: false,
+        epochExpandTopN: 3,
+        useSubmodularSelect: false,
+        submodularDiversityWeight: 0.3,
+        submodularCoverageWeight: 0.3,
+        submodularTokenBudget: null,
+        mode: "blended",
+        evidenceDrillRounds: 1,
+      },
+    });
+    expect(result.drillDepth).toBeUndefined();
   });
 });

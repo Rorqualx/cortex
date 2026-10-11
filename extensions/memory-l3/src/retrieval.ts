@@ -280,6 +280,19 @@ export type RetrievalConfig = {
    */
   reformulationThreshold?: number;
   /**
+   * QW-C (2026-10-11): evidence-conditioned drill rounds. When > 0, after
+   * the initial retrieval the result packet is checked for the query's
+   * entity/time anchors; if any are missing, ONE extra round re-queries
+   * with expansion terms drawn from the top retrieved facts — evidence-
+   * conditioned, distinct from the query-side heuristic reformulation
+   * above (which fires on low certainty; this fires on missing evidence).
+   * Capped at 1 regardless of the configured value. Depth is reported on
+   * RetrievalResult.drillDepth. Default 0 (disabled). Enable via config or
+   * env OPENCLAW_MEMORY_L3_EVIDENCE_DRILL=1; the LongMemEval harness arms
+   * it with ZENBRAIN_EVIDENCE_DRILL=1 so QW-B attribution measures the delta.
+   */
+  evidenceDrillRounds?: number;
+  /**
    * QW-1: When true, fuse BM25 and semantic signals via Reciprocal Rank
    * Fusion (RRF) instead of linear weighting. RRF is rank-based and
    * parameter-light (only k), making it robust to score-scale differences.
@@ -331,6 +344,7 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   enableMemoryCritique: false,
   reformulationPasses: 0,
   reformulationThreshold: 0.4,
+  evidenceDrillRounds: 0,
   useRRFFusion: false,
   rrfK: 60,
   evidenceFirstOrdering: true,
@@ -357,6 +371,8 @@ export type RetrievalResult = {
   missingInfo?: MissingFact;
   /** Whether query reformulation was triggered for this retrieval. */
   reformulated?: boolean;
+  /** QW-C: evidence-conditioned drill rounds executed (0–1); absent = none. */
+  drillDepth?: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -458,6 +474,95 @@ export function heuristicReformulate(query: string): string[] {
   // Deduplicate and limit to 3 variants
   const unique = [...new Set(variants)].filter((v) => v !== query.toLowerCase().trim());
   return unique.slice(0, 3);
+}
+
+// ---------------------------------------------------------------------------
+// QW-C (2026-10-11): Evidence-conditioned second retrieval round
+// ---------------------------------------------------------------------------
+
+// Anchor patterns run in linear time (no nested quantifiers).
+const ANCHOR_WORD_RE = /\b[A-Z][A-Za-z0-9]*(?:[-'][A-Za-z0-9]+)*\b/g;
+const ANCHOR_NUMBER_RE = /\b\d[\d.,:/-]*\d\b|\b\d\b/g;
+
+/**
+ * Extract the query's required anchors: proper-noun-suspect capitalized
+ * tokens and numeric/date/time expressions ("Joe", "Sushi Den" → ["Sushi",
+ * "Den"], "192.168.50.185", "2026-08-16"). A result packet that mentions
+ * none of these cannot answer the question — that is the drill trigger.
+ */
+export function extractQueryAnchors(query: string): string[] {
+  const raw = String(query ?? "");
+  if (raw.length === 0) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const anchors: string[] = [];
+  const push = (value: string): void => {
+    const key = value.toLowerCase();
+    if (key.length === 0 || seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    anchors.push(value);
+  };
+  for (const m of raw.matchAll(ANCHOR_WORD_RE)) {
+    if (!QUERY_STOP_WORDS.has(m[0].toLowerCase())) {
+      push(m[0]);
+    }
+  }
+  for (const m of raw.matchAll(ANCHOR_NUMBER_RE)) {
+    push(m[0]);
+  }
+  return anchors;
+}
+
+/**
+ * Anchors absent from every retrieved fact text (case-insensitive
+ * substring). Non-empty result ⇒ the packet lacks required evidence.
+ */
+export function findMissingPacketAnchors(anchors: string[], packetText: string): string[] {
+  const hay = String(packetText ?? "").toLowerCase();
+  return anchors.filter((a) => !hay.includes(a.toLowerCase()));
+}
+
+/**
+ * Expansion terms drawn from the top retrieved facts — co-occurring tokens
+ * that are NOT in the query — used to re-query when anchors are missing.
+ * Deterministic: per-fact term frequency, ties broken alphabetically.
+ */
+export function buildEvidenceExpansionTerms(
+  query: string,
+  topFactTexts: string[],
+  maxTerms = 4,
+): string[] {
+  const queryTokens = new Set(
+    String(query ?? "")
+      .toLowerCase()
+      .split(/\s+/)
+      .map((t) => t.replace(/[^\w:-]/g, ""))
+      .filter(Boolean),
+  );
+  const counts = new Map<string, number>();
+  for (const text of topFactTexts) {
+    const seenInFact = new Set<string>();
+    for (const rawToken of String(text ?? "")
+      .toLowerCase()
+      .split(/\s+/)) {
+      const token = rawToken.replace(/[^\w:-]/g, "");
+      if (token.length < 3 || seenInFact.has(token)) {
+        continue;
+      }
+      seenInFact.add(token);
+      if (QUERY_STOP_WORDS.has(token) || queryTokens.has(token)) {
+        continue;
+      }
+      counts.set(token, (counts.get(token) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, maxTerms)
+    .map(([token]) => token);
 }
 
 /**
@@ -1359,6 +1464,91 @@ export async function retrieveTopK(params: {
     }
   }
 
+  // -----------------------------------------------------------------
+  // QW-C (2026-10-11): Evidence-conditioned second retrieval round
+  // -----------------------------------------------------------------
+  // The reformulation pass above fires on LOW CERTAINTY (query-side
+  // heuristics); this pass fires on MISSING EVIDENCE: the query's
+  // entity/time anchors are absent from the result packet, so ONE drill
+  // round re-queries with expansion terms drawn from the top retrieved
+  // facts themselves. Bounded: max 1 round, in-memory re-scoring over the
+  // already-collected candidate set (no extra storage reads). Depth is
+  // reported on the result so the harness can measure the before/after.
+  const drillRounds = Math.min(
+    1,
+    retConfig.evidenceDrillRounds ??
+      (process.env.OPENCLAW_MEMORY_L3_EVIDENCE_DRILL === "1" ? 1 : 0),
+  );
+  let drillDepth = 0;
+  if (drillRounds > 0 && result.length > 0) {
+    const anchors = extractQueryAnchors(params.query);
+    if (anchors.length > 0) {
+      const packetText = result.map((r) => r.fact.text).join("\n");
+      const missing = findMissingPacketAnchors(anchors, packetText);
+      if (missing.length > 0) {
+        const expansionTerms = buildEvidenceExpansionTerms(
+          params.query,
+          result.slice(0, 5).map((r) => r.fact.text),
+        );
+        const drillTokens = new Set([...queryTokens, ...tokenize(expansionTerms.join(" "))]);
+        if (expansionTerms.length > 0 && drillTokens.size > queryTokens.size) {
+          drillDepth = 1;
+          const existingKeys = new Set(result.map((r) => r.fact.dedupKey));
+          const drilled: RetrievedFact[] = [];
+          for (const item of items) {
+            if (existingKeys.has(item.fact.dedupKey)) {
+              continue;
+            }
+            const signals = scoreFact({
+              queryTokens: drillTokens,
+              fact: item.fact,
+              now,
+              config: effectiveConfig,
+              l3Boost: item.l3Boost,
+              corpusStats,
+              significant: item.fact.significant,
+              informationGain: item.informationGain,
+            });
+            if (
+              params.queryEmbedding &&
+              item.embedding &&
+              params.queryEmbedding.length === item.embedding.length
+            ) {
+              signals.semantic = cosineSimilarity(params.queryEmbedding, item.embedding);
+            }
+            if (retConfig.mode === "keyword") {
+              signals.semantic = 0;
+            } else if (retConfig.mode === "semantic") {
+              signals.bm25 = 0;
+              signals.lexical = 0;
+            }
+            const baseScore = composite(signals, effectiveConfig);
+            const rawScore = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
+            // Drill hits are evidence-conditioned supplements: 0.8 discount
+            // keeps them below direct hits (gentler than reformulation's 0.7 —
+            // they carry anchor-adjacent evidence, not just a rephrasing).
+            const score = rawScore * 0.8;
+            if (score > 0) {
+              drilled.push({
+                fact: item.fact,
+                score,
+                signals,
+                chunkId: item.chunkId,
+                tier: item.tier,
+                contextWindow: item.contextWindow,
+              });
+              existingKeys.add(item.fact.dedupKey);
+            }
+          }
+          if (drilled.length > 0) {
+            result.push(...drilled);
+            result.sort((a, b) => b.score - a.score);
+          }
+        }
+      }
+    }
+  }
+
   const finalFacts = result.slice(0, topK);
 
   // -----------------------------------------------------------------
@@ -1489,7 +1679,12 @@ export async function retrieveTopK(params: {
       ? trimToTokenBudget(compressedFacts, maxTokens)
       : compressedFacts;
 
-  return { facts: budgetedFacts, missingInfo, reformulated };
+  return {
+    facts: budgetedFacts,
+    missingInfo,
+    reformulated,
+    ...(drillDepth > 0 ? { drillDepth } : {}),
+  };
 }
 
 /**

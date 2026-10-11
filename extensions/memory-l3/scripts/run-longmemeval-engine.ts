@@ -28,6 +28,7 @@
 //   ZENBRAIN_RECALL_STABILITY=1  G3 retrieval reaffirms archival durability
 //   ZENBRAIN_REFLECTION=1        G1 generative reflection (insight tier)
 //   ZENBRAIN_HEBBIAN_EXPAND=<n>  G4 pattern completion (pull neighbors of top-n hits)
+//   ZENBRAIN_EVIDENCE_DRILL=1    QW-C evidence-conditioned drill round (missing-anchor re-query)
 //
 // Usage:
 //   node --import tsx extensions/memory-l3/scripts/run-longmemeval-engine.ts \
@@ -210,6 +211,14 @@ function resolveAblation(): Ablation {
   if (on("ZENBRAIN_REFLECTION")) {
     reflection = true;
     flags.push("reflection");
+  }
+  // QW-C (2026-10-11): evidence-conditioned second retrieval round — when the
+  // query's entity/time anchors are missing from the result packet, one
+  // drill round re-queries with expansion terms drawn from the top retrieved
+  // facts. Measure the before/after with the QW-B miss attribution.
+  if (on("ZENBRAIN_EVIDENCE_DRILL")) {
+    retrieval.evidenceDrillRounds = 1;
+    flags.push("evidence-drill");
   }
 
   return {
