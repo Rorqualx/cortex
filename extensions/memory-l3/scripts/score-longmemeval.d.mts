@@ -24,3 +24,11 @@ export declare function summarizeStabilityRuns(verdicts: Array<boolean | null>):
   flipped: boolean;
   unparseable: number;
 };
+export declare function buildAttributionPrompt(
+  question: string,
+  answer: string,
+  packet: string,
+): string;
+export declare function parseAttribution(
+  raw: string | null | undefined,
+): "retrieval-miss" | "reader-miss" | null;
