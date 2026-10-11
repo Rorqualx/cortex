@@ -3,7 +3,10 @@ import { freezeDiagnosticTraceContext } from "../../../infra/diagnostic-trace-co
 import { isTransientNetworkError } from "../../../infra/retryable-network-errors.js";
 import { projectAgentRunAttemptTerminal } from "../../agent-run-terminal-outcome.js";
 import { isCloudCodeAssistFormatError } from "../../embedded-agent-helpers.js";
-import type { CompletedAssistantAnswer } from "../../embedded-agent-subscribe.handlers.types.js";
+import type {
+  CompletedAssistantAnswer,
+  EmbeddedAgentSubscribeState,
+} from "../../embedded-agent-subscribe.handlers.types.js";
 import type { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
 import { extractEmbeddedAssistantText } from "../../embedded-agent-utils.js";
 import {
@@ -63,7 +66,9 @@ export function createAttemptCarryover() {
 }
 
 export type EmbeddedRunAttemptWithReceiptEvidence = EmbeddedRunAttemptResult & {
-  // Fork: the frozen subscriber exposes no answer segments, only the kept answer.
+  // Fork: the frozen subscriber never populates answer segments (only the kept
+  // answer); the optional field keeps upstream's recovery code and tests shared.
+  answerSegments?: EmbeddedAgentSubscribeState["answerSegments"];
   keptAnswer?: CompletedAssistantAnswer;
   successfulNestedToolNames?: string[];
 };

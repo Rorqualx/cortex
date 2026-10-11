@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
-  appendTranscriptEventSync,
   appendTranscriptMessage,
   loadTranscriptEventsSync,
   upsertSessionEntryCore,
   type SessionTranscriptReadScope,
 } from "../../config/sessions/session-accessor.js";
+import { appendTranscriptEventSync } from "../../config/sessions/session-accessor.sqlite-transcript-write.test-support.js";
 import { withEnvAsync } from "../../test-utils/env.js";
 
 const SESSION_ID = "test-session";

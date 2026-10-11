@@ -896,7 +896,9 @@ ENHANCE-OURS on the provider surface, consumer untouched.
 - KEEP: `messages.stream.ts` (fork `resolveStreamingReply` has no raw-directive path), `extensions/zai/index.test.ts`, `scripts/lib/control-ui-i18n-catalog.ts` (upstream imports ui locale fragments the fork UI lacks).
 - ADOPT: `managed-linux.ts`, `memory-search.test.ts`.
 - merge=ours ports (three-way, base=228ba9da4ca): `agents-models-skills.ts` (+`expectedOwnerId`, `agentDir`, `SkillsWorkshopUndo*`), `extra-params.ts`, `openclaw-tools.ts` (+`createMessageToolAsync`), `agent-runner-execution.ts` (+terminal-write settlement binding, `sessionWriter` carried on the fork "completed" variant), `sessions/types.ts` (+`compactionQualityDegraded`), `core-descriptors.ts`, `server-methods/agents.ts`, `session-entry-slot-keys.ts`.
-- Fork follow-ups: `attempt-recovery.ts` uses 0 for the delivery floor (fork has no answer segments); `chat-branch.ts` now awaits `appendTranscriptEvent` (upstream moved the sync append to test support).
+- Fork follow-ups: `EmbeddedRunAttemptWithReceiptEvidence` gains an optional, never-populated `answerSegments` so upstream's `attempt-recovery.ts` and its tests stay shared; `chat-branch.ts` now awaits `appendTranscriptEvent` (upstream moved the sync append to test support).
 - `config/max-lines-baseline.txt`: 25 entries for files absent from the worktree removed.
 - Not carried: upstream snapshot-based block-reply reconciliation, raw-directive XML stripping in `resolveStreamingReply`, `downgradedToolCallTextFilter`.
+- Test harness (fork UI is Lit, not Solid): removed `controlUiSolidPlugin` from `test/vitest/vitest.shared.config.ts` and `cleanupSolid` from `test/non-isolated-runner.ts` (both import ui files the fork does not ship; every vitest run failed at startup), kept the fork `tsconfig.core.test.shard.json` (upstream's `solid-elements.d.ts` reference collapsed the lane to one TS6053). DELETE upstream-new `embedded-agent-subscribe.handlers.messages.tool-markup.test.ts` (tests the fork-deleted snapshot module). `chat-branch.test.ts` imports `appendTranscriptEventSync` from test support.
+- Autoreview (claude, P1 threshold): clean.
 

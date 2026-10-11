@@ -14,7 +14,6 @@ import {
 } from "../../scripts/lib/vitest-local-scheduling.mts";
 import type { LocalVitestScheduling } from "../../scripts/lib/vitest-local-scheduling.mts";
 import { resolveTestBunSourceArgs } from "../../src/test-utils/bun-process.ts";
-import { controlUiSolidPlugin } from "../../ui/config/control-ui-solid.ts";
 import {
   BUNDLED_PLUGIN_ROOT_DIR,
   BUNDLED_PLUGIN_TEST_GLOB,
@@ -148,11 +147,8 @@ export const sharedVitestConfig = {
   root: repoRoot,
   envDir: false as const,
   plugins: [
-    // Node tests also import UI renderers. Keep their compiler off non-UI sources.
-    ...controlUiSolidPlugin([
-      `${repoRoot.replaceAll("\\", "/")}/ui/**/*.tsx`,
-      `${repoRoot.replaceAll("\\", "/")}/extensions/*/browser/**/*.tsx`,
-    ]),
+    // Fork: the fork-owned Control UI is Lit, so upstream's Solid test compiler
+    // (ui/config/control-ui-solid.ts) is not shipped or loaded here.
     {
       name: "openclaw:node-worker-policy",
       config: () => ({

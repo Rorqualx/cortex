@@ -192,8 +192,7 @@ export async function recoverEmbeddedRunAttempt(input: {
       attempt,
       await observeReplyDelivery(
         params.resolveReplyDelivery,
-        // Fork: no answer segments; count deliveries across the whole attempt.
-        0,
+        (attempt.answerSegments?.at(-1)?.messageEnd ?? -1) + 1,
         (error) =>
           log.warn(
             `reply delivery observation failed; retaining custody: ${formatErrorMessage(error)}`,

@@ -51,6 +51,7 @@ export type TransportDropScenario = {
   providerOwner?: PreparedProviderFailoverOwner;
   assistantTexts?: string[];
   precedingMessages?: EmbeddedRunAttemptWithReceiptEvidence["messagesSnapshot"];
+  answerSegments?: EmbeddedRunAttemptWithReceiptEvidence["answerSegments"];
   toolMediaUrls?: string[];
   sourceReplyDelivered?: EmbeddedRunAttemptWithReceiptEvidence["sourceReplyDelivered"];
   trigger?: "cron";
@@ -182,6 +183,7 @@ export async function recoverAfterTransportDrop(scenario: TransportDropScenario 
       ? { currentAttemptReplayMetadata: { replaySafe: true, hadPotentialSideEffects: false } }
       : {}),
   });
+  rawAttempt.answerSegments = scenario.answerSegments;
   const attempt = normalizeEmbeddedRunAttemptResult(rawAttempt);
   const terminalState = resolveEmbeddedRunAttemptTerminalState({
     attempt,

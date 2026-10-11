@@ -23,7 +23,6 @@ import {
   resetGatewayWorkAdmission,
 } from "../src/process/gateway-work-admission.js";
 import { hasOpenClawAgentDatabaseAsyncResources } from "../src/state/openclaw-agent-db-resources.js";
-import { cleanupSolid } from "../ui/src/test-helpers/solid-cleanup.ts";
 import { clearJsdomViewportFocus } from "./jsdom-compat.mjs";
 import {
   type CustomElementTracking,
@@ -590,7 +589,7 @@ export default class OpenClawNonIsolatedRunner extends TestRunner {
         [],
       );
     clean("Vitest file completion", () => super.onAfterRunFiles(files));
-    clean("Solid roots", cleanupSolid);
+    // Fork: the fork-owned Control UI is Lit; there are no Solid roots to dispose.
     await drain("mock resolution", () => drainMockerResolveMocks(internals.moduleRunner?.mocker));
     // The last test's scheduled closes must finish before cleanup restores shared state.
     await settleSqliteTestAgentCloses();
