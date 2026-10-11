@@ -330,6 +330,8 @@ type QResult = {
   exact_hit: boolean;
   /** Whether the gold answer appears verbatim in the packed retrieved context (diagnostic). */
   answer_in_context: boolean;
+  /** The full injected retrieval packet (memory section) — logged to packet-engine-*.jsonl so the scorer can attribute misses to retrieval vs reader. */
+  packet: string;
   retrieved: number;
   memory_chars: number;
   /** REMORY compaction proxy metrics over the replayed haystack log (QW2, 2026-10-09). */
@@ -507,6 +509,7 @@ async function runQuestion(
       ground_truth: String(q.answer),
       exact_hit: hypothesis.toLowerCase().includes(String(q.answer).toLowerCase()),
       answer_in_context: checkAnswerInContext(q.answer, memorySection),
+      packet: memorySection,
       retrieved: top.facts.length,
       memory_chars: memorySection.length,
       proxy: computeCompactionProxyMetrics(q.haystack_sessions.flat() as never),
@@ -626,6 +629,7 @@ async function main(): Promise<void> {
           ground_truth: String(q.answer),
           exact_hit: false,
           answer_in_context: false,
+          packet: "",
           retrieved: 0,
           memory_chars: 0,
           error: err.message,
@@ -700,6 +704,22 @@ async function main(): Promise<void> {
       .map((r) => JSON.stringify({ question_id: r.question_id, hypothesis: r.hypothesis }))
       .join("\n") + "\n",
   );
+  // Per-question retrieval packet (the exact memory section the answerer saw),
+  // consumed by score-longmemeval.mjs to split judged misses into retrieval-miss
+  // (evidence never reached the reader) vs reader-miss (evidence was there).
+  const packetPath = path.join(outDir, `packet-engine-${tag}.jsonl`);
+  await writeFile(
+    packetPath,
+    results
+      .map((r) =>
+        JSON.stringify({
+          question_id: r.question_id,
+          question_type: r.question_type,
+          packet: r.packet,
+        }),
+      )
+      .join("\n") + "\n",
+  );
   const metaPath = path.join(outDir, `runmeta-engine-${tag}.json`);
   await writeFile(
     metaPath,
@@ -732,7 +752,7 @@ async function main(): Promise<void> {
       2,
     ),
   );
-  console.log(`\nWrote ${hypoPath}\n      ${metaPath}`);
+  console.log(`\nWrote ${hypoPath}\n      ${metaPath}\n      ${packetPath}`);
   console.log(`Judge:  node extensions/memory-l3/scripts/score-longmemeval.mjs ${hypoPath}`);
 }
 

@@ -122,6 +122,45 @@ export function countTemporalPreserved(answer, response) {
 
 // ── End temporal preservation helpers ─────────────────────────────────────
 
+// ── Miss attribution (retrieval-miss vs reader-miss) ───────────────────────
+// For each judged miss, ONE extra judge pass asks whether the evidence needed
+// for the gold answer was present in the retrieval packet the answerer saw.
+//   retrieval-miss = the needed facts never reached the reader → fix retrieval
+//   reader-miss    = the needed facts were present but the answer failed → fix
+//                    reader/prompts/compaction wording
+// The packet comes from packet-engine-<tag>.jsonl, written alongside the
+// hypothesis file by run-longmemeval-engine.ts (the adapter runner writes none,
+// so attribution is silently disabled there).
+
+export function buildAttributionPrompt(question, answer, packet) {
+  return `I will give you a question, its correct answer, and the retrieval packet (the only facts) a memory system provided to the model that answered. Decide whether the packet contains the evidence needed to produce the correct answer.
+
+Question: ${question}
+
+Correct Answer: ${answer}
+
+Retrieval packet:
+${packet}
+
+Does the packet contain the information needed to answer the question correctly (allowing trivial paraphrase or simple one-step derivation)? Answer exactly "evidence-present" if the needed information is present, or "evidence-absent" if it is missing or insufficient. Answer with one of those two labels only.`;
+}
+
+export function parseAttribution(raw) {
+  const s = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  // "absent" first: a hedging judge may mention both labels; absence decides.
+  if (/\bevidence[- ]absent\b/.test(s)) {
+    return "retrieval-miss";
+  }
+  if (/\bevidence[- ]present\b/.test(s)) {
+    return "reader-miss";
+  }
+  return null;
+}
+
+// ── End miss attribution helpers ───────────────────────────────────────────
+
 // Verbatim prompt templates from LongMemEval's evaluate_qa.py.
 const TEMPLATES = {
   default:
@@ -394,6 +433,32 @@ async function main() {
   const oracle = JSON.parse(await readFile(ORACLE_PATH, "utf8"));
   const byId = new Map(oracle.map((q) => [q.question_id, q]));
 
+  // Retrieval packets for miss attribution (QW-B): packet-engine-<tag>.jsonl
+  // written by the real-engine runner next to the hypothesis file.
+  const packetPath = hypArg.includes("hypothesis-")
+    ? hypArg.replace("hypothesis-", "packet-")
+    : null;
+  let packetsById = null;
+  if (packetPath) {
+    try {
+      const packetLines = (await readFile(packetPath, "utf8")).split("\n").filter(Boolean);
+      packetsById = new Map(
+        packetLines.map((l) => {
+          const p = JSON.parse(l);
+          return [p.question_id, String(p.packet ?? "")];
+        }),
+      );
+      console.log(
+        `Attribution: loaded ${packetsById.size} retrieval packets from ${path.basename(packetPath)} — misses will be split retrieval-vs-reader`,
+      );
+    } catch {
+      console.log(
+        `Attribution: no packet file at ${packetPath} — retrieval-vs-reader split disabled (real-engine runner writes one)`,
+      );
+      packetsById = null;
+    }
+  }
+
   const tasks = hypotheses
     .map((h) => {
       const q = byId.get(h.question_id);
@@ -449,6 +514,24 @@ async function main() {
         result.dimension_composite = computeWeightedComposite(dimScores);
       }
     }
+    // One extra judge pass per judged miss (bounded by miss count): was the
+    // needed evidence in the packet? Failures here must not corrupt the verdict.
+    if (verdict === false && packetsById) {
+      const packet = packetsById.get(t.hyp.question_id) ?? "";
+      if (packet) {
+        try {
+          const rawAttr = await callJudge({
+            apiKey,
+            prompt: buildAttributionPrompt(t.oracle.question, t.oracle.answer, packet),
+          });
+          result.miss_attribution = parseAttribution(rawAttr);
+          result.raw_attribution_output = rawAttr.slice(0, 80);
+        } catch (e) {
+          result.miss_attribution = null;
+          result.attribution_error = e.message;
+        }
+      }
+    }
     return result;
   });
   const elapsedMin = ((Date.now() - t0) / 60000).toFixed(1);
@@ -496,6 +579,21 @@ async function main() {
     );
   }
   console.log(`  wall-clock: ${elapsedMin} min`);
+
+  // Miss attribution split (QW-B): converts the raw miss count into the
+  // retrieval-vs-reader number that steers retrieval-side work. Deliberately
+  // not `type hits/total (pct%)` shaped — optimize-weights.ts parses that.
+  const judgedMisses = verdicts.filter((v) => v.verdict === false);
+  const retrievalMisses = judgedMisses.filter(
+    (v) => v.miss_attribution === "retrieval-miss",
+  ).length;
+  const readerMisses = judgedMisses.filter((v) => v.miss_attribution === "reader-miss").length;
+  if (judgedMisses.length > 0 && packetsById) {
+    const unattributed = judgedMisses.length - retrievalMisses - readerMisses;
+    console.log(
+      `  miss attribution: ${retrievalMisses} retrieval-miss, ${readerMisses} reader-miss, ${unattributed} unattributed, of ${judgedMisses.length} judged misses`,
+    );
+  }
 
   if (doDimensionScoring) {
     const dimVerdicts = verdicts.filter((v) => v.dimension_scores);
