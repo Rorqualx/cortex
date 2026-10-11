@@ -884,3 +884,8 @@ ENHANCE-OURS on the provider surface, consumer untouched.
 - Tests dropped (upstream UI or deleted modules): server-chat.commentary-history,
   tool-batch-completion, six skill-workshop proposal tests. Kept at fork
   version: agents-files, setup-code.public-origin, bash-tools.exec-runtime.
+
+### 2026-10-10c proof round 1 (huey, 2026-10-11) - FAIL, fixed
+- Build: startup JS gzip 626960 B vs 626785 B envelope. Baseline pinned AT the 612 KiB ceiling (626688 B) per the 2026-09-25 precedent; envelope now 627264 B (304 B headroom). NOT a cap raise. Next growth past 627264 B is a maintainer decision.
+- DELETE `src/acp/translator.commentary-producer.test.ts` (upstream-new): covers upstream's commentary display projection, which the fork's subscribe monolith does not implement (same verdict as `server-chat.commentary-history.test.ts`).
+- Known debt, NOT caused by this batch: `packages/agent-core/src/agent-loop*.test.ts` and `stream-steering.test.ts` are upstream tests against the fork-kept `agent-loop.ts`; they time out at 120 s per test (identical on baseline 662da62db86), which stalls `test:fast` and makes the proof's test gate vacuous. The other 13 failing files in the proof run fail identically on the baseline (15 tests).
