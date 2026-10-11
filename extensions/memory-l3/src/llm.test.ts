@@ -193,6 +193,60 @@ describe("parseExtractResponse", () => {
     expect(result.typedFacts[0]!.slot).toBe("ok");
   });
 
+  it("keeps valid temporal_aspect classes and drops unknown values (QW-A)", () => {
+    const raw = JSON.stringify({
+      typedFacts: [
+        {
+          slot: "a",
+          value: "migrating",
+          sourceSpan: "is migrating the server",
+          unit: null,
+          confidence: 0.9,
+          temporal_aspect: "progressive",
+        },
+        {
+          slot: "b",
+          value: "weekly",
+          sourceSpan: "runs every Tuesday",
+          unit: null,
+          confidence: 0.9,
+          temporalAspect: "Habitual",
+        },
+        {
+          slot: "c",
+          value: "moved",
+          sourceSpan: "moved to Denver",
+          unit: null,
+          confidence: 0.9,
+          aspect: "event",
+        },
+        {
+          slot: "d",
+          value: "5",
+          sourceSpan: "v=5",
+          unit: null,
+          confidence: 0.9,
+          temporal_aspect: "sometimes",
+        },
+        {
+          slot: "e",
+          value: "10",
+          sourceSpan: "v=10",
+          unit: null,
+          confidence: 0.9,
+        },
+      ],
+    });
+    const result = parseExtractResponse(raw);
+    expect(result.typedFacts.map((t) => t.temporalAspect)).toEqual([
+      "progressive",
+      "habitual",
+      "event",
+      undefined,
+      undefined,
+    ]);
+  });
+
   it("clamps confidence into [0,1] and treats empty-string unit as null", () => {
     const raw = JSON.stringify({
       typedFacts: [
@@ -312,7 +366,7 @@ describe("extractFacts", () => {
     expect(result.typedFacts[0]!.slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0]![0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=19");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=20");
     // QW1 (2026-08-16): extraction prompts must demand verbatim temporal expressions.
     expect(call.systemPrompt).toContain("TEMPORAL");
     // QW-1 (2026-10-07): AgentMemGate speculation gate — fact|plan|correction modality.
@@ -325,6 +379,8 @@ describe("extractFacts", () => {
     expect(call.systemPrompt).toContain("VALIDITY");
     // QW-4 (2026-10-10): Gated Memory applicability scope conditions.
     expect(call.systemPrompt).toContain("APPLICABILITY");
+    // QW-A (2026-10-11): structured verb-aspect field on typed facts.
+    expect(call.systemPrompt).toContain("TEMPORAL_ASPECT");
     // QW3 (2026-08-24): MCB persist/verify policy guard — unambiguous durable facts only.
     expect(call.systemPrompt).toContain("PERSIST");
     expect(call.systemPrompt).toContain("verification bar");

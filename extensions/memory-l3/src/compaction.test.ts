@@ -402,7 +402,7 @@ describe("compactSession", () => {
     });
     expect(caller).toHaveBeenCalledTimes(1);
     const systemPrompt = (caller as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.systemPrompt;
-    expect(systemPrompt).toContain("PROMPT_VERSION=19-NATIVE");
+    expect(systemPrompt).toContain("PROMPT_VERSION=20-NATIVE");
     // QW1 (2026-08-16): native dense extraction must preserve temporal expressions.
     expect(systemPrompt).toContain("TEMPORAL");
     // QW-4 (2026-10-10): Gated Memory applicability scope conditions.

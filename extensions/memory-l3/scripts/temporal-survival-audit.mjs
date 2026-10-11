@@ -2,6 +2,12 @@
 // Temporal-expression survival audit (QW4, 2026-10-08 — Sleeping Agent,
 // arXiv:2608.11775 measurement slice).
 //
+// QW-A extension (2026-10-11, LAPSE Finding 2 delta): also scores ASPECTUAL
+// FLATTENING — matched-pair survival of progressive/habitual/expired verb
+// forms pre→post compaction, alongside the timestamp-anchor table. The
+// structured temporal_aspect field (PROMPT_VERSION=20) makes the distinction
+// addressable; this metric verifies the wording actually survives.
+//
 // Read-only diagnostic: measures what fraction of explicit temporal anchors
 // (ISO dates/timestamps, slash dates, clock times, month-day references) in
 // PRE-compaction messages (`l1_archive/<chunkId>.jsonl`) survive into the
@@ -33,11 +39,31 @@ const CLOCK_TIME_RE = /\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm)?\b/gi;
 const MONTH_NAME_RE =
   /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.? \d{1,2}\b|\b\d{1,2} (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/gi;
 
+// Aspectual verb-form regexes (QW-A, 2026-10-11 — LAPSE Finding 2 delta):
+// matched-pair survival of progressive/habitual/expired wording pre→post,
+// complementing the timestamp-anchor table above. Aspectual flattening
+// ("is migrating" → "migrated") is invisible to timestamp regexes; these
+// catch it. All patterns run in linear time (no nested quantifiers).
+// Progressive: auxiliary + participle; the matched pair is the PARTICIPLE —
+// its loss (base-form rewrite) is the flattening signal.
+const PROGRESSIVE_RE = /\b(?:is|are|was|were|am|be|been|being)\s+([a-z]+ing)\b/g;
+// Habitual recurrence markers; pair = the whole phrase ("every tuesday").
+const HABITUAL_RE =
+  /\bevery\s+(?:other\s+)?(?:day|week|month|year|weekend|morning|evening|night|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi;
+// Expired-state markers; pair = the marker itself ("used to", "no longer").
+const EXPIRED_RE = /\b(?:used to|no longer|stopped|formerly)\b/gi;
+
 const CATEGORIES = [
   { name: "iso-date", re: ISO_DATE_RE },
   { name: "slash-date", re: SLASH_DATE_RE },
   { name: "clock-time", re: CLOCK_TIME_RE },
   { name: "month-day", re: MONTH_NAME_RE },
+];
+
+const ASPECT_CATEGORIES = [
+  { name: "progressive", re: PROGRESSIVE_RE, capture: 1 },
+  { name: "habitual", re: HABITUAL_RE, capture: 0 },
+  { name: "expired", re: EXPIRED_RE, capture: 0 },
 ];
 
 /** Extract { category → Set<anchor> } from text. Later categories run on text
@@ -54,6 +80,22 @@ function extractAnchors(text) {
     }
     byCategory.set(name, anchors);
     masked = masked.replace(re, " ");
+  }
+  return byCategory;
+}
+
+/** Extract { category → Set<form> } aspectual verb forms (QW-A).
+ * Progressive pairs on the participle (capture 1); habitual/expired pair on
+ * the whole match, lowercased so case drift alone never counts as loss. */
+function extractAspectForms(text) {
+  const byCategory = new Map();
+  for (const { name, re, capture } of ASPECT_CATEGORIES) {
+    const forms = new Set();
+    for (const m of text.matchAll(re)) {
+      const form = (capture === 1 ? m[1] : m[0]).trim().toLowerCase();
+      if (form) forms.add(form);
+    }
+    byCategory.set(name, forms);
   }
   return byCategory;
 }
@@ -142,6 +184,9 @@ const selectChunk = db.prepare("SELECT frontmatter, body FROM l3_l2_chunks WHERE
 
 // category → { survived, total }; overall accumulates per-chunk distinct anchors.
 const stats = new Map(CATEGORIES.map(({ name }) => [name, { survived: 0, total: 0 }]));
+// QW-A: aspectual-form stats, same shape (matched-pair survival per class).
+const aspectStats = new Map(ASPECT_CATEGORIES.map(({ name }) => [name, { survived: 0, total: 0 }]));
+let chunksWithAspects = 0;
 const chunkRows = [];
 let unpaired = 0;
 let chunksWithAnchors = 0;
@@ -201,6 +246,26 @@ for (const file of archiveFiles) {
       });
     }
   }
+  // QW-A: aspectual matched-pair survival for the same chunk. Pair = the
+  // participle (progressive) or marker phrase (habitual/expired); survival =
+  // the exact form appears in the distilled output. A progressive participle
+  // rewritten as base/past form counts as LOST — that is the flattening.
+  const aspects = extractAspectForms(pre);
+  const postLower = post.toLowerCase();
+  let chunkAspectTotal = 0;
+  for (const [category, forms] of aspects) {
+    const s = aspectStats.get(category);
+    for (const form of forms) {
+      s.total += 1;
+      chunkAspectTotal += 1;
+      if (postLower.includes(form)) {
+        s.survived += 1;
+      }
+    }
+  }
+  if (chunkAspectTotal > 0) {
+    chunksWithAspects += 1;
+  }
 }
 db.close();
 
@@ -231,6 +296,30 @@ for (const c of perCategory) {
 console.log("");
 console.log(
   `OVERALL: ${survivedAll}/${totalAll} distinct temporal anchors survived = ${pct(survivedAll, totalAll) ?? "n/a"}`,
+);
+
+// QW-A aspectual-flattening table (matched-pair verb-form survival).
+let aspectTotalAll = 0;
+let aspectSurvivedAll = 0;
+const perAspect = [];
+for (const { name } of ASPECT_CATEGORIES) {
+  const s = aspectStats.get(name);
+  aspectTotalAll += s.total;
+  aspectSurvivedAll += s.survived;
+  perAspect.push({ category: name, survived: s.survived, total: s.total });
+}
+console.log("");
+console.log(
+  `aspectual survival (matched-pair; chunks with aspectual forms: ${chunksWithAspects}):`,
+);
+console.log("aspect        survived/total  survival");
+for (const c of perAspect) {
+  console.log(
+    `${c.category.padEnd(13)} ${String(c.survived).padStart(4)}/${String(c.total).padEnd(6)}    ${pct(c.survived, c.total) ?? "n/a"}`,
+  );
+}
+console.log(
+  `ASPECT OVERALL: ${aspectSurvivedAll}/${aspectTotalAll} aspectual forms survived = ${pct(aspectSurvivedAll, aspectTotalAll) ?? "n/a"} — lost forms = aspectual flattening (progressive/habitual wording rewritten under compaction)`,
 );
 
 if (overall !== null) {
