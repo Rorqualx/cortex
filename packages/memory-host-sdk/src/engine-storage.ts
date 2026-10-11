@@ -49,6 +49,9 @@ export {
   type MemorySearchDeadlineControlOptions,
 } from "./host/search-deadline-control.js";
 export type {
+  MemoryCliSearchParams,
+  MemoryCliSearchResult,
+  MemoryCliSearchOutcome,
   MemoryEmbeddingProbeResult,
   MemoryEntryProvenance,
   MemoryExtraPath,

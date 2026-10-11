@@ -3,6 +3,7 @@ import { createInlineCodeState } from "../../packages/markdown-core/src/code-spa
 import { emitAgentEvent } from "../infra/agent-events.js";
 import type { AssistantMessage } from "../llm/types.js";
 import { resolveAssistantMessagePhase } from "../shared/chat-message-content.js";
+import { toolCallXmlTextFilter } from "../shared/text/assistant-visible-text.js";
 import { createTextProjection, trimTextFilter } from "../shared/text/text-projection.js";
 import { resolveCurrentSourceMessagingToolPartial } from "./embedded-agent-helpers/messaging-dedupe.js";
 import { updateLiveEditDiffProgress } from "./embedded-agent-live-edit-diff.js";
@@ -19,7 +20,6 @@ import {
   extractAssistantStreamSnapshot,
   hasMessageToolOnlySourceDelivery,
   isAssistantTextPhasePending,
-  isOpenAiCompletionsAssistantMessage,
   isResponsesApiAssistantMessage,
   isSubscribeTranscriptOnlyOpenClawAssistantMessage,
   openReasoningStream,
@@ -180,9 +180,6 @@ export function handleMessageUpdate(
   // early unphased deltas from durable block replies until that decision exists.
   const isPhasePendingText =
     !deliveryPhase && isAssistantTextPhasePending(partialAssistant, evtType);
-  const isCompletionsAssistant = isOpenAiCompletionsAssistantMessage(partialAssistant);
-  const isReasoningCompletionsText =
-    isCompletionsAssistant && partialAssistant.openclawDelivery?.textPhaseRequiresTerminal === true;
   const hasResponsesContentIndex =
     streamContentIndex !== undefined && isResponsesApiAssistantMessage(partialAssistant);
   let streamItemChanged = false;
@@ -274,12 +271,6 @@ export function handleMessageUpdate(
     !ctx.state.blockState.textIsVisible &&
     ctx.blockChunker.consumedLength === 0;
   const finalText = evtType === "text_end";
-
-  // A completions stream cannot classify text interrupted by later reasoning
-  // until terminal. Keep that text out of live reply lanes until its phase resolves.
-  if (isReasoningCompletionsText) {
-    return undefined;
-  }
 
   if (chunk) {
     ctx.state.deltaBuffer += chunk;
@@ -415,7 +406,11 @@ export function handleMessageUpdate(
           kind,
           projector:
             kind === "raw"
-              ? createTextProjection([trimTextFilter("both")])
+              ? createTextProjection([
+                  // Serialized tool-call XML must not leak into the live reply lane.
+                  toolCallXmlTextFilter({ stripFunctionCallsXmlPayloads: true }, true),
+                  trimTextFilter("both"),
+                ])
               : createAssistantVisibleStreamText(kind === "final" ? "final_answer" : undefined),
         };
         projection.projector.replace(previousStream?.raw ?? "");
@@ -429,7 +424,7 @@ export function handleMessageUpdate(
       appendDelta = projected.delta;
       // Generic directives retain their raw chunk coordinates: restored trim whitespace
       // could otherwise make an inline tag look like an indented code block.
-      if (kind !== "raw") {
+      if (kind !== "raw" || next !== nextRawStreamText.trim()) {
         visibleDelta = projected.delta ?? (previousText.startsWith(next) ? "" : next);
       }
     }

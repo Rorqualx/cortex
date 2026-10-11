@@ -4020,6 +4020,10 @@
     "target": "标准场景覆盖"
   },
   {
+    "source": "Scenario coverage",
+    "target": "场景覆盖"
+  },
+  {
     "source": "Channel QA reference",
     "target": "通道 QA 参考"
   },

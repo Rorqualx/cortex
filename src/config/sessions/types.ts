@@ -624,6 +624,8 @@ type SessionEntryCore = SessionRestartRecoveryState &
     contextBudgetStatus?: SessionContextBudgetStatus;
     compactionCount?: number;
     compactionCheckpoints?: SessionCompactionCheckpoint[];
+    /** A committed lossy compaction affected this history; cleared with a new session. */
+    compactionQualityDegraded?: true;
     memoryFlush?: MemoryFlushState;
     cliSessionIds?: Record<string, string>;
     cliSessionBindings?: Record<string, CliSessionBinding>;

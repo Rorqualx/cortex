@@ -78,6 +78,9 @@ export type MemoryEmbeddingProbeResult = {
 };
 
 export type {
+  MemoryCliSearchParams,
+  MemoryCliSearchResult,
+  MemoryCliSearchOutcome,
   MemoryChunk,
   MemoryFileEntry,
   MemoryIndexIdentityDiagnostic,

@@ -126,6 +126,7 @@ export const AgentsListResultSchema = Type.Object(
 export const AgentsCreateParamsSchema = Type.Object(
   {
     name: NonEmptyString,
+    expectedOwnerId: Type.Optional(NonEmptyString),
     workspace: NonEmptyString,
     model: Type.Optional(NonEmptyString),
     emoji: Type.Optional(Type.String()),
@@ -143,6 +144,7 @@ export const AgentsCreateResultSchema = Type.Object(
     agentId: NonEmptyString,
     name: NonEmptyString,
     workspace: NonEmptyString,
+    agentDir: Type.Optional(NonEmptyString),
     model: Type.Optional(NonEmptyString),
   },
   { additionalProperties: false },
@@ -636,6 +638,18 @@ export const SkillsWorkshopChangeResultSchema = closedObject({
   change: SkillWorkshopChangeSchema,
 });
 
+/** Reverts every skill change one background review made; `runId` is the review's run id. */
+export const SkillsWorkshopUndoParamsSchema = closedObject({
+  agentId: Type.Optional(NonEmptyString),
+  runId: NonEmptyString,
+});
+
+/** `changes` holds this call's reverts; empty with `already-undone`. */
+export const SkillsWorkshopUndoResultSchema = closedObject({
+  status: Type.Union([Type.Literal("undone"), Type.Literal("already-undone")]),
+  changes: Type.Array(SkillWorkshopChangeSchema),
+});
+
 export const GitHubIdentityScopeSchema = Type.Union([
   Type.Literal("system"),
   Type.Literal("agent"),
@@ -941,6 +955,8 @@ export type SkillsWorkshopReadResult = Static<typeof SkillsWorkshopReadResultSch
 export type SkillsWorkshopArchiveParams = Static<typeof SkillsWorkshopArchiveParamsSchema>;
 export type SkillsWorkshopRestoreParams = Static<typeof SkillsWorkshopRestoreParamsSchema>;
 export type SkillsWorkshopChangeResult = Static<typeof SkillsWorkshopChangeResultSchema>;
+export type SkillsWorkshopUndoParams = Static<typeof SkillsWorkshopUndoParamsSchema>;
+export type SkillsWorkshopUndoResult = Static<typeof SkillsWorkshopUndoResultSchema>;
 export type SkillsSecurityVerdictsParams = Static<typeof SkillsSecurityVerdictsParamsSchema>;
 export type SkillsSecurityVerdictsResult = Static<typeof SkillsSecurityVerdictsResultSchema>;
 export type SkillsSkillCardParams = Static<typeof SkillsSkillCardParamsSchema>;

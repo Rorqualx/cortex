@@ -16,7 +16,10 @@ import {
   resolveCanonicalSessionEntryFromStoreKeys,
   resolveGatewaySessionStoreTargetWithStore,
 } from "../session-utils.js";
-import { resolveWorkerPlacementSessionRuntimeCapabilities } from "../worker-environments/placement-session-runtime.js";
+import {
+  resolveWorkerPlacementSessionRuntimeCapabilities,
+  resolveWorkerPlacementSessionRuntimeCapabilitiesAsync,
+} from "../worker-environments/placement-session-runtime.js";
 import {
   readSessionWorkerPlacementAsync,
   resolveWorkerPlacementArchiveRestoreError,
@@ -34,7 +37,22 @@ export async function prepareSessionWorkerPlacementPatchError(
     context: params.context,
     sessionId: params.entry?.sessionId,
   });
-  return resolveSessionWorkerPlacementPatchError(params, { placement });
+  const runtime =
+    placement &&
+    placement.state !== "local" &&
+    params.entry?.sessionId &&
+    params.validateModelRuntime &&
+    (params.patch.model !== undefined ||
+      params.patch.agentRuntime !== undefined ||
+      params.patch.nativeRuntimeConsent !== undefined)
+      ? await resolveWorkerPlacementSessionRuntimeCapabilitiesAsync({
+          cfg: params.cfg,
+          entry: params.entry,
+          agentId: params.agentId,
+          sessionKey: params.sessionKey,
+        })
+      : undefined;
+  return resolveSessionWorkerPlacementPatchError(params, { placement, runtime });
 }
 
 export function resolveSessionWorkerPlacementPatchError(
@@ -48,7 +66,10 @@ export function resolveSessionWorkerPlacementPatchError(
     sessionKey: string;
     validateModelRuntime: boolean;
   },
-  prepared?: { placement: Awaited<ReturnType<typeof readSessionWorkerPlacementAsync>> },
+  prepared?: {
+    placement: Awaited<ReturnType<typeof readSessionWorkerPlacementAsync>>;
+    runtime?: ReturnType<typeof resolveWorkerPlacementSessionRuntimeCapabilities>;
+  },
 ): string | undefined {
   const placement = prepared
     ? prepared.placement
@@ -86,12 +107,14 @@ export function resolveSessionWorkerPlacementPatchError(
   ) {
     return undefined;
   }
-  const { executionMode } = resolveWorkerPlacementSessionRuntimeCapabilities({
-    cfg: params.cfg,
-    entry: params.entry,
-    agentId: params.agentId,
-    sessionKey: params.sessionKey,
-  });
+  const { executionMode } =
+    prepared?.runtime ??
+    resolveWorkerPlacementSessionRuntimeCapabilities({
+      cfg: params.cfg,
+      entry: params.entry,
+      agentId: params.agentId,
+      sessionKey: params.sessionKey,
+    });
   if (executionMode === placement.executionMode) {
     return undefined;
   }

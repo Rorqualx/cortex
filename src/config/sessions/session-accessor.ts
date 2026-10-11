@@ -229,7 +229,6 @@ export {
 } from "./session-accessor.reset.js";
 export {
   appendTranscriptEvent,
-  appendTranscriptEventSync,
   appendTranscriptMessage,
   appendTranscriptMessageSync,
   findTranscriptEvent,
@@ -257,8 +256,6 @@ export {
   readTranscriptStatsBatchReadOnlySync,
   readTranscriptStatsSync,
   validatePreparedAssistantAppendSync,
-  replaceTranscriptEvents,
-  replaceTranscriptEventsSync,
   replaceSessionWithBranchedTranscript,
   replaceTranscriptSuffixEventsSync,
   rewriteTranscriptEventRowsExact,

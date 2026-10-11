@@ -26,7 +26,6 @@ import {
   registerAgentCreationCommitTests,
   resolveMockWorkspaceDir,
   type MockAgentEntry,
-  type MockConfig,
 } from "./agents-mutate.test-support.js";
 const mocks = vi.hoisted(() => ({
   sharedAuthStoreOwnership: { location: "legacy-main" } as {
@@ -45,7 +44,7 @@ const mocks = vi.hoisted(() => ({
   completeWithPreparedSimpleCompletionModel: vi.fn(async () => ({
     content: "# Composed\n\n## Core Truths\n- you help",
   })),
-  pruneAgentConfig: vi.fn((_cfg: MockConfig, _agentId: string) => ({
+  pruneAgentConfig: vi.fn((_cfg: ReturnType<typeof mergeAgentConfig>, _agentId: string) => ({
     config: {},
     removedBindings: 0,
   })),

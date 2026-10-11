@@ -12,7 +12,6 @@ import {
 } from "../../auto-reply/reply/source-turn-id.js";
 import { messageToolOwnsVisibleReply } from "../../auto-reply/source-reply-delivery-mode.js";
 import type { ThinkLevel, VerboseLevel } from "../../auto-reply/thinking.js";
-import { resolveCollapsedSessionAuthPinSource } from "../../config/sessions/auth-profile-override-provenance.js";
 import {
   persistSessionTranscriptTurn,
   type SessionTranscriptRuntimeTarget,
@@ -77,6 +76,7 @@ import { resolveRunEntryCliRuntime } from "../embedded-agent-runner/run-entry-ru
 import { mergeForcedEmbeddedAttemptToolsAllow } from "../embedded-agent-runner/run/attempt-tool-construction-plan.js";
 import type { DeferredEmbeddedRunLifecycleManager } from "../embedded-agent-runner/run/deferred-lifecycle-owner.js";
 import type { RunEmbeddedAgentInternalParams } from "../embedded-agent-runner/run/internal-params.js";
+import { resolveWebchatPromptCacheKey } from "../embedded-agent-runner/run/session-boundary-prompt-cache-key.js";
 import { runEmbeddedAgent, type EmbeddedAgentRunResult } from "../embedded-agent.js";
 import type { ContextEngineLogicalTurnLease } from "../harness/context-engine-logical-turn.js";
 import type { ContextEngineTurnAttemptFacts } from "../harness/context-engine-turn-attempt.js";
@@ -104,6 +104,7 @@ import {
 import { isRuntimeToolAllowed, isToolAllowedByPolicies } from "../tool-policy-match.js";
 import { DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS } from "../tool-result-limits.js";
 import type { ContextUsage } from "../usage.js";
+import { resolveCommandAuthProfileSelection } from "./attempt-auth-selection.js";
 import { emitAgentAttemptRuntimeStart } from "./attempt-callbacks.js";
 import {
   buildClaudeCliFallbackContextPrelude,
@@ -512,18 +513,7 @@ export function runAgentAttempt(params: {
     authProfileIdSource?: "auto" | "user";
   }) => void;
 }) {
-  const sessionAuthProfileId = params.sessionEntry?.authProfileOverride?.trim();
-  const sessionAuthProfileSource = resolveCollapsedSessionAuthPinSource(params.sessionEntry);
-  // An explicit session choice owns the conversation. Otherwise the profile
-  // bound to the configured model replaces a stale automatic session choice.
-  const selectedAuthProfile =
-    sessionAuthProfileId && sessionAuthProfileSource !== "auto"
-      ? { id: sessionAuthProfileId, source: sessionAuthProfileSource }
-      : params.configuredAuthProfileId?.trim()
-        ? { id: params.configuredAuthProfileId.trim(), source: "user" as const }
-        : sessionAuthProfileId
-          ? { id: sessionAuthProfileId, source: sessionAuthProfileSource }
-          : undefined;
+  const selectedAuthProfile = resolveCommandAuthProfileSelection(params);
   const isRawModelRun = params.opts.modelRun === true || params.opts.promptMode === "none";
   // A completion handoff relays frozen child output, so only a verified private
   // capability plus persisted requester lineage may restore its tool surface.
@@ -632,9 +622,6 @@ export function runAgentAttempt(params: {
   );
   const requestedAgentHarnessId = isRawModelRun ? "openclaw" : undefined;
   const sessionRuntimeOverride = isRawModelRun ? undefined : params.agentHarnessRuntimeOverride;
-  const pinnedHarnessId = isRawModelRun
-    ? undefined
-    : resolveSessionPinnedHarnessId(params.sessionEntry);
   const { cliExecutionProvider, useCliExecution: isCliExecutionProvider } = isRawModelRun
     ? {
         cliExecutionProvider: params.providerOverride,
@@ -647,7 +634,7 @@ export function runAgentAttempt(params: {
         agentId: params.sessionAgentId,
         authProfileId: selectedAuthProfile?.id,
         sessionRuntimeOverride,
-        pinnedHarnessId,
+        pinnedHarnessId: resolveSessionPinnedHarnessId(params.sessionEntry),
       });
   const { completionRetainsRequesterTools, runtimeToolsAllow, disableTools } =
     resolveCompletionToolPolicy({
@@ -774,6 +761,16 @@ export function runAgentAttempt(params: {
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
       sessionTarget: params.sessionTarget,
+      // Internal continuations keep the affinity of the persisted webchat conversation.
+      promptCacheKey:
+        params.sessionEntry?.delivery?.kind === "internal" && params.sessionKey
+          ? resolveWebchatPromptCacheKey({
+              agentId: params.sessionAgentId,
+              provider: params.providerOverride,
+              model: params.modelOverride,
+              sessionKey: params.sessionKey,
+            })
+          : undefined,
       chatType: params.sessionEntry?.chatType,
       contextWindow: params.sessionEntry?.contextWindow,
       agentId: params.sessionAgentId,
@@ -1135,7 +1132,7 @@ export function runAgentAttempt(params: {
     permissionMode: params.sessionEntry?.permissionMode,
     sessionRoot: params.sessionEntry?.sessionRoot,
     ...(params.pluginGeneration ? { pluginGeneration: params.pluginGeneration } : {}),
-    agentHarnessId: pinnedHarnessId,
+    agentHarnessId: isRawModelRun ? undefined : resolveSessionPinnedHarnessId(params.sessionEntry),
     modelSelectionLocked: !isRawModelRun && params.sessionEntry?.modelSelectionLocked === true,
     agentHarnessRuntimeOverride: embeddedAgentHarnessOverride,
     agentHarnessRuntimePreparationHint:

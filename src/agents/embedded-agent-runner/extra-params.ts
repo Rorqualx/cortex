@@ -341,9 +341,10 @@ function createStreamFnWithExtraParams(
     streamParams.cachedContent = cachedContent.trim();
   }
 
-  // Camel-case request overrides win over configured snake-case penalties.
+  // Camel-case request overrides win over configured snake-case sampling values.
   // Transports still decide which API accepts each sampling parameter.
   for (const keys of [
+    ["topP", "top_p"],
     ["frequencyPenalty", "frequency_penalty"],
     ["presencePenalty", "presence_penalty"],
   ] as const) {

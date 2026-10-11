@@ -2726,11 +2726,11 @@ describe("Codex app-server supervised branch lifecycle", () => {
       });
       const bindingStore: CodexAppServerBindingStore = {
         ...testCodexAppServerBindingStore,
-        read: (storeIdentity) => {
+        readAsync: async (storeIdentity) => {
           if (failed && owner === "unreadable") {
             throw readError;
           }
-          return testCodexAppServerBindingStore.read(storeIdentity);
+          return await testCodexAppServerBindingStore.readAsync(storeIdentity);
         },
         mutate: async (storeIdentity, mutation) => {
           if (
@@ -2841,8 +2841,8 @@ describe("Codex app-server supervised branch lifecycle", () => {
       let commitFailed = false;
       const bindingStore: CodexAppServerBindingStore = {
         ...testCodexAppServerBindingStore,
-        read: vi.fn((storeIdentity) => {
-          const current = testCodexAppServerBindingStore.read(storeIdentity);
+        readAsync: vi.fn(async (storeIdentity) => {
+          const current = await testCodexAppServerBindingStore.readAsync(storeIdentity);
           if (!commitFailed) {
             return current;
           }

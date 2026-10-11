@@ -15,7 +15,7 @@ import {
   type FileRestoreReport,
 } from "../../agents/turn-file-snapshots.js";
 import {
-  appendTranscriptEventSync,
+  appendTranscriptEvent,
   loadTranscriptEventsSync,
 } from "../../config/sessions/session-accessor.js";
 import {
@@ -417,7 +417,7 @@ async function handleChatBranchRequest(opts: GatewayRequestHandlerOptions): Prom
     // No appendIntent: the marker must keep its own parentId (the branch base).
     // "active-branch" would rewrite the parent to the current leaf and defeat
     // the branch.
-    appendTranscriptEventSync(transcriptScope, branchMarker);
+    await appendTranscriptEvent(transcriptScope, branchMarker);
   } catch (err) {
     respond(
       false,

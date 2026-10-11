@@ -21,7 +21,7 @@ import {
   writeBuildStamp,
   writeRuntimePostBuildStamp,
 } from "../../scripts/lib/local-build-metadata.mts";
-import { captureRunNodeInputState } from "../../scripts/lib/run-node-input-state.mts";
+import { resolveRunNodeInputSignature } from "../../scripts/lib/run-node-input-state.mts";
 import {
   UPDATE_COMPATIBILITY_INVENTORY_FILE,
   writeUpdateCompatibilityChunks,
@@ -1333,7 +1333,7 @@ describe("run-node script", () => {
         writeRuntimePostBuildStamp({
           cwd: tmp,
           env,
-          inputState: captureRunNodeInputState({ ...deps, env }, "runtime"),
+          inputSignature: resolveRunNodeInputSignature({ ...deps, env }, "runtime"),
         });
         if (changed) {
           await fs.appendFile(resolvePath(tmp, input), "\n");
