@@ -38,6 +38,7 @@ import type {
 } from "./embedded-agent-subscribe.handlers.types.js";
 import type { SubscribeEmbeddedAgentSessionParams } from "./embedded-agent-subscribe.types.js";
 import {
+  createAssistantStreamBlockState,
   createThinkingTagStreamState,
   stripDowngradedToolCallText,
   THINKING_TAG_SCAN_RE,
@@ -742,12 +743,8 @@ export function createStreamRendering({
     blockChunker?.reset();
     replyDirectiveAccumulator.reset();
     resetPartialReplyDirectives();
-    state.blockState = { thinking: false, final: false, inlineCode: createInlineCodeState() };
-    state.partialBlockState = {
-      thinking: false,
-      final: false,
-      inlineCode: createInlineCodeState(),
-    };
+    state.blockState = createAssistantStreamBlockState();
+    state.partialBlockState = createAssistantStreamBlockState();
     state.assistantStream = undefined;
     state.currentSourceMessagingToolHeldPartial = undefined;
     state.lastBlockReplyText = undefined;

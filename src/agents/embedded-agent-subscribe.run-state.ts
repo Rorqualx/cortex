@@ -1,8 +1,10 @@
-import { createInlineCodeState } from "../../packages/markdown-core/src/code-spans.js";
 import { createEmbeddedRunReplayState } from "./embedded-agent-runner/replay-state.js";
 import type { EmbeddedAgentSubscribeState } from "./embedded-agent-subscribe.handlers.types.js";
 import type { SubscribeEmbeddedAgentSessionParams } from "./embedded-agent-subscribe.types.js";
-import { createThinkingTagStreamState } from "./embedded-agent-utils.js";
+import {
+  createAssistantStreamBlockState,
+  createThinkingTagStreamState,
+} from "./embedded-agent-utils.js";
 import { collectAgentInternalEventMedia } from "./internal-events.js";
 
 export function createEmbeddedAgentSubscribeState(
@@ -58,8 +60,8 @@ export function createEmbeddedAgentSubscribeState(
     retryUsage: undefined,
     blockBuffer: "",
     // Track if a streamed chunk opened a <think> block (stateful across chunks).
-    blockState: { thinking: false, final: false, inlineCode: createInlineCodeState() },
-    partialBlockState: { thinking: false, final: false, inlineCode: createInlineCodeState() },
+    blockState: createAssistantStreamBlockState(),
+    partialBlockState: createAssistantStreamBlockState(),
     lastAssistantAudioDirectiveCount: 0,
     assistantStream: undefined,
     lastStreamedAssistant: undefined,

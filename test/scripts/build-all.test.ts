@@ -31,7 +31,6 @@ import { collectBundledPluginBuildEntries } from "../../scripts/lib/bundled-plug
 import { CompilerInputSnapshot } from "../../scripts/lib/compiler-input-snapshot.mts";
 import * as liveGatewayDistFence from "../../scripts/lib/live-gateway-dist-fence.mts";
 import { createManagedCommandInvocation } from "../../scripts/lib/managed-child-process.mts";
-import { TSDOWN_UNIFIED_CONFIG_GROUP } from "../../scripts/lib/tsdown-config-groups.mts";
 import { cleanTsdownOutputRoots } from "../../scripts/tsdown-build.mts";
 import {
   resolveRuntimeWorkerArgv,
@@ -212,7 +211,7 @@ describe("resolveBuildAllStep", () => {
   it("passes encoded import URLs literally to managed Node on Windows", () => {
     const importUrl = "file:///C:/Users/RUNNER%7E1/Project/scripts/tsx.mjs";
     const result = resolveBuildAllStep(
-      { label: "tsdown-unified", args: ["--import", importUrl, "scripts/tsdown-build.mts"] },
+      { label: "tsdown", args: ["--import", importUrl, "scripts/tsdown-build.mts"] },
       { nodeExecPath: "C:\\Program Files\\nodejs\\node.exe", env: {} },
     );
 
@@ -407,7 +406,7 @@ describe("resolveBuildAllSteps", () => {
       const signatures: string[] = [];
       const runner = buildRunner();
       runner.runStep.mockImplementation(({ args, options }) => {
-        if (args.includes(TSDOWN_UNIFIED_CONFIG_GROUP)) {
+        if (args.includes("scripts/tsdown-build.mts") && !args.includes("--config")) {
           cleanTsdownOutputRoots({ cwd, roots: ["dist", "dist-runtime"], env: options.env });
         }
         if (args.includes("scripts/build-external-plugin-local-dist.mts")) {
@@ -478,6 +477,7 @@ describe("resolveBuildAllSteps", () => {
 
   it("parses build-all CLI args before any build work", () => {
     expect(parseBuildAllArgs([])).toEqual({ help: false, profile: "full" });
+    expect(parseBuildAllArgs(["runtime"])).toEqual({ help: false, profile: "runtime" });
     expect(parseBuildAllArgs(["cliStartup"])).toEqual({ help: false, profile: "cliStartup" });
     expect(parseBuildAllArgs(["cliStartup", "--help"])).toEqual({
       help: true,
@@ -649,7 +649,8 @@ describe("resolveBuildAllSteps", () => {
   it("admits package once and freezes its heap for every child", async () => {
     const profile = "package";
     const tsdownSteps = resolveBuildAllSteps(profile).filter(
-      (step) => step.label.startsWith("tsdown-") || step.label === "write-unified-entry-dts",
+      (step) =>
+        step.args.includes("scripts/tsdown-build.mts") || step.label === "write-unified-entry-dts",
     );
     const tsdownInvocations: ReturnType<typeof resolveBuildAllStep>[] = [];
     const executionOrder: string[] = [];
@@ -703,8 +704,8 @@ describe("resolveBuildAllSteps", () => {
       "run:tsdown-ai",
       "cache:tsdown-packages",
       "run:tsdown-packages",
-      "cache:tsdown-unified",
-      "run:tsdown-unified",
+      "cache:tsdown",
+      "run:tsdown",
       "cache:write-unified-entry-dts",
       "run:write-unified-entry-dts",
     ]);
@@ -983,7 +984,7 @@ describe("resolveBuildAllSteps", () => {
         expect.arrayContaining([
           "tsdown-ai",
           "tsdown-packages",
-          "tsdown-unified",
+          "tsdown",
           "write-unified-entry-dts",
         ]),
       );
@@ -1118,6 +1119,44 @@ describe("resolveBuildAllSteps", () => {
       }
     },
   );
+  it.each([
+    { name: "ordinary build", profile: "full", env: {}, runtimeOnly: false, skipDts: undefined },
+    {
+      name: "explicit runtime build overrides ambient declarations",
+      profile: "runtime",
+      env: { OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "0" },
+      runtimeOnly: true,
+      skipDts: "1",
+    },
+    {
+      name: "runtime override",
+      profile: "package",
+      env: { OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1" },
+      runtimeOnly: true,
+      skipDts: "1",
+    },
+    {
+      name: "legacy updater marker",
+      profile: "full",
+      env: { OPENCLAW_UPDATE_IN_PROGRESS: "1" },
+      runtimeOnly: true,
+      skipDts: "1",
+    },
+    {
+      name: "explicit declarations during update",
+      profile: "package",
+      env: { OPENCLAW_UPDATE_IN_PROGRESS: "1", OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "0" },
+      runtimeOnly: false,
+      skipDts: "0",
+    },
+  ])(
+    "honors $name in selected steps and compiler children",
+    async ({ profile, env: overrides, runtimeOnly, skipDts }) => {
+      const env = { OPENCLAW_DEV_SOURCE_ROOT: "/serving-checkout", ...overrides };
+      const originalEnv = { ...env };
+      const runner = buildRunner();
+      const result = await runBuildAllSteps(profile, { ...runner, cacheEnabled: false, env });
+      const invocations = runner.runStep.mock.calls.map(([invocation]) => invocation);
 
   it.each([
     ["external-plugins:local-dist", "scripts/build-external-plugin-local-dist.mts"],
@@ -1192,8 +1231,28 @@ describe("resolveBuildAllSteps", () => {
         },
       });
       expect(result.exitCode).toBe(0);
-      expect(result.timings.map((timing) => timing.label)).toContain("plugins:assets:build");
-      expect(invocations.length).toBeGreaterThan(0);
+      const labels = result.timings.map((timing) => timing.label);
+      expect(labels).toEqual(
+        resolveBuildAllSteps(profile, {
+          OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: runtimeOnly ? "1" : "0",
+        }).map((step) => step.label),
+      );
+      expect(labels).not.toContain("write-plugin-sdk-entry-dts");
+      expect(labels.includes("write-unified-entry-dts")).toBe(!runtimeOnly);
+      expect(labels.includes("check-plugin-sdk-exports")).toBe(!runtimeOnly);
+      expect(labels.includes("clean:dist")).toBe(profile === "package");
+      const compilers = invocations.filter((call) =>
+        call.args.includes("scripts/tsdown-build.mts"),
+      );
+      expect(compilers).toHaveLength(runtimeOnly ? 1 : 3);
+      const runtimeCompiler = compilers.at(-1)!;
+      expect(runtimeCompiler.args).not.toContain("--config");
+      expect(runtimeCompiler.args).toContain("--concurrency");
+      for (const compiler of compilers) {
+        expect(compiler.options.env.OPENCLAW_RUN_NODE_SKIP_DTS_BUILD).toBe(
+          compiler === runtimeCompiler ? "1" : skipDts,
+        );
+      }
       for (const invocation of invocations) {
         expect(invocation.options.env.OPENCLAW_DEV_SOURCE_ROOT).toBe(
           marker === "1" ? process.cwd() : "/serving-checkout",

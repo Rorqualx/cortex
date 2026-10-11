@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { ViteUserConfig } from "vitest/config";
 import acpCorePackageJson from "../../packages/acp-core/package.json" with { type: "json" };
 import normalizationCorePackageJson from "../../packages/normalization-core/package.json" with { type: "json" };
 import { pluginSdkSubpaths } from "../../scripts/lib/plugin-sdk-entries.mts";
@@ -148,14 +149,20 @@ export const sharedVitestConfig = {
   envDir: false as const,
   plugins: [
     // Fork: the fork-owned Control UI is Lit, so upstream's Solid test compiler
-    // (ui/config/control-ui-solid.ts) is not shipped or loaded here.
+    // (ui/config/control-ui-solid.ts) is not shipped and its plugin spread is
+    // intentionally omitted here.
     {
       name: "openclaw:node-worker-policy",
-      config: () => ({
-        test: {
-          globalSetup: [resolveRepoRootPath("test/vitest/vitest.node-policy.global-setup.ts")],
-        },
-      }),
+      config: {
+        order: "pre" as const,
+        handler: (config: ViteUserConfig) => ({
+          test: {
+            // Generated projects may copy plugins without the shared test block.
+            environment: config.test?.environment ?? "node",
+            globalSetup: [resolveRepoRootPath("test/vitest/vitest.node-policy.global-setup.ts")],
+          },
+        }),
+      },
     },
     createStateSchemaInlinePlugin(repoRoot),
     compiledSubprocessesPlugin(),

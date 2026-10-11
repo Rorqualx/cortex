@@ -903,3 +903,26 @@ ENHANCE-OURS on the provider surface, consumer untouched.
 - Autoreview (claude, P1 threshold): clean.
 - Proof round 1 (huey 2026-10-11): FAIL on startup JS only - 627749 B vs 627264 B envelope. DECISION (maintainer, 2026-10-11): cap 612 -> 614 KiB (628736 B), baseline = measured 627749 B. All 7 tsgo lanes new=0.
 
+
+## 2026-10-11 bounded batch (200 of 323 behind) — a45edbfa
+
+15 non-ui conflicts resolved; ui/ policy-handled (1149). Verdicts:
+
+- `embedded-agent-subscribe.run-state.ts` — ENHANCE-OURS: fork state fields (pendingAssistantUsage/retryUsage/blockState/…) + upstream `createAssistantStreamBlockState()` factory for both block states; dropped upstream's `deltaBufferIsCommentary`/`hasFlushedPartialText` re-adds (fork type dropped them, zero consumers).
+- `embedded-agent-subscribe.stream-rendering.ts` — ENHANCE-OURS: fork chunk-boundary/visibility feature kept; union import + factory for state resets.
+- `embedded-agent-subscribe.handlers.messages.snapshot.ts` — KEEP-OURS(deletion): zero importers in merged tree; fork deleted in prior resync (4ae8f0ee).
+- `embedded-agent-subscribe.ts` (merge=ours drift) — KEEP-OURS: upstream delta is only the cosmetic `createAssistantStreamBlockState` consolidation (3 hunks, no semantic change); fork 1538-line rewrite unaffected. No export drift.
+- `agent-create.ts` — ADOPT-UPSTREAM (#168770 consolidation dropped materializeInjectedMain) + graft fork `description` param spread.
+- `bash-tools.exec-support.ts` — ENHANCE-OURS: fork exec-output containment (QW3 2026-10-02) wraps output; upstream `details: ExecToolDetails` superset object returned.
+- `bash-tools.exec-runtime.ts` (drift) — KEEP-OURS: upstream churn (allowedConfig dedup, emitCompleted helper) is behavior-equivalent; fork deltas overlap those regions — skip graft.
+- `user-turn-transcript.ts` — ENHANCE-OURS: upstream #168607 input-actor batching (`withSessionInputActor` + `onCommitted`) adopted; fork explicit-file-target guard grafted in.
+- `transcript-policy.ts` (drift) — KEEP-OURS: upstream churn is conditional-spread→explicit-undefined style refactor over a region the fork rewrote.
+- `apply-patch.ts` (drift) — grafted upstream EOF_MARKER hunk-consolidation (behavior-equivalent, keeps future merges clean).
+- `workboard-page.test.ts` — KEEP-OURS(deletion): path absent in fork; established fork-owns-workboard direction.
+- `schema.help.quality.test-fixtures.ts` — ADOPT-UPSTREAM(deletion): merged test (upstream rewrite) no longer imports fixtures.
+- `logs-chat.test.ts` — KEEP-OURS: fork ChatHistoryParamsSchema limit 10_000 ceiling test retained.
+- `build-all.mts` — ADOPT-UPSTREAM: dropped dead fork FULL_RUNTIME_ONLY_STEPS (upstream RUNTIME_ONLY_STEP_LABELS converged on same mechanism); ENHANCE-OURS: stamp reordered last in RUNTIME_ONLY (deploy-restart invariant).
+- `build-all.test.ts` — ADOPT-UPSTREAM: it.each runtime/skipDts coverage.
+- `vitest.shared.config.ts` — ENHANCE-OURS: upstream pre-order worker policy (env inheritance) adopted; Solid plugin spread omitted (fork UI is Lit).
+- `commands-export-test-mocks.ts` / `channels.start.test.ts` / `max-lines-baseline.txt` — KEEP-OURS (fork test content / fork-owned paths).
+- drift test files (agents-models-skills.test.ts, agent-tools.before-tool-call e2e) — KEEP-OURS; huey error-set-diff gates them.

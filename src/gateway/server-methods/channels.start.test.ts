@@ -119,38 +119,6 @@ describe("channelsHandlers channels.start", () => {
     });
   });
 
-  it("resolves the default account and starts the channel runtime", async () => {
-    const { respond, startChannel } = await runChannelsStart(true);
-
-    expect(startChannel).toHaveBeenCalledWith("whatsapp", "default-account", { manual: true });
-    expect(respond).toHaveBeenCalledWith(
-      true,
-      {
-        channel: "whatsapp",
-        accountId: "default-account",
-        started: true,
-        outcome: { status: "handed-off" },
-      },
-      undefined,
-    );
-  });
-
-  it("reports started=false when the channel runtime remains stopped", async () => {
-    const { respond, startChannel } = await runChannelsStart(false);
-
-    expect(startChannel).toHaveBeenCalledWith("whatsapp", "default-account", { manual: true });
-    expect(respond).toHaveBeenCalledWith(
-      true,
-      {
-        channel: "whatsapp",
-        accountId: "default-account",
-        started: false,
-        outcome: { status: "handed-off" },
-      },
-      undefined,
-    );
-  });
-
   it("explains a successful manual start while configuration publication is deferred", async () => {
     const { respond, startChannel } = await runChannelsStart(true, true);
     expect(startChannel).toHaveBeenCalledWith("whatsapp", "default-account", { manual: true });

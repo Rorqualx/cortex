@@ -12,6 +12,7 @@ import {
 import { resolveStateContentionPresentation } from "../../sessions/session-run-error-presentation.js";
 import type { UserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { captureAgentJobSession, setGatewayDedupeEntry } from "../agent-turn/agent-job.js";
+import { waitForChatAbortTerminalPersistence } from "../chat-abort-lifecycle-internal.js";
 import { errorShapeFromError } from "../error-shape.js";
 import { ExpectedProfileMismatchError } from "../expected-profile.js";
 import { chatAbortMarkerTimestampMs, type ChatAbortMarker } from "../server-chat-state.js";
@@ -358,6 +359,14 @@ export function createChatSendDispatchErrorLifecycle(params: {
   };
 
   const finalize = async () => {
+    if (params.isReplyDispatchRun?.() && activeRunAbort.entry) {
+      // Accepted lifecycle delivery still needs this exact registration and run context.
+      await waitForChatAbortTerminalPersistence(activeRunAbort.entry).catch((error: unknown) => {
+        context.logGateway.warn(
+          `webchat terminal lifecycle settlement failed: ${formatForLog(error)}`,
+        );
+      });
+    }
     const dispatchError = pendingDispatchLifecycleError;
     // Fork: release all file claims / read-ledger state held by this session,
     // regardless of dispatch outcome. Upstream now keeps the admitted root alive
