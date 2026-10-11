@@ -1,6 +1,7 @@
 // Gateway Protocol schema module defines protocol validation shapes.
 import type { Static } from "typebox";
 import { Type } from "typebox";
+import { GatewayAgentRuntimeSchema } from "./model-runtime-options.js";
 import { PluginJsonValueSchema } from "./plugins.js";
 import { NonEmptyString } from "./primitives.js";
 import { SessionCompactionCheckpointReasonSchema } from "./session-compaction-reason.js";
@@ -56,39 +57,9 @@ export const GatewayThinkingLevelOptionSchema = Type.Object(
   { additionalProperties: false },
 );
 
-/** Resolved agent runtime id plus how it was selected. */
-export const GatewayAgentRuntimeSchema = Type.Object(
-  {
-    id: Type.String(),
-    fallback: Type.Optional(Type.Union([Type.Literal("openclaw"), Type.Literal("none")])),
-    // Upstream #127xxx device placement: worker-side dispatch metadata. The fork
-    // carries the worker-environments placement runtime, so the field stays in the
-    // protocol even though the fork's cloud-placement siblings are not adopted.
-    devicePlacement: Type.Optional(
-      Type.Object(
-        {
-          requiredNodeCommands: Type.Array(Type.String({ minLength: 1, maxLength: 128 }), {
-            maxItems: 32,
-            uniqueItems: true,
-          }),
-          consumesWorkerSlot: Type.Boolean(),
-        },
-        { additionalProperties: false },
-      ),
-    ),
-    source: Type.Union([
-      Type.Literal("env"),
-      Type.Literal("agent"),
-      Type.Literal("defaults"),
-      Type.Literal("model"),
-      Type.Literal("provider"),
-      Type.Literal("implicit"),
-      Type.Literal("session"),
-      Type.Literal("session-key"),
-    ]),
-  },
-  { additionalProperties: false },
-);
+// The fork keeps this module as the historical export site; the schema itself is upstream's
+// single definition (cloud/device placement and workspace-environment fields included).
+export { GatewayAgentRuntimeSchema };
 
 /** Channel/source metadata recorded when a session was first created. */
 export const SessionOriginSchema = Type.Object(

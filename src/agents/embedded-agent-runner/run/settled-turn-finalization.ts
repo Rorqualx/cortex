@@ -4,6 +4,7 @@ import {
   setReplyPayloadMetadata,
   type ReplyPayloadMetadata,
 } from "../../../auto-reply/reply-payload.js";
+import { captureSessionWriterDeliveryRead } from "../../../auto-reply/reply/session-writer-delivery-authority.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../../../auto-reply/tokens.js";
 import {
   SessionTranscriptWriterClaimReboundError,
@@ -97,6 +98,16 @@ export async function prepareTerminalWithSettledTurnFinalization(input: {
   };
 }) {
   const initial = input.initial;
+  const { preparedAttempt, sessionTarget, sessionWriterFence } = input.finalization;
+  const committedSessionTarget =
+    preparedAttempt.sessionTarget || sessionTarget || sessionWriterFence
+      ? { ...preparedAttempt.sessionTarget, ...sessionTarget, ...sessionWriterFence }
+      : undefined;
+  const sessionWriterDeliveryAuthority = resolveSessionWriterDeliveryAuthority({
+    attempt: preparedAttempt,
+    sessionId: committedSessionTarget?.sessionId ?? initial.sessionIdUsed,
+    sessionTarget: committedSessionTarget,
+  });
   let attempt = initial.attempt;
   let lastRunPromptUsage = input.lastRunPromptUsage;
   // Fork: answerSegments were removed with the segment machinery, so the
@@ -115,13 +126,10 @@ export async function prepareTerminalWithSettledTurnFinalization(input: {
   const replyDeliveryState = await observeSourceDelivery();
   let prepared = prepareEmbeddedRunTerminal({
     ...input.terminalBase,
+    ...initial,
     replyDeliveryState,
     attempt,
-    currentAttemptCompletedAssistant: initial.currentAttemptCompletedAssistant,
-    sessionIdUsed: initial.sessionIdUsed,
-    sessionFileUsed: initial.sessionFileUsed,
     lastRunPromptUsage,
-    terminalState: initial.terminalState,
   });
   const preserveInitial = (finalizationOutcome: "not-attempted" | "failed") => ({
     ...initial,
@@ -155,17 +163,6 @@ export async function prepareTerminalWithSettledTurnFinalization(input: {
   if (!assertFinalizationActive) {
     throw new Error("admitted run authority is no longer active");
   }
-  const { preparedAttempt, sessionTarget, sessionWriterFence } = input.finalization;
-  const committedSessionTarget =
-    preparedAttempt.sessionTarget || sessionTarget || sessionWriterFence
-      ? { ...preparedAttempt.sessionTarget, ...sessionTarget, ...sessionWriterFence }
-      : undefined;
-  const sessionWriterDeliveryAuthority = resolveSessionWriterDeliveryAuthority({
-    attempt: input.finalization.preparedAttempt,
-    sessionId: committedSessionTarget?.sessionId ?? initial.sessionIdUsed,
-    sessionTarget: committedSessionTarget,
-  });
-
   const runParams = input.terminalBase.runParams;
   const errorContext = input.terminalBase.activeErrorContext;
   const describeRun = () =>
@@ -387,7 +384,13 @@ function resolveSessionWriterDeliveryAuthority(input: {
   ) {
     return undefined;
   }
+  const readCurrentSession = captureSessionWriterDeliveryRead({
+    agentId: target?.agentId ?? input.attempt.agentId,
+    sessionKey,
+    storePath: target?.storePath,
+  });
   return {
+    ...(readCurrentSession ? { readCurrentSession } : {}),
     ...(target?.agentId || input.attempt.agentId
       ? { agentId: target?.agentId ?? input.attempt.agentId }
       : {}),

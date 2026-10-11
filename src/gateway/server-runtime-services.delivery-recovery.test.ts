@@ -94,7 +94,7 @@ it("recovers a watcher-owned update notice on its runtime state after ambient ro
   const cfg: OpenClawConfig = {
     commands: { ownerAllowFrom: [`matrix:${recipient}`] },
     agents: { defaults: { heartbeat: { every: "0m" } } },
-    skills: { workshop: { autonomous: { mode: "off" } } },
+    skills: { forge: { autonomous: { mode: "off" } } },
   };
   setRuntimeConfigSnapshot(cfg);
   const receipts: string[] = [];

@@ -13,16 +13,13 @@ import {
   type ExecPolicyScopeSnapshot,
 } from "../infra/exec-approvals-effective.js";
 import {
-  maxAsk,
-  minSecurity,
   normalizeExecAsk,
   normalizeExecMode,
   normalizeExecSecurity,
   normalizeExecTarget,
-  readExecApprovalsSnapshot,
+  readExecApprovalsSnapshotAsync,
   resolveExactExecModeFromPolicy,
   resolveExecModePolicy,
-  resolveExecApprovalsFromFile,
   restoreExecApprovalsSnapshotLocked,
   updateExecApprovals,
   type ExecApprovalsFile,
@@ -32,6 +29,7 @@ import {
 } from "../infra/exec-approvals.js";
 import { defaultRuntime } from "../runtime.js";
 import auditTactics from "../sandbox/audit-tactics.json" with { type: "json" };
+import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
 import {
   buildExecPolicyToolAccess,
   formatExecPolicyCommandApprovals,
@@ -39,6 +37,7 @@ import {
   type ExecPolicyToolAccess,
   type ExecPolicyShowOptions,
 } from "./exec-policy-diagnostics.js";
+import { ExpectedCliError, rethrowExpectedCliError } from "./failure-output.js";
 import { addGatewayClientOptions, resolveGatewayRpcOptionsWithLocalPort } from "./gateway-rpc.js";
 import { formatDocsHelp } from "./help-format.js";
 import { runWithLocalStateOwner } from "./local-state-owner.js";
@@ -91,11 +90,26 @@ function formatExecPolicyError(err: unknown): string {
   return sanitizeExecPolicyMessage(err instanceof Error ? err.message : String(err));
 }
 
-async function runExecPolicyAction(action: () => Promise<void>): Promise<void> {
+async function runExecPolicyAction(
+  opts: { json?: boolean },
+  action: () => Promise<void>,
+): Promise<void> {
   try {
     await action();
   } catch (err) {
-    defaultRuntime.error(formatExecPolicyError(err));
+    const message = formatExecPolicyError(err);
+    // The root failure handler owns the JSON envelope; exiting here would leave stdout empty.
+    if (opts.json) {
+      rethrowExpectedCliError(err);
+      const failure = new ExpectedCliError({
+        message,
+        humanOutput: message,
+        machineOutput: message,
+      });
+      failure.cause = err;
+      throw failure;
+    }
+    defaultRuntime.error(message);
     defaultRuntime.exit(1);
   }
 }
@@ -187,48 +201,11 @@ function applyApprovalsDefaults(
   return next;
 }
 
-function buildExecPolicyApprovalsRollback(params: {
-  current: ExecApprovalsFile;
-  original: ExecApprovalsFile;
-  written: ExecApprovalsFile;
-  policy: ExecPolicyResolved;
-}): ExecApprovalsFile | null {
-  // Whole-file restore can lose to an unrelated concurrent edit. Revert only
-  // matching fields, and never loosen ambiguous same-value concurrent writes.
-  const fields = [
-    ["security", params.policy.security],
-    ["ask", params.policy.ask],
-    ["askFallback", params.policy.askFallback],
-  ] as const;
-  const originalDefaults = resolveExecApprovalsFromFile({ file: params.original }).defaults;
-  const currentDefaults = resolveExecApprovalsFromFile({ file: params.current }).defaults;
-  const next = structuredClone(params.current);
-  let changed = false;
-  for (const [field, appliedValue] of fields) {
-    const currentValue = params.current.defaults?.[field];
-    const originalValue = params.original.defaults?.[field];
-    const rollbackDoesNotLoosen =
-      field === "ask"
-        ? maxAsk(originalDefaults.ask, currentDefaults.ask) === originalDefaults.ask
-        : minSecurity(originalDefaults[field], currentDefaults[field]) === originalDefaults[field];
-    if (
-      appliedValue !== undefined &&
-      currentValue === params.written.defaults?.[field] &&
-      currentValue !== originalValue &&
-      rollbackDoesNotLoosen
-    ) {
-      next.defaults = { ...next.defaults, [field]: originalValue };
-      changed = true;
-    }
-  }
-  return changed ? next : null;
-}
-
 async function buildLocalExecPolicyShowPayload(
   options?: ExecPolicyShowOptions,
 ): Promise<ExecPolicyShowPayload> {
   const configSnapshot = await readConfigFileSnapshot();
-  const approvalsSnapshot = readExecApprovalsSnapshot();
+  const approvalsSnapshot = await readExecApprovalsSnapshotAsync();
   const config = configSnapshot.config ?? {};
   const scopes = collectExecPolicyScopeSnapshots({
     cfg: config,
@@ -280,25 +257,19 @@ function buildExecPolicyShowScope(snapshot: ExecPolicyScopeSnapshot) {
       runtimeApprovalsSource: "local-file" as const,
     };
   }
+  const nodeManagedPolicy = (field: "security" | "ask") => ({
+    requested: snapshot[field].requested,
+    requestedSource: snapshot[field].requestedSource,
+    host: "unknown" as const,
+    hostSource: "node runtime approvals",
+    effective: "unknown" as const,
+    note: "runtime policy resolved by node approvals",
+  });
   return {
     ...baseScope,
     runtimeApprovalsSource: "node-runtime" as const,
-    security: {
-      requested: snapshot.security.requested,
-      requestedSource: snapshot.security.requestedSource,
-      host: "unknown" as const,
-      hostSource: "node runtime approvals",
-      effective: "unknown" as const,
-      note: "runtime policy resolved by node approvals",
-    },
-    ask: {
-      requested: snapshot.ask.requested,
-      requestedSource: snapshot.ask.requestedSource,
-      host: "unknown" as const,
-      hostSource: "node runtime approvals",
-      effective: "unknown" as const,
-      note: "runtime policy resolved by node approvals",
-    },
+    security: nodeManagedPolicy("security"),
+    ask: nodeManagedPolicy("ask"),
     askFallback: {
       effective: "unknown" as const,
       source: "node runtime approvals",
@@ -375,6 +346,7 @@ async function applyOwnedExecPolicy(
   assertCurrent: () => void,
 ): Promise<ExecPolicyShowPayload> {
   assertCurrent();
+  const context = captureOpenClawStateWorkerContext();
   const configSnapshot = await readConfigFileSnapshot();
   assertCurrent();
   const nextConfig = structuredClone(configSnapshot.config ?? {});
@@ -384,13 +356,17 @@ async function applyOwnedExecPolicy(
       "Local exec-policy cannot synchronize host=node. Node approvals are fetched from the node at runtime.",
     );
   }
-  const approvalsSnapshot = readExecApprovalsSnapshot();
+  const approvalsSnapshot = await readExecApprovalsSnapshotAsync(context);
+  assertCurrent();
   const nextApprovals = applyApprovalsDefaults(approvalsSnapshot.file, policy);
-  const writtenApprovals = await updateExecApprovals({
-    baseHash: approvalsSnapshot.hash,
-    assertCurrent,
-    update: () => nextApprovals,
-  });
+  const writtenApprovals = await updateExecApprovals(
+    {
+      baseHash: approvalsSnapshot.hash,
+      assertCurrent,
+      update: { kind: "replace", file: nextApprovals },
+    },
+    context,
+  );
   if (!writtenApprovals) {
     throw new Error("Exec approvals changed; reload and retry.");
   }
@@ -404,17 +380,26 @@ async function applyOwnedExecPolicy(
   } catch (err) {
     try {
       assertCurrent();
-      if (!(await restoreExecApprovalsSnapshotLocked(approvalsSnapshot, writtenApprovals.hash))) {
-        await updateExecApprovals({
+      if (
+        !(await restoreExecApprovalsSnapshotLocked(
+          approvalsSnapshot,
+          writtenApprovals.hash,
+          context,
           assertCurrent,
-          update: (current) =>
-            buildExecPolicyApprovalsRollback({
-              current,
+        ))
+      ) {
+        await updateExecApprovals(
+          {
+            assertCurrent,
+            update: {
+              kind: "rollback-defaults",
               original: approvalsSnapshot.file,
               written: writtenApprovals.file,
               policy,
-            }),
-        });
+            },
+          },
+          context,
+        );
       }
     } catch (rollbackError) {
       throw new Error(
@@ -444,7 +429,7 @@ async function auditExecPolicy(): Promise<AuditFinding[]> {
     readFileSync(resolve(__filename, "../../sandbox/audit-tactics.json"), "utf-8"),
   );
   const configSnapshot = await readConfigFileSnapshot();
-  const approvalsSnapshot = readExecApprovalsSnapshot();
+  const approvalsSnapshot = await readExecApprovalsSnapshotAsync();
   const cfg: OpenClawConfig = configSnapshot.config ?? {};
   const execCfg = cfg.tools?.exec ?? {};
   const host = execCfg.host ?? "auto";
@@ -523,7 +508,7 @@ export function registerExecPolicyCli(program: Command) {
       .option("--verbose", "Include policy sources and all command approval scopes", false)
       .option("--json", "Output as JSON", false),
   ).action(async (opts: ExecPolicyShowOptions, command: Command) => {
-    await runExecPolicyAction(async () => {
+    await runExecPolicyAction(opts, async () => {
       const payload = await buildLocalExecPolicyShowPayload(
         resolveGatewayRpcOptionsWithLocalPort(opts, command),
       );
@@ -589,7 +574,7 @@ export function registerExecPolicyCli(program: Command) {
     .description('Apply a synchronized preset: "yolo", "cautious", or "deny-all"')
     .option("--json", "Output as JSON", false)
     .action(async (name: string, opts: { json?: boolean }) => {
-      await runExecPolicyAction(async () => {
+      await runExecPolicyAction(opts, async () => {
         if (!Object.hasOwn(EXEC_POLICY_PRESETS, name)) {
           throw new Error(`Unknown exec-policy preset: ${sanitizeExecPolicyMessage(name)}`);
         }
@@ -621,7 +606,7 @@ export function registerExecPolicyCli(program: Command) {
         askFallback?: string;
         json?: boolean;
       }) => {
-        await runExecPolicyAction(async () => {
+        await runExecPolicyAction(opts, async () => {
           const policy = resolveExecPolicyInput(opts);
           if (Object.keys(policy).length === 0) {
             throw new Error(
@@ -645,7 +630,7 @@ export function registerExecPolicyCli(program: Command) {
     .description("Audit current exec policy against MITRE-style tactic checklist")
     .option("--json", "Output as JSON", false)
     .action(async (opts: { json?: boolean }) => {
-      await runExecPolicyAction(async () => {
+      await runExecPolicyAction(opts, async () => {
         const findings = await auditExecPolicy();
         if (opts.json) {
           defaultRuntime.writeJson({ version: auditTactics.version, findings }, 0);

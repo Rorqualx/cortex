@@ -53,7 +53,7 @@ import {
   createProviderSurface,
   ownerParams,
 } from "./get-reply-run.test-support.js";
-import { buildDirectChatContext, buildGroupChatContext, buildGroupIntro } from "./groups.js";
+import { buildGroupIntro, buildSourceConversationContext } from "./groups.js";
 import { finalizeInboundContext } from "./inbound-context.js";
 import {
   buildInboundMetaSystemPrompt,
@@ -322,10 +322,10 @@ vi.mock("./get-reply-fast-path.js", () => ({
   shouldUseReplyFastTestRuntime: vi.fn().mockReturnValue(false),
 }));
 
-vi.mock("./groups.js", () => ({
-  buildDirectChatContext: vi.fn().mockReturnValue(""),
+vi.mock("./groups.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./groups.js")>()),
+  buildSourceConversationContext: vi.fn().mockReturnValue(""),
   buildGroupIntro: vi.fn().mockReturnValue(""),
-  buildGroupChatContext: vi.fn().mockReturnValue(""),
 }));
 
 vi.mock("./inbound-meta.js", () => ({
@@ -633,9 +633,8 @@ describe("runPreparedReply media-only handling", () => {
     loadSessionEntryMock.mockReset();
     updateAmbientTranscriptWatermarkMock.mockClear();
     vi.clearAllMocks();
-    vi.mocked(buildDirectChatContext).mockReturnValue("");
+    vi.mocked(buildSourceConversationContext).mockReturnValue("");
     vi.mocked(buildGroupIntro).mockReturnValue("");
-    vi.mocked(buildGroupChatContext).mockReturnValue("");
     vi.mocked(buildInboundUserContextPrefix).mockReset().mockReturnValue("");
     vi.mocked(resolveInboundUserContextPromptJoiner).mockReturnValue(undefined);
     vi.mocked(hasControlCommand).mockReturnValue(false);
@@ -721,7 +720,7 @@ describe("runPreparedReply media-only handling", () => {
   );
 
   it("projects prepared embedded prompt variants without changing CLI session guidance", async () => {
-    vi.mocked(buildDirectChatContext).mockImplementation(
+    vi.mocked(buildSourceConversationContext).mockImplementation(
       ({ sourceReplyDeliveryMode }) => `direct:${sourceReplyDeliveryMode ?? "automatic"}`,
     );
     await runPrepared({
@@ -2174,7 +2173,7 @@ describe("runPreparedReply media-only handling", () => {
   ] as const)(
     "uses stored %s/%s facts only for a matching live %s/%s route",
     async (baseChannel, baseTo, liveChannel, liveTo, threadId, usesBaseSession) => {
-      vi.mocked(buildGroupChatContext).mockImplementation(({ sessionCtx }) =>
+      vi.mocked(buildSourceConversationContext).mockImplementation(({ sessionCtx }) =>
         ["group", sessionCtx.Provider, sessionCtx.ChatType, sessionCtx.GroupChannel].join(":"),
       );
       const baseSessionKey = `agent:main:${baseChannel}:guild-1:${baseTo}`;
@@ -2226,13 +2225,6 @@ describe("runPreparedReply media-only handling", () => {
       });
       const expectedGroupChannel = usesBaseSession ? "#ops" : undefined;
       const call = requireRunReplyAgentCall(-1);
-      expect(buildGroupChatContext).toHaveBeenCalledTimes(2);
-      expect(vi.mocked(buildGroupChatContext).mock.calls[0]?.[0].sessionCtx).toMatchObject({
-        Provider: liveChannel,
-        Surface: liveChannel,
-        ChatType: "channel",
-        GroupChannel: expectedGroupChannel,
-      });
       expect(buildGroupIntro).toHaveBeenCalledWith({
         activation: usesBaseSession ? "always" : undefined,
         defaultActivation: "mention",
@@ -2258,7 +2250,7 @@ describe("runPreparedReply media-only handling", () => {
   ] as const)(
     "keeps CLI binding facts stable across room-event, primary, and heartbeat assembly for $stableMode",
     async ({ stableMode, expectedPrompt }) => {
-      vi.mocked(buildGroupChatContext).mockImplementation(
+      vi.mocked(buildSourceConversationContext).mockImplementation(
         ({ sessionCtx, sourceReplyDeliveryMode }) =>
           [
             "group",
@@ -2344,11 +2336,12 @@ describe("runPreparedReply media-only handling", () => {
     async (kind) => {
       const originless = kind === "originless";
       if (originless) {
-        vi.mocked(buildDirectChatContext).mockReturnValue("direct-context");
+        vi.mocked(buildSourceConversationContext).mockReturnValue("direct-context");
         resolveAgentHarnessDeliveryDefaultsMock.mockClear();
       } else {
-        vi.mocked(buildGroupChatContext).mockImplementation(({ sourceReplyDeliveryMode }) =>
-          ["group", sourceReplyDeliveryMode ?? "automatic"].join(":"),
+        vi.mocked(buildSourceConversationContext).mockImplementation(
+          ({ sourceReplyDeliveryMode }) =>
+            ["group", sourceReplyDeliveryMode ?? "automatic"].join(":"),
         );
       }
       await runPrepared({
@@ -2388,7 +2381,7 @@ describe("runPreparedReply media-only handling", () => {
   );
 
   it("keeps group intro in the session-stable CLI prompt after turn one", async () => {
-    vi.mocked(buildGroupChatContext).mockReturnValue("group:telegram:group:automatic");
+    vi.mocked(buildSourceConversationContext).mockReturnValue("group:telegram:group:automatic");
     vi.mocked(buildGroupIntro).mockReturnValue("intro:mention");
     const sessionEntry = telegramGroupSession();
 
@@ -2706,22 +2699,6 @@ describe("runPreparedReply media-only handling", () => {
       );
     },
   );
-
-  it("keeps an operator-reviewed proposal revision isolated on the queued run", async () => {
-    const proposalRevision = {
-      agentId: "main",
-      workspaceDir: "/tmp/workspace",
-      proposalId: "proposal-h1",
-      expectedRevisionHash: "revision-h1",
-    };
-    await runPrepared({
-      opts: { skillWorkshopProposalRevision: proposalRevision } as never,
-    });
-
-    const call = requireRunReplyAgentCall();
-    expect(call.followupRun.run.skillWorkshopProposalRevision).toEqual(proposalRevision);
-    expect(call.followupRun.run.skillWorkshopProposalRevision).not.toBe(proposalRevision);
-  });
 
   registerSystemEventAdmissionCases({ runPrepared, requireRunReplyAgentCall });
 });

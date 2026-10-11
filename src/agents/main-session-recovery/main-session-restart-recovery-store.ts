@@ -7,10 +7,14 @@ import {
 } from "../../config/sessions/restart-recovery-state.js";
 import {
   applySessionEntryReplacements,
-  loadExactSessionEntry,
   updateSessionEntry,
 } from "../../config/sessions/session-accessor.js";
 import { readSessionEntrySummariesInWorker } from "../../config/sessions/session-entry-read-runtime.js";
+import {
+  prepareSessionSourceScope,
+  releaseSessionSourceAuthorities,
+  type PreparedSessionSourceAuthority,
+} from "../../config/sessions/session-source-authority.js";
 import { isTerminalSessionStatus } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveAgentSessionWorkStartError } from "../../gateway/agent-turn/agent-handler-helpers.js";
@@ -21,6 +25,7 @@ import { findDeliveryIntentOwners } from "../../infra/outbound/delivery-queue-st
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel-constants.js";
 import {
   getOwedHarnessCompletionTask,
+  createHarnessCompletionSourceAssertion,
   readAdmittedHarnessCompletionInput,
 } from "../agent-harness-completion-recovery.js";
 import { resolveExecDefaults } from "../exec-defaults.js";
@@ -50,6 +55,7 @@ import {
   type MainSessionRecoveryDecision,
   type MainSessionRecoverySkipReason,
 } from "./main-session-restart-recovery-diagnostics.js";
+import { loadExpectedRestartRecoveryTarget } from "./main-session-restart-recovery-exact-target.js";
 import { tombstoneMainRestartRecoveryWithNotice } from "./main-session-restart-recovery-failure.js";
 import {
   hasReplaySafeCodeModeCheckpointInCurrentTurn,
@@ -191,29 +197,6 @@ async function completePendingFinalRecoveryWithNotice(
   return completed;
 }
 
-export function loadExpectedRestartRecoveryTarget(params: {
-  expected: ExpectedRestartRecoveryTarget;
-  storePath: string;
-}): SessionEntry | undefined {
-  const exact = loadExactSessionEntry({
-    ...params.expected,
-    storePath: params.storePath,
-    readConsistency: "latest",
-  });
-  const entry = exact?.sessionKey === params.expected.sessionKey ? exact.entry : undefined;
-  return entry?.sessionId === params.expected.sessionId &&
-    hasMainSessionRecoveryClaim(entry) &&
-    entry.abortedLastRun === true &&
-    (params.expected.claim
-      ? normalizeOptionalString(entry.restartRecoveryDeliveryRunId) ===
-          params.expected.claim.runId &&
-        normalizeOptionalString(entry.restartRecoveryDeliverySourceRunId) ===
-          params.expected.claim.sourceRunId
-      : isMainRestartRecoveryCandidate(entry, params.expected.sessionKey))
-    ? entry
-    : undefined;
-}
-
 export async function recoverStore(params: {
   storeAgentId?: string;
   cfg?: OpenClawConfig;
@@ -239,7 +222,7 @@ export async function recoverStore(params: {
   let entries: Array<{ sessionKey: string; entry: SessionEntry }>;
   try {
     if (params.expectedTarget) {
-      const entry = loadExpectedRestartRecoveryTarget({
+      const entry = await loadExpectedRestartRecoveryTarget({
         expected: params.expectedTarget,
         storePath: params.storePath,
       });
@@ -260,6 +243,8 @@ export async function recoverStore(params: {
     a.sessionKey.localeCompare(b.sessionKey),
   )) {
     let entry = loadedEntry;
+    let completionSource: PreparedSessionSourceAuthority | undefined;
+    const recoveryErrors: unknown[] = [];
     const isRecoveryCandidate =
       !loadedEntry.mainRestartRecovery?.tombstone &&
       hasMainSessionRecoveryClaim(loadedEntry) &&
@@ -465,6 +450,26 @@ export async function recoverStore(params: {
       const harnessCompletion = entry.restartRecoveryHarnessCompletion;
       let recoverableHarnessCompletion: boolean;
       try {
+        const hasCurrentCompletionInput = async () => {
+          if (!harnessCompletion) {
+            return false;
+          }
+          const assertion = createHarnessCompletionSourceAssertion({
+            claim: harnessCompletion,
+            storePath: params.storePath,
+          });
+          completionSource = await prepareSessionSourceScope(assertion);
+          if (completionSource) {
+            completionSource.assertCurrent();
+            return true;
+          }
+          return readAdmittedHarnessCompletionInput({
+            claim: harnessCompletion,
+            entry,
+            storePath: params.storePath,
+            operationalRunId: entry.restartRecoveryDeliveryRunId,
+          });
+        };
         recoverableHarnessCompletion = Boolean(
           harnessCompletion &&
           harnessCompletion.requesterSessionKey === sessionKey &&
@@ -473,12 +478,7 @@ export async function recoverStore(params: {
           Boolean(entry.restartRecoveryDeliveryRunId) &&
           entry.restartRecoverySourceIngress === "internal" &&
           Boolean(getOwedHarnessCompletionTask(harnessCompletion, entry)) &&
-          readAdmittedHarnessCompletionInput({
-            claim: harnessCompletion,
-            entry,
-            storePath: params.storePath,
-            operationalRunId: entry.restartRecoveryDeliveryRunId,
-          }),
+          (await hasCurrentCompletionInput()),
         );
       } catch (error) {
         mainSessionRecoveryLog.warn(
@@ -658,6 +658,7 @@ export async function recoverStore(params: {
         cfg: params.cfg,
         entry,
         observation: recoveryView.observation,
+        assertCompletionCurrent: completionSource?.assertCurrent,
         recoveryAttempt: recoveryView.nextAttempt,
         recoveryAdmission: params.recoveryAdmission,
         gatewayRuntime: params.gatewayRuntime,
@@ -684,7 +685,7 @@ export async function recoverStore(params: {
       if (resumeResult === "started" || resumeResult === "settled") {
         params.handledSessionKeys.add(resumeDedupeKey);
       } else if (resumeResult === "failed") {
-        const current = loadExpectedRestartRecoveryTarget({
+        const current = await loadExpectedRestartRecoveryTarget({
           expected: { agentId, sessionId: entry.sessionId, sessionKey },
           storePath: params.storePath,
         });
@@ -699,7 +700,13 @@ export async function recoverStore(params: {
           });
         }
       }
+    } catch (error) {
+      recoveryErrors.push(error);
+      throw error;
     } finally {
+      if (completionSource) {
+        await releaseSessionSourceAuthorities([completionSource], recoveryErrors);
+      }
       if (isRecoveryCandidate && isMainRestartRecoveryCandidate(loadedEntry, sessionKey)) {
         mainSessionRecoveryLog.info(
           `main-session restart recovery candidate ${JSON.stringify({

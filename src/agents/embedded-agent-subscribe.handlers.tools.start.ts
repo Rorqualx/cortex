@@ -186,16 +186,8 @@ export function buildCommandItemId(toolCallId: string): string {
   return `command:${toolCallId}`;
 }
 
-export function buildPatchItemId(toolCallId: string): string {
-  return `patch:${toolCallId}`;
-}
-
 export function buildCommandItemTitle(toolName: string, meta?: string): string {
   return meta ? `command ${meta}` : `${toolName} command`;
-}
-
-export function buildPatchItemTitle(meta?: string): string {
-  return meta ? `patch ${meta}` : "apply patch";
 }
 
 export function emitTrackedItemEvent(
@@ -222,17 +214,6 @@ export function emitTrackedItemEvent(
   emitAgentEventCallbackBestEffort(ctx, {
     stream: "item",
     data: itemData,
-  });
-}
-
-function emitExecutionPhaseBestEffort(
-  ctx: ToolHandlerContext,
-  info: Parameters<NonNullable<ToolHandlerContext["params"]["onExecutionPhase"]>>[0],
-): void {
-  runBestEffortCallback({
-    label: "tool execution phase",
-    log: ctx.log,
-    callback: () => ctx.params.onExecutionPhase?.(info),
   });
 }
 
@@ -303,20 +284,11 @@ export function finalizeToolActivity(ctx: ToolHandlerContext): void {
 }
 
 function extendExecMeta(toolName: string, args: unknown, meta?: string): string | undefined {
-  if (!isExecToolName(toolName)) {
-    return meta;
-  }
-  if (!args || typeof args !== "object") {
+  if (!isExecToolName(toolName) || !args || typeof args !== "object") {
     return meta;
   }
   const record = args as Record<string, unknown>;
-  const flags: string[] = [];
-  if (record.pty === true) {
-    flags.push("pty");
-  }
-  if (record.elevated === true) {
-    flags.push("elevated");
-  }
+  const flags = ["pty", "elevated"].filter((flag) => record[flag] === true);
   if (flags.length === 0) {
     return meta;
   }
@@ -396,11 +368,16 @@ export function handleToolExecutionStart(
     const args = evt.args;
     const runId = ctx.params.runId;
     ctx.state.toolExecutionSinceLastBlockReply = true;
-    emitExecutionPhaseBestEffort(ctx, {
-      phase: "tool_execution_started",
-      tool: toolName,
-      toolCallId,
-      source: "embedded-agent",
+    runBestEffortCallback({
+      label: "tool execution phase",
+      log: ctx.log,
+      callback: () =>
+        ctx.params.onExecutionPhase?.({
+          phase: "tool_execution_started",
+          tool: toolName,
+          toolCallId,
+          source: "embedded-agent",
+        }),
     });
 
     const startedAt = Date.now();

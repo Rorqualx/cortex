@@ -174,7 +174,7 @@ See [MCP](/cli/mcp#openclaw-as-an-mcp-client-registry) and
 - `entries.<skillKey>.enabled: false` disables a skill even if bundled/installed.
 - `entries.<skillKey>.apiKey`: convenience for skills declaring a primary env var (plaintext string or SecretRef object).
 - `limits.maxCandidatesPerRoot`, `limits.maxSkillsLoadedPerSource`, `limits.maxSkillsInPrompt`, `limits.maxSkillsPromptChars`, `limits.maxSkillFileBytes`: bound skill discovery and the model-facing skills prompt.
-- Skill Forge approval settings (`forge.approvalPolicy`, `forge.allowSymlinkTargetWrites`, `forge.maxPending`, `forge.maxSkillBytes`) are documented in [Skills configuration](/tools/skills-config).
+- Skill Workshop and Skill Forge settings share the `forge` block (`forge.autonomous.mode`, `forge.maxSkillBytes`, `forge.approvalPolicy`, `forge.autoInvoke`) and are documented in [Skills configuration](/tools/skills-config). `workshop` is a retired key that `openclaw doctor --fix` moves to `forge`.
 
 ---
 

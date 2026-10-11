@@ -190,7 +190,6 @@ export function pruneExpiredCacheTtlToolResults(params: {
   const projection = projectToolResultBranch({
     branch: buildToolResultPlanningBranch(params.messages),
     projectionState,
-    recordSources: true,
   });
   const messages = params.messages.map(
     (message, index) => projection.branch[index]?.message ?? message,
@@ -420,6 +419,14 @@ export function truncateToolResultText(
     maxChars - estimateToolResultTextChars(defaultSuffix, budgetOptions),
   );
 
+  const appendSuffix = (keptText: string) =>
+    appendBoundedTruncationSuffix({
+      keptText,
+      originalTextLength: text.length,
+      maxChars,
+      suffixFactory,
+      minimumRawWeight: options.minimumRawWeight,
+    });
   if (hasImportantTail(text) && budget > minKeepChars * 2) {
     const tailBudget = Math.min(Math.floor(budget * 0.3), 4_000);
     const headBudget =
@@ -439,13 +446,7 @@ export function truncateToolResultText(
       }
 
       if (headText.length + tailText.length < text.length) {
-        return appendBoundedTruncationSuffix({
-          keptText: headText + MIDDLE_OMISSION_MARKER + tailText,
-          originalTextLength: text.length,
-          maxChars,
-          suffixFactory,
-          minimumRawWeight: options.minimumRawWeight,
-        });
+        return appendSuffix(headText + MIDDLE_OMISSION_MARKER + tailText);
       }
     }
   }
@@ -455,13 +456,7 @@ export function truncateToolResultText(
   if (lastNewline > keptText.length * 0.8) {
     keptText = sliceUtf16Safe(keptText, 0, lastNewline);
   }
-  return appendBoundedTruncationSuffix({
-    keptText,
-    originalTextLength: text.length,
-    maxChars,
-    suffixFactory,
-    minimumRawWeight: options.minimumRawWeight,
-  });
+  return appendSuffix(keptText);
 }
 
 export function resolveLiveToolResultAggregateMaxChars(params: {
@@ -675,7 +670,6 @@ export function truncateOversizedToolResultsInMessages(
     ? projectToolResultBranch({
         branch: sourceBranch,
         projectionState,
-        recordSources: true,
       })
     : undefined;
   const plan = buildToolResultReplacementPlan({
@@ -950,8 +944,7 @@ function mergeProjectedToolResultMessage(
 function projectToolResultBranch(params: {
   branch: ToolResultBranchEntry[];
   projectionState: ToolResultPromptProjectionState;
-  frozenOnly?: boolean;
-  recordSources?: boolean;
+  recovering?: true;
 }): { branch: ToolResultBranchEntry[]; keys: Array<string | undefined> } {
   const messageEntries = params.branch.filter(
     (entry): entry is ToolResultBranchEntry & { message: AgentMessage } =>
@@ -970,10 +963,10 @@ function projectToolResultBranch(params: {
       const key = keys[messageIndex++];
       const frozen = key !== undefined && params.projectionState.frozen.has(key);
       const projected =
-        key && (!params.frozenOnly || frozen)
+        key && (!params.recovering || frozen)
           ? params.projectionState.replacements.get(key)
           : undefined;
-      if (key && params.recordSources && !params.projectionState.sourceHashByKey.has(key)) {
+      if (key && !params.recovering && !params.projectionState.sourceHashByKey.has(key)) {
         params.projectionState.sourceHashByKey.set(
           key,
           hashToolResultText(getToolResultTextBlocks(entry.message)),
@@ -995,10 +988,10 @@ function projectToolResultBranch(params: {
         ...entry,
         message,
         // Frozen bytes are immutable on dispatch projections; eliding them would
-        // rewrite provider-sent prompt bytes. Recovery projections (frozenOnly)
+        // rewrite provider-sent prompt bytes. Recovery projections
         // run after a provider context failure, so the cached prefix is already
         // forfeit and frozen history must stay reducible.
-        aggregateEligible: params.frozenOnly || !key || !frozen,
+        aggregateEligible: params.recovering || !key || !frozen,
       };
     }),
   };
@@ -1330,7 +1323,7 @@ function buildRecoveryToolResultReplacementPlan(params: {
     ? projectToolResultBranch({
         branch: params.branch,
         projectionState: params.projectionState,
-        frozenOnly: true,
+        recovering: true,
       }).branch
     : params.branch;
   const plan = buildToolResultReplacementPlan({

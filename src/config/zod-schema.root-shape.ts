@@ -561,17 +561,19 @@ export const OpenClawSchemaShape = {
       // retired key repaired by the skills.workshop->skills.forge doctor migration.
       forge: z
         .strictObject({
+          // Fork: Skill Forge promote/retire approval (src/skill-forge/approval-policy.ts).
           approvalPolicy: z.union([z.literal("pending"), z.literal("auto")]).optional(),
-          allowSymlinkTargetWrites: z.boolean().optional(),
-          maxPending: z.number().int().min(1).optional(),
-          maxSkillBytes: z.number().int().min(1).optional(),
+          // Fork: auto-invoke promoted recovery skills on matching tool errors.
           autoInvoke: z.boolean().optional(),
+          /** Autonomous Skill Workshop learning. */
           autonomous: z
             .strictObject({
-              /** Capture policy for durable conversation signals and substantial completed work. */
-              mode: z.union([z.literal("off"), z.literal("propose"), z.literal("auto")]).optional(),
+              /** "auto" lets agents save and update Workshop skills; "off" disables autonomous learning. */
+              mode: z.union([z.literal("off"), z.literal("auto")]).optional(),
             })
             .optional(),
+          /** Maximum Workshop skill file size in bytes. */
+          maxSkillBytes: z.number().int().min(1).optional(),
         })
         .optional(),
       entries: z.record(z.string(), SkillEntrySchema).optional(),

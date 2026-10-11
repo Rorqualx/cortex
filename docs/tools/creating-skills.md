@@ -6,6 +6,7 @@ summary: "Build, test, and publish custom SKILL.md workspace skills or personal 
 read_when:
   - You are creating a new custom skill
   - You need a quick starter workflow for SKILL.md-based skills
+  - You want the agent to save or update a skill for you with Skill Workshop
 ---
 
 Skills teach the agent how and when to use tools. Each skill is a directory
@@ -97,9 +98,8 @@ You do not need host shell access or permission to edit shared Gateway settings.
 
 You can also ask the agent to create or improve a personal skill. Its
 `skill_workshop` tool uses the Gateway's authorized library service; it does not
-write managed revision directories directly. The result distinguishes a
-published skill from a pending proposal and explains when the session can use
-it. Ask explicitly to use the new revision in the current session or share it
+write managed revision directories directly. The result names the published
+revision and explains when the session can use it. Ask explicitly to use the new revision in the current session or share it
 with the team.
 
 The single-admin default remains the workspace workflow above. Extra channel
@@ -188,6 +188,22 @@ metadata: { "openclaw": { "requires": { "bins": ["gemini"] }, "primaryEnv": "GEM
   </Accordion>
 </AccordionGroup>
 
+## Learned skills (Skill Workshop)
+
+Agents also write their own skills through [Skill Workshop](/tools/skill-workshop).
+Those learned skills apply immediately and keep their previous versions, so any
+change can be undone. Inspect and manage them from the CLI:
+
+```bash
+openclaw skills workshop list
+openclaw skills workshop changes
+openclaw skills workshop show hello-world
+openclaw skills workshop archive hello-world --reason "Replaced by greeting"
+openclaw skills workshop restore hello-world
+```
+
+See [`openclaw skills workshop`](/cli/skills#skill-workshop) for every option.
+
 ## Publishing to ClawHub
 
 An owner is a ClawHub publisher handle, such as `@alice` or `@your-org`.
@@ -236,6 +252,9 @@ personal owner or an organization where you have publisher access.
 <CardGroup cols={2}>
   <Card title="Skills reference" href="/tools/skills" icon="puzzle-piece">
     Loading order, gating, allowlists, and SKILL.md format.
+  </Card>
+  <Card title="Skill Workshop" href="/tools/skill-workshop" icon="flask">
+    Skills your agent saves and updates on its own, with undo.
   </Card>
   <Card title="Skills config" href="/tools/skills-config" icon="gear">
     Full `skills.*` config schema.

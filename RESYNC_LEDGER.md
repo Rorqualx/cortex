@@ -865,3 +865,22 @@ ENHANCE-OURS on the provider surface, consumer untouched.
   Local tsgo:extensions single-lane run post-graft: 0 of the 3 TS2305 remain;
   the 5 remaining errors are the known memory-l3 baseline drift (Signals
   temporalAlignment, FactEdge, TS2538) — memory-l3 untouched by this batch.
+
+## 2026-10-10c — 1000-commit batch (target 228ba9da4ca, baseline 662da62db86)
+
+84 non-ui conflicts after policy (workboard, agent-loop, write tool KEEP-OURS).
+- Skill Workshop: ADOPT upstream's direct versioned model (proposal mode,
+  maxPending, allowSymlinkTargetWrites retired) hosted on the fork key
+  `skills.forge`; `approvalPolicy`/`autoInvoke` kept for Skill Forge. Doctor
+  migration chains workshop→forge, then upstream's retired-setting repairs.
+  `skills.proposals.*`/`skills.curator.*` RPCs answer from skills-retired.
+- merge=ours ports: gateway server-methods/skills.ts and agents.ts (upstream
+  delete/authority flow, fork composePrompt + inline files handlers kept),
+  agent-runner-execution.ts (upstream structure, fork overload-retry kept),
+  protocol agents-models-skills, session entry/slot keys, shared session
+  list type (ownerSessionCounts), server-aux-handlers, logs-chat.
+- GatewayAgentRuntimeSchema: fork duplicate in session-row.ts replaced by a
+  re-export of upstream's single definition.
+- Tests dropped (upstream UI or deleted modules): server-chat.commentary-history,
+  tool-batch-completion, six skill-workshop proposal tests. Kept at fork
+  version: agents-files, setup-code.public-origin, bash-tools.exec-runtime.

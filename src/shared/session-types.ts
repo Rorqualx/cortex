@@ -2,6 +2,7 @@ import type {
   AgentSummary,
   ModelChoice,
   SessionCreatedActor,
+  SessionOwnerSessionCount,
   SessionPerson,
   SessionsAssignOwnerParams,
 } from "../../packages/gateway-protocol/src/index.js";
@@ -79,6 +80,8 @@ export type SessionsListResultBase<TDefaults, TRow> = {
   creators?: Array<{ id: string; label?: string; avatarUrl?: string }>;
   /** Complete owner facet for the filtered result, independent of pagination. */
   owners?: SessionOwnerFacetIdentity[];
+  /** Complete visible open/running ownership summary, before pagination. */
+  ownerSessionCounts?: SessionOwnerSessionCount[];
   people?: SessionPerson[];
   peopleIncomplete?: boolean;
   peopleSessionCount?: number;

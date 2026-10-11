@@ -45,6 +45,7 @@ type TextTurnTranscriptContext = {
   threadId?: string | number;
   sessionCwd: string;
   config: OpenClawConfig;
+  runId?: string;
 };
 
 type PersistTextTurnTranscriptParams = TextTurnTranscriptContext & {
@@ -83,11 +84,8 @@ const CLI_TRANSCRIPT_UNAVAILABLE_USAGE = {
 } as const;
 
 function resolveCliTranscriptUsage(usage: TranscriptUsage | undefined): TranscriptUsage {
-  if (!usage) {
-    return CLI_TRANSCRIPT_UNAVAILABLE_USAGE;
-  }
-  if (usage.contextUsage) {
-    return usage;
+  if (!usage || usage.contextUsage) {
+    return usage ?? CLI_TRANSCRIPT_UNAVAILABLE_USAGE;
   }
   const promptTokens = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
   return {
@@ -215,9 +213,10 @@ async function persistTextTurnTranscript(
       config: params.config,
       cwd: params.sessionCwd,
       messages,
+      runId: params.runId,
       publishWhen: "always",
       touchSessionEntry: true,
-      updateMode: "file-only",
+      updateMode: params.runId ? "inline" : "file-only",
       expectedSessionId:
         params.expectedSessionId ??
         (params.sessionStore && params.storePath ? params.sessionId : undefined),
@@ -293,11 +292,13 @@ export async function persistCliTurnTranscript(
     skipAssistantTurn?: boolean;
   },
 ): Promise<PersistTextTurnTranscriptResult> {
-  const { result, embeddedAssistantGapFill, skipUserTurn: requestedSkipUserTurn, ...transcript } =
-    params;
+  const {
+    result,
+    embeddedAssistantGapFill,
+    skipUserTurn: requestedSkipUserTurn,
+    ...transcript
+  } = params;
   const replyText = resolveCliTranscriptReplyText(result);
-  const provider = result.meta.agentMeta?.provider?.trim() ?? "cli";
-  const model = result.meta.agentMeta?.model?.trim() ?? "default";
   // Embedded gap-fill already persisted the user turn via the embedded runner;
   // skip re-appending it so the fill only records the assistant reply.
   const gapFill = embeddedAssistantGapFill ?? false;
@@ -311,8 +312,8 @@ export async function persistCliTurnTranscript(
     finalText: replyText,
     assistant: {
       api: "cli",
-      provider,
-      model,
+      provider: result.meta.agentMeta?.provider?.trim() ?? "cli",
+      model: result.meta.agentMeta?.model?.trim() ?? "default",
       stopReason: "stop",
       // The marker is terminal for fallback scans: without it, readers could
       // skip this turn and revive an older cumulative usage record as fresh.

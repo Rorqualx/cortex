@@ -18,6 +18,9 @@ binary presence.
   <Card title="Creating skills" href="/tools/creating-skills" icon="hammer">
     Build and test a custom skill from scratch.
   </Card>
+  <Card title="Skill Workshop" href="/tools/skill-workshop" icon="flask">
+    Skills your agent learns on its own, with change history and undo.
+  </Card>
   <Card title="Skills config" href="/tools/skills-config" icon="gear">
     Full `skills.*` config schema and agent allowlists.
   </Card>
@@ -308,6 +311,25 @@ Skills with `disable-model-invocation: true` stay out of the `$` picker and the
 model's normal prompt, so the model cannot select them on its own. An authorized
 explicit `$skill-name` reference still invokes them; the flag only hides the
 skill from model-initiated selection.
+
+## Skill Workshop
+
+[Skill Workshop](/tools/skill-workshop) lets an agent save and update its own
+skills in `<state-dir>/agents/<agentId>/agent/workshop-skills`. Every change
+applies immediately, is announced, and saves the previous version so it can be
+undone. Learned skills are always visible to their agent; archive one to hide
+it. Operators edit skills outside that directory through their owning tools or
+files.
+
+```bash
+openclaw skills workshop list
+openclaw skills workshop changes
+openclaw skills workshop archive <name>
+openclaw skills workshop restore <name>
+```
+
+See [Skill Workshop](/tools/skill-workshop) for how agents learn skills and
+[`openclaw skills workshop`](/cli/skills#skill-workshop) for the CLI reference.
 
 ## Installing from ClawHub
 
@@ -954,6 +976,9 @@ read every admitted skill. Native harnesses retain their own prompt policy.
 <CardGroup cols={2}>
   <Card title="Creating skills" href="/tools/creating-skills" icon="hammer">
     Step-by-step guide to authoring a custom skill.
+  </Card>
+  <Card title="Skill Workshop" href="/tools/skill-workshop" icon="flask">
+    Skills your agent saves and updates on its own, with undo.
   </Card>
   <Card title="Skills config" href="/tools/skills-config" icon="gear">
     Full `skills.*` config schema and agent allowlists.

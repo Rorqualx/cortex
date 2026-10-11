@@ -49,7 +49,7 @@ import {
   readPendingToolMediaReply,
 } from "./embedded-agent-subscribe.handlers.messages.replies.js";
 import { isSubscribeTranscriptOnlyOpenClawAssistantMessage } from "./embedded-agent-subscribe.handlers.messages.stream.js";
-import { cleanupRunToolStartData } from "./embedded-agent-subscribe.handlers.tools.js";
+import { cleanupRunToolStartData } from "./embedded-agent-subscribe.handlers.tools.start.js";
 import type {
   AssistantStreamData,
   EmbeddedAgentSubscribeContext,
@@ -412,7 +412,6 @@ export function subscribeEmbeddedAgentSession(input: SubscribeEmbeddedAgentSessi
     state.emittedAssistantUpdate = false;
     state.lastBlockReplyText = undefined;
     state.lastStreamedReasoning = undefined;
-    state.lastReasoningSent = undefined;
     state.reasoningStreamOpen = false;
     state.suppressBlockChunks = false;
     state.pendingAssistantUsage = undefined;

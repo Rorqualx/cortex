@@ -534,9 +534,7 @@ export const RUNTIME_FIELD_HELP: Record<string, string> = {
   "skills.load.watch":
     "Enable filesystem watching for skill-definition changes so updates can be applied without full process restart. Keep enabled in development workflows and disable in immutable production images.",
   "skills.forge.autonomous.mode":
-    'Controls background learning: "off" keeps only the suggestion nudge, "propose" creates pending proposals, and "auto" applies captured proposals and runs daily scanner-gated cleanup that can rewrite or drop eligible writable skills. Default: "auto".',
-  "skills.forge.allowSymlinkTargetWrites":
-    "Allows Skill Forge apply to write through symlinked workspace skill paths whose real target is already trusted by skills.load.allowSymlinkTargets. Keep disabled unless operators intentionally want generated proposal applies to mutate those shared skill roots.",
+    'Controls background learning: "auto" lets agents save and update Workshop skills after substantial work or after using a learned skill, and archives learned skills unused for 30 days. Every change is recorded and undoable. "off" disables background learning. Default: "auto".',
   approvals:
     "Approval routing controls for forwarding exec and plugin approval requests to chat destinations outside the originating session. Keep these disabled unless operators need explicit out-of-band approval visibility.",
   "approvals.exec":

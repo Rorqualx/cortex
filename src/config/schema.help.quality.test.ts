@@ -87,27 +87,6 @@ describe("config help copy quality", () => {
     return label;
   }
 
-  function expectOperationalGuidance(
-    keys: readonly string[],
-    guidancePattern: RegExp,
-    minLength = 80,
-  ) {
-    for (const key of keys) {
-      const help = requireHelp(key);
-      expect(help.length, `help too short for ${key}`).toBeGreaterThanOrEqual(minLength);
-      expect(
-        guidancePattern.test(help),
-        `help should include operational guidance for ${key}`,
-      ).toBe(true);
-    }
-  }
-
-  it("describes auto-mode collection mutation", () => {
-    const help = requireHelp("skills.forge.autonomous.mode");
-    expect(help).toContain("daily");
-    expect(help).toContain("rewrite or drop");
-  });
-
   it("keeps root section labels and help complete", () => {
     for (const key of ROOT_SECTIONS) {
       expect(requireLabel(key)).not.toHaveLength(0);

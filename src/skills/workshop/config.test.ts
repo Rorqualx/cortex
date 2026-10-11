@@ -6,32 +6,25 @@ describe("resolveSkillWorkshopConfig", () => {
     expect(resolveSkillWorkshopConfig().autonomous.mode).toBe("auto");
   });
 
-  it.each(["off", "propose", "auto"] as const)(
-    "reads autonomous mode %s from skills.forge",
-    (mode) => {
-      expect(
-        resolveSkillWorkshopConfig({ skills: { forge: { autonomous: { mode } } } }).autonomous.mode,
-      ).toBe(mode);
-    },
-  );
+  it.each(["off", "auto"] as const)("reads autonomous mode %s from skills.forge", (mode) => {
+    expect(
+      resolveSkillWorkshopConfig({ skills: { forge: { autonomous: { mode } } } }).autonomous.mode,
+    ).toBe(mode);
+  });
 
-  it("reads every forge setting from skills.forge", () => {
+  it("reads maxSkillBytes from skills.forge and ignores SkillForge-only settings", () => {
     const resolved = resolveSkillWorkshopConfig({
       skills: {
         forge: {
-          autonomous: { mode: "propose" },
+          autonomous: { mode: "off" },
           approvalPolicy: "pending",
-          allowSymlinkTargetWrites: true,
-          maxPending: 7,
+          autoInvoke: false,
           maxSkillBytes: 12_345,
         },
       },
     });
     expect(resolved).toEqual({
-      autonomous: { mode: "propose" },
-      approvalPolicy: "pending",
-      allowSymlinkTargetWrites: true,
-      maxPending: 7,
+      autonomous: { mode: "off" },
       maxSkillBytes: 12_345,
     });
   });

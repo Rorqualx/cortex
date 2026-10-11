@@ -9,6 +9,7 @@ import {
   isTransientHttpError,
 } from "../../agents/embedded-agent-helpers.js";
 import { findCliTimeoutError, isFailoverError } from "../../agents/failover-error.js";
+import { isCliPartialOutputRejected } from "../../agents/failover/error.js";
 import { resolveReplyFailoverFacts } from "../../agents/failover/request-error-facts.js";
 import {
   GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
@@ -47,6 +48,7 @@ import {
   resolveReplyOperationTerminationFields,
   resolveRestartLifecycleError,
 } from "./reply-operation-abort.js";
+import { hasReplyOperationExecutionStarted } from "./reply-run-registry.state.js";
 
 export const MAX_LIVE_SWITCH_RETRIES = 2;
 const TRANSIENT_HTTP_RETRY_DELAY_MS = 2_500;
@@ -209,8 +211,16 @@ export async function handleAgentExecutionError(params: {
     if (!reason) {
       return undefined;
     }
+    if (isCliPartialOutputRejected(abortError)) {
+      turn.replyOperation?.fail("run_failed", abortError);
+    }
     // Preserve signal-owned timeout attribution; only normalized restart/supersession need metadata.
-    const terminalMetadata = reason === "user" ? undefined : { aborted: true, stopReason: reason };
+    const terminalMetadata = {
+      ...(reason === "user" ? {} : { aborted: true, stopReason: reason }),
+      ...(turn.replyOperation && !hasReplyOperationExecutionStarted(turn.replyOperation)
+        ? { executionStarted: false, providerStarted: false }
+        : {}),
+    };
     takePendingLifecycleTerminal().emit(
       reason === "restart" ? "end" : "error",
       abortError,

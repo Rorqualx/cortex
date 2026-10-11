@@ -406,7 +406,6 @@ export function resolveCliTranscriptReplyText(result: EmbeddedAgentRunResult): s
     .join("\n\n");
 }
 
-
 export async function persistAcpTurnTranscript(params: {
   prepareAssistantTranscriptMessage?: PrepareAssistantTranscriptMessage;
   body: string;
@@ -783,6 +782,7 @@ export function runAgentAttempt(params: {
       workspaceDir: params.workspaceDir,
       cwd: params.cwd,
       config: params.cfg,
+      toolOverrides: params.sessionEntry?.toolOverrides,
       modelHasVision: params.modelHasVision,
       model: params.modelOverride,
       modelRoutingProvenance: params.modelRoutingProvenance,
@@ -818,7 +818,8 @@ export function runAgentAttempt(params: {
       suppressNextUserMessagePersistence: params.suppressPromptPersistenceOnRetry === true,
       disableTools,
       terminalReplyExpectation: replyExpectation,
-      silentReplyPromptMode: replyExpectation === "required" ? "none" : undefined,
+      silentReplyPromptMode:
+        params.opts.silentReplyPromptMode ?? (replyExpectation === "required" ? "none" : undefined),
       bootstrapPromptWarningSignaturesSeen,
       bootstrapPromptWarningSignature: bootstrapPromptWarningSignaturesSeen.at(-1),
     }) satisfies Partial<RunEmbeddedAgentInternalParams>;
@@ -928,9 +929,7 @@ export function runAgentAttempt(params: {
           if (
             hasCliLiveSession({
               backendId: cliExecutionProvider,
-              agentAccountId: params.runContext.accountId,
               agentId: params.sessionAgentId,
-              authProfileId: cliSessionBinding.authProfileId,
               sessionId: params.sessionId,
               sessionKey: params.sessionKey,
             }) ||
@@ -1134,7 +1133,6 @@ export function runAgentAttempt(params: {
     messageThreadId: params.opts.threadId,
     hasRepliedRef: params.runContext.hasRepliedRef,
     permissionMode: params.sessionEntry?.permissionMode,
-    toolOverrides: params.sessionEntry?.toolOverrides,
     sessionRoot: params.sessionEntry?.sessionRoot,
     ...(params.pluginGeneration ? { pluginGeneration: params.pluginGeneration } : {}),
     agentHarnessId: pinnedHarnessId,

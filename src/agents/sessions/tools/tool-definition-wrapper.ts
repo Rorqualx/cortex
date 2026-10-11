@@ -19,6 +19,7 @@ function toolDefinitionMetadata<TParams extends TSchema>(
     executionMode: tool.executionMode,
     // Fork: steering preemption needs the opt-in flag on both projections.
     preemptable: tool.preemptable,
+    ...(tool.async === false ? { async: false as const } : {}),
   };
 }
 

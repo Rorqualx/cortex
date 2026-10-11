@@ -27,10 +27,12 @@ import {
   finalizeBuildStepCache,
   type BuildCache,
 } from "../../scripts/lib/build-artifact-cache.mts";
-import { listBundledPluginBuildEntries } from "../../scripts/lib/bundled-plugin-build-entries.mjs";
+import { collectBundledPluginBuildEntries } from "../../scripts/lib/bundled-plugin-build-entries.mjs";
+import { CompilerInputSnapshot } from "../../scripts/lib/compiler-input-snapshot.mts";
 import * as liveGatewayDistFence from "../../scripts/lib/live-gateway-dist-fence.mts";
 import { createManagedCommandInvocation } from "../../scripts/lib/managed-child-process.mts";
 import { TSDOWN_UNIFIED_CONFIG_GROUP } from "../../scripts/lib/tsdown-config-groups.mts";
+import { cleanTsdownOutputRoots } from "../../scripts/tsdown-build.mts";
 import {
   resolveRuntimeWorkerArgv,
   resolveRuntimeWorkerUrl,
@@ -91,6 +93,13 @@ function buildRunner() {
       () => ({ status: 0 }),
     ),
   };
+}
+
+function writeFixture(root: string, file: string, contents: string) {
+  const target = path.join(root, file);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, contents);
+  return target;
 }
 
 function withBuildCacheFixture(
@@ -389,6 +398,41 @@ describe("resolveBuildAllStep", () => {
 });
 
 describe("resolveBuildAllSteps", () => {
+  it.each(["full", "package", "strictSmoke", "pluginSdkStrictSmoke"])(
+    "keeps generated plugin artifacts from invalidating %s declaration inputs",
+    async (profile) => {
+      const cwd = tempDirs.make("openclaw-build-declaration-inputs-");
+      writeFixture(cwd, "tsconfig.json", '{"compilerOptions":{"types":[]},"include":["src"]}');
+      writeFixture(cwd, "src/index.ts", "export const value = 1;\n");
+      const signatures: string[] = [];
+      const runner = buildRunner();
+      runner.runStep.mockImplementation(({ args, options }) => {
+        if (args.includes(TSDOWN_UNIFIED_CONFIG_GROUP)) {
+          cleanTsdownOutputRoots({ cwd, roots: ["dist", "dist-runtime"], env: options.env });
+        }
+        if (args.includes("scripts/build-external-plugin-local-dist.mts")) {
+          writeFixture(cwd, "extensions/example/assets/runtime.js", "export const asset = 1;\n");
+        }
+        if (args.includes("scripts/write-unified-entry-dts.ts")) {
+          const inputs = new CompilerInputSnapshot(cwd, {
+            toolchainFiles: [],
+            generatorInputs: [],
+          });
+          signatures.push(inputs.signature("tsconfig.json", [], ["src/index.ts"]));
+        }
+        if (args.includes("scripts/runtime-postbuild.mts")) {
+          writeFixture(cwd, "dist-runtime/extensions/example/index.d.ts", "export {};\n");
+        }
+        return { status: 0 };
+      });
+      for (let build = 0; build < 2; build++) {
+        expect((await runBuildAllSteps(profile, { ...runner, cwd })).exitCode).toBe(0);
+      }
+      expect(signatures).toHaveLength(2);
+      expect(signatures[1]).toBe(signatures[0]);
+    },
+  );
+
   it.each([
     ["full", "0"],
     ["full", "1"],
@@ -488,8 +532,8 @@ describe("resolveBuildAllSteps", () => {
       "tsdown-ai",
       "tsdown-packages",
       "tsdown-unified",
-      "write-unified-entry-dts",
       "external-plugins:local-dist",
+      "write-unified-entry-dts",
       "check-cli-bootstrap-imports",
       "plugins:assets:copy",
       "runtime-postbuild",
@@ -518,8 +562,8 @@ describe("resolveBuildAllSteps", () => {
       "tsdown-ai",
       "tsdown-packages",
       "tsdown-unified",
-      "write-unified-entry-dts",
       "external-plugins:local-dist",
+      "write-unified-entry-dts",
       "check-cli-bootstrap-imports",
       "plugins:assets:copy",
       "runtime-postbuild",
@@ -1632,8 +1676,8 @@ describe("resolveBuildStepCacheState", () => {
           }),
         );
       }
-      expect(listBundledPluginBuildEntries({ cwd: rootDir, env: after })).not.toEqual(
-        listBundledPluginBuildEntries({ cwd: rootDir, env: before }),
+      expect(collectBundledPluginBuildEntries({ cwd: rootDir, env: after })).not.toEqual(
+        collectBundledPluginBuildEntries({ cwd: rootDir, env: before }),
       );
       for (const label of ["tsdown-ai", "tsdown-packages"]) {
         const step = getBuildAllStep(label);

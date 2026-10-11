@@ -285,11 +285,7 @@ export function buildUsageAgentMetaFields(params: {
     usage.total = params.lastTurnTotal;
   }
   const latestUsage = normalizeUsage(params.latestUsage);
-  const lastCallUsage = hasNonzeroUsage(latestUsage)
-    ? latestUsage
-    : hasNonzeroUsage(params.lastRunPromptUsage)
-      ? params.lastRunPromptUsage
-      : undefined;
+  const lastCallUsage = [latestUsage, params.lastRunPromptUsage].find(hasNonzeroUsage);
   const promptTokens = deriveContextPromptTokens({
     lastCallUsage,
   });
@@ -309,6 +305,7 @@ export function buildErrorAgentMeta(params: {
   model: string;
   credentialSource?: EmbeddedAgentMeta["credentialSource"];
   contextTokens?: number;
+  contextTokensSource?: "resolved-v1";
   usageAccumulator: UsageAccumulator;
   lastRunPromptUsage: NormalizedUsage | undefined;
   currentAttemptAssistant?: { api?: string; usage?: unknown } | null;
@@ -327,7 +324,9 @@ export function buildErrorAgentMeta(params: {
     model: params.model,
     ...(params.credentialSource ? { credentialSource: params.credentialSource } : {}),
     ...(params.contextTokens ? { contextTokens: params.contextTokens } : {}),
-    ...(params.contextTokens ? { contextTokensSource: "resolved" as const } : {}),
+    ...(params.contextTokens
+      ? { contextTokensSource: params.contextTokensSource ?? ("resolved" as const) }
+      : {}),
     ...(usageMeta.usage ? { usage: usageMeta.usage } : {}),
     ...(usageMeta.lastCallUsage ? { lastCallUsage: usageMeta.lastCallUsage } : {}),
     ...(usageMeta.promptTokens ? { promptTokens: usageMeta.promptTokens } : {}),

@@ -21,7 +21,6 @@ import { withFileMutationQueue } from "./file-mutation-queue.js";
 import { resolveLocalPathToCwd, resolveToCwd } from "./path-utils.js";
 import {
   invalidArgText,
-  normalizeDisplayText,
   replaceTabs,
   reuseTextComponent,
   shortenPath,
@@ -29,6 +28,12 @@ import {
   trimTrailingEmptyLines,
 } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
+
+// Upstream dropped this helper from render-utils with its write-tool rewrite; the fork's
+// frozen write tool still renders with it.
+function normalizeDisplayText(text: string): string {
+  return text.replace(/\r/g, "");
+}
 
 const writeSchema = Type.Object({
   path: Type.String({ description: "Path to the file to write (relative or absolute)" }),

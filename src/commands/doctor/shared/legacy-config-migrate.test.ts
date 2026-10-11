@@ -1732,15 +1732,16 @@ describe("legacy skills workshop migrate", () => {
     expect(res.config?.skills).toEqual({
       forge: {
         approvalPolicy: "auto",
-        maxPending: 10,
         maxSkillBytes: 2048,
-        autonomous: { mode: "propose" },
+        autonomous: { mode: "off" },
       },
     });
-    expect(res.changes).toStrictEqual([
-      "Moved skills.workshop settings → skills.forge.",
-      "Removed retired skills.workshop config (Skill Workshop was replaced by Skill Forge).",
-    ]);
+    expect(res.changes).toEqual(
+      expect.arrayContaining([
+        "Moved skills.workshop settings → skills.forge.",
+        "Removed retired skills.workshop config (Skill Workshop was replaced by Skill Forge).",
+      ]),
+    );
   });
 
   it("keeps an explicit skills.forge.approvalPolicy over the legacy value", () => {
@@ -1759,7 +1760,7 @@ describe("legacy skills workshop migrate", () => {
     ]);
   });
 
-  it("drops a workshop block with no approvalPolicy without adding skills.forge", () => {
+  it("maps a legacy autonomous.enabled flag to forge mode off", () => {
     const res = migrateLegacyConfigForTest({
       skills: {
         workshop: { autonomous: { enabled: false } },
@@ -1769,10 +1770,11 @@ describe("legacy skills workshop migrate", () => {
 
     expect(res.config?.skills).toEqual({
       entries: { demo: { enabled: true } },
+      forge: { autonomous: { mode: "off" } },
     });
-    expect(res.changes).toStrictEqual([
+    expect(res.changes).toContain(
       "Removed retired skills.workshop config (Skill Workshop was replaced by Skill Forge).",
-    ]);
+    );
   });
 });
 

@@ -17,7 +17,6 @@ import type { TrustedSubagentCompletionHandoff } from "../subagents/announce/sub
 export type CompactEmbeddedAgentSessionParams = Pick<
   import("./run/params.js").RunEmbeddedAgentParams,
   | "requireWorkspaceOnly"
-  | "requireWritableSandbox"
   | "sessionTarget"
   | "sessionId"
   | "sessionKey"

@@ -90,6 +90,7 @@ export const ChatHistoryParamsSchema = closedObject({
   messageId: Type.Optional(NonEmptyString),
   sessionId: Type.Optional(NonEmptyString),
   maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 500_000 })),
+  toolResultMaxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 500_000 })),
 });
 
 /** Resolve a short chat link and fetch its first page under the same discovery policy. */
@@ -101,6 +102,7 @@ export const ChatStartupParamsSchema = Type.Union([
     agentId: NonEmptyString,
     limit: ChatHistoryParamsSchema.properties.limit,
     maxBytes: ChatHistoryParamsSchema.properties.maxBytes,
+    toolResultMaxChars: ChatHistoryParamsSchema.properties.toolResultMaxChars,
   }),
 ]);
 

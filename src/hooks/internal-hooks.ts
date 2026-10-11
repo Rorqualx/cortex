@@ -52,7 +52,6 @@ export type MessageReceivedHookContext = {
   content: string;
   /** Unix timestamp when the message was received */
   timestamp?: number;
-  /** Channel identifier (for example "chat" or "support-chat") */
   channelId: string;
   /** Provider account ID for multi-account setups */
   accountId?: string;
@@ -75,11 +74,8 @@ export type MessageSentHookContext = Pick<
 > & {
   to: string;
   success: boolean;
-  /** Error message if sending failed */
   error?: string;
-  /** Whether this message was sent in a group/channel context */
   isGroup?: boolean;
-  /** Group or channel identifier, if applicable */
   groupId?: string;
   /** Runtime config for hook handlers that need to resolve their own config */
   cfg?: OpenClawConfig;
@@ -120,16 +116,12 @@ type MessageEnrichedBodyHookContext = Pick<
 };
 
 export type MessageTranscribedHookContext = MessageEnrichedBodyHookContext & {
-  /** The transcribed text from audio */
   transcript: string;
 };
 
 export type MessagePreprocessedHookContext = MessageEnrichedBodyHookContext & {
-  /** Transcribed audio text, if the message contained audio */
   transcript?: string;
-  /** Whether this message was sent in a group/channel context */
   isGroup?: boolean;
-  /** Group or channel identifier, if applicable */
   groupId?: string;
 };
 

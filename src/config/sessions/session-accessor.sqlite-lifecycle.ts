@@ -1,5 +1,6 @@
 import { isMainThread } from "node:worker_threads";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { assertExistingDatabaseIdentity } from "../../infra/sqlite-worker-identity.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import {
   isAgentHarnessSessionKey,
@@ -9,8 +10,11 @@ import {
 } from "../../sessions/agent-harness-session-key.js";
 import { collectActiveSessionWorkAdmissions } from "../../sessions/session-lifecycle-admission.js";
 import { emitSessionIdentityMutation } from "../../sessions/session-lifecycle-events.js";
-import { preparePersonalGitHubSessionReceiptDeletion } from "../../state/github-personal-publication-lifecycle.js";
-import { readOpenClawAgentDatabaseIdentity } from "../../state/openclaw-agent-db-identity.js";
+import {
+  createOpenClawAgentDatabaseClaim,
+  readOpenClawAgentDatabaseIdentity,
+} from "../../state/openclaw-agent-db-identity.js";
+import { retainAgentDatabase } from "../../state/openclaw-agent-db-lifecycle.js";
 import { withOpenClawAgentDatabaseReadOnly } from "../../state/openclaw-agent-db-readonly.js";
 import {
   deferOpenClawAgentPostCommitPublication,
@@ -68,7 +72,10 @@ import {
   type ResolvedSqliteScope,
 } from "./session-accessor.sqlite-scope.js";
 import { kickSessionHistoryDiskBudgetMaintenance } from "./session-history-eviction.js";
-import { captureIncognitoSessionOperation } from "./session-incognito-binding.js";
+import {
+  captureIncognitoSessionOperation,
+  captureIncognitoSessionSource,
+} from "./session-incognito-binding.js";
 import { deleteIncognitoSessionLifecycle } from "./session-incognito-lifecycle-operations.js";
 import { resetSessionEntryInWorker } from "./session-reset.js";
 import { applySessionResetInDatabase } from "./session-reset.kernel.js";
@@ -190,7 +197,29 @@ export async function resetSessionEntryLifecycle(
               sessionKeys: [params.target.canonicalKey],
             },
           });
-          await params.afterEntryMutation?.(mutation);
+          const identity = readOpenClawAgentDatabaseIdentity(database);
+          const claim = createOpenClawAgentDatabaseClaim(
+            database,
+            retainAgentDatabase(database.db),
+          );
+          try {
+            await params.afterEntryMutation?.(mutation, {
+              env: Object.freeze({ ...resolved.env }),
+              source: { agentId: resolved.agentId, path: database.path },
+              assertCurrent() {
+                claim.assertCurrent();
+                if (typeof identity.identity === "string") {
+                  assertExistingDatabaseIdentity(
+                    database.path,
+                    `file:${identity.identity}`,
+                    identity.birthtime,
+                  );
+                }
+              },
+            });
+          } finally {
+            claim.release();
+          }
           return {
             ...mutation,
             archivedTranscripts: [],
@@ -319,32 +348,11 @@ async function deleteSqliteSessionEntryLifecycleLocked(
       return await withSqliteSessionDeletions(
         resolved,
         prepared.targetSnapshot,
-        async (assertCurrent) => {
+        async (assertCurrent, _capture, settleReceipts) => {
           const assertDeletionCurrent = () => {
             assertSourceCurrent();
             assertCurrent();
           };
-          const deleteReceipts = await preparePersonalGitHubSessionReceiptDeletion({
-            agentId: resolved.agentId,
-            env: resolved.env,
-            generations: [
-              ...new Set([
-                params.target.canonicalKey,
-                ...params.target.storeKeys,
-                ...prepared.targetSnapshot.map((row) => row.sessionKey),
-              ]),
-            ].map((sessionKey) => {
-              const entry =
-                prepared.targetSnapshot.find((row) => row.sessionKey === sessionKey)?.entry ??
-                prepared.current.entry;
-              return {
-                sessionKey,
-                sessionId: entry.sessionId,
-                lifecycleRevision: entry.lifecycleRevision ?? null,
-              };
-            }),
-            assertCurrent: assertDeletionCurrent,
-          });
           const validation = {
             deleteParams: params,
             preparedTargetSnapshot: prepared.targetSnapshot,
@@ -516,9 +524,7 @@ async function deleteSqliteSessionEntryLifecycleLocked(
               prepared.current.entry.sessionId,
               prepared.targetSnapshot.map((row) => row.sessionKey),
             );
-            await deleteReceipts({
-              assertCurrent: execution ? () => execution.assertCurrent() : undefined,
-            });
+            await settleReceipts(execution ? () => execution.assertCurrent() : undefined);
           }
           result.archivedTranscripts = await publishSessionStateArchives(
             resolved,
@@ -530,7 +536,28 @@ async function deleteSqliteSessionEntryLifecycleLocked(
           result.archivedTranscripts.push(...historicalArchivedTranscripts);
           return result;
         },
-        { additionalIdentities: prepared.historicalGenerationIds, callerSettlesReceipts: true },
+        {
+          additionalIdentities: prepared.historicalGenerationIds,
+          receiptsOnCommit: {
+            generations: [
+              ...new Set([
+                params.target.canonicalKey,
+                ...params.target.storeKeys,
+                ...prepared.targetSnapshot.map((row) => row.sessionKey),
+              ]),
+            ].map((sessionKey) => {
+              const entry =
+                prepared.targetSnapshot.find((row) => row.sessionKey === sessionKey)?.entry ??
+                prepared.current.entry;
+              return {
+                agentId: resolved.agentId,
+                sessionKey,
+                sessionId: entry.sessionId,
+                lifecycleRevision: entry.lifecycleRevision ?? null,
+              };
+            }),
+          },
+        },
       );
     });
   } finally {
@@ -556,6 +583,22 @@ function deleteCapturedIncognitoSession(
   params: DeleteSessionEntryLifecycleParams,
   expectedPluginOwnerId?: string,
 ): Promise<DeleteSessionEntryLifecycleResult> | undefined {
+  const source = captureIncognitoSessionSource({
+    ...params,
+    sessionKey: params.target.canonicalKey,
+  });
+  if (source && "kind" in source) {
+    params.commitGuard?.();
+    source.assertCurrent();
+    return Promise.resolve({
+      deleted: false,
+      archivedTranscripts: [],
+      ...((params.expectedEntry ||
+        params.expectedSessionId != null ||
+        params.expectedLifecycleRevision !== undefined ||
+        params.expectedUpdatedAt !== undefined) && { expectedEntryMismatch: true as const }),
+    });
+  }
   const binding = captureIncognitoSessionOperation({
     ...params,
     sessionKey: params.target.canonicalKey,
@@ -574,9 +617,11 @@ function deleteCapturedIncognitoSession(
       },
     };
     return binding.actor.sessions.withSharedState(async () => {
-      const { entry } = await binding.actor.sessions.read(authority, {
-        sessionKey: captured.target.canonicalKey,
-      });
+      const { entry } = await binding.actor.sessions.read(
+        authority,
+        { sessionKey: captured.target.canonicalKey },
+        binding.admissionSignal,
+      );
       if (
         (captured.expectedEntry && !sqliteSessionEntriesEqual(entry, captured.expectedEntry)) ||
         (captured.expectedSessionId !== undefined &&
@@ -591,6 +636,7 @@ function deleteCapturedIncognitoSession(
       if (!entry) {
         return { deleted: false, archivedTranscripts: [] };
       }
+      binding.admissionSignal?.throwIfAborted();
       return deleteIncognitoSessionLifecycle({
         actor: binding.actor,
         authority,

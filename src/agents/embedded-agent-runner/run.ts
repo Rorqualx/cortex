@@ -1863,7 +1863,6 @@ export async function runEmbeddedAgent(
             messageActionTurnCapability: params.messageActionTurnCapability,
             permissionMode: params.permissionMode,
             requireWorkspaceOnly: params.requireWorkspaceOnly,
-            requireWritableSandbox: params.requireWritableSandbox,
             sessionReadScopeKey: params.sessionReadScopeKey,
             sessionPersistence: params.sessionPersistence,
             toolExecutionAllow: params.toolExecutionAllow,

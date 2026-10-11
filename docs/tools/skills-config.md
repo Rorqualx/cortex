@@ -1,11 +1,11 @@
 ---
 title: "Skills config"
 sidebarTitle: "Skills config"
-summary: "Full reference for the skills.* config schema, agent allowlists, Skill Forge approvals, and sandbox env var handling."
+summary: "Full reference for the skills.* config schema, agent allowlists, Skill Workshop and Skill Forge settings, and sandbox env var handling."
 read_when:
   - Configuring skill loading, install, or gating behavior
   - Setting per-agent skill visibility
-  - Adjusting the Skill Forge approval policy
+  - Adjusting Skill Workshop learning mode or size limits, or Skill Forge approvals
 ---
 
 Most skills configuration lives under `skills` in
@@ -28,8 +28,6 @@ Most skills configuration lives under `skills` in
     },
     forge: {
       autonomous: { mode: "auto" },
-      approvalPolicy: "auto",
-      maxPending: 50,
       maxSkillBytes: 40000,
     },
     entries: {
@@ -351,36 +349,64 @@ different visible skill set per agent.
   that agent.
 </ParamField>
 
+<Warning>
+  Agent skill allowlists are a visibility and loading filter for OpenClaw
+  skill discovery, prompts, slash-command discovery, sandbox sync, and skill
+  snapshots. They are not a shell-time authorization boundary. If an agent
+  can run host `exec`, that shell can still run external clients or read
+  host files that are visible to the execution user, including MCP client
+  registries such as `~/.openclaw/skills/config/mcporter.json`. For
+  per-agent MCP isolation, combine skill allowlists with sandbox/OS-user
+  isolation, deny or tightly allowlist host exec, and prefer per-agent
+  credentials at the MCP server.
+</Warning>
+
 ## Skill Forge (`skills.forge`)
 
-<ParamField path="skills.forge.autonomous.mode" type='"off" | "propose" | "auto"' default='"auto"'>
-  `off` disables autonomous capture while keeping the durable-instruction
-  suggestion nudge. `propose` creates pending proposals from corrections and
-  substantial completed work. `auto` sends the same captures through the normal
-  scanner-gated apply path and runs weekly collection cleanup that can
-  rewrite or drop eligible writable skills. User-prompted skill creation,
-  `/learn`, and manual history scan continue to work in every mode.
+In this fork, Skill Workshop learning and Skill Forge lifecycle settings share
+the `skills.forge` block. `skills.workshop` is a retired key: strict validation
+rejects it and `openclaw doctor --fix` moves its settings to `skills.forge`.
+
+<ParamField path="skills.forge.autonomous.mode" type='"off" | "auto"' default='"auto"'>
+  `auto` lets agents save and update Workshop skills: a background review runs
+  after substantial work, and learned skills unused for 30 days are archived.
+  Review changes are announced in the conversation, and every change can be
+  undone. `off` disables the background review and unused-skill cleanup.
+  User-prompted skill creation, `/learn`, and manual learning sessions work in
+  both modes.
 </ParamField>
 
 See [Self-learning](/tools/self-learning) for eligibility, privacy, cost,
-proposal-only permissions, and troubleshooting.
-
-<ParamField path="skills.forge.approvalPolicy" type='"pending" | "auto"' default='"auto"'>
-  `auto` allows agent-initiated apply, reject, or quarantine without an
-  additional approval prompt. `pending` requires operator approval. Legacy
-  `skills.workshop` config is migrated by `openclaw doctor --fix`.
-</ParamField>
-
-<ParamField path="skills.forge.maxPending" type="number" default="50">
-  Maximum pending and quarantined proposals retained per agent (allowed
-  range: 1-200).
-</ParamField>
+and troubleshooting.
 
 <ParamField path="skills.forge.maxSkillBytes" type="number" default="40000">
-  Maximum proposal body size in bytes (allowed range: 1024-200000). Proposal
-  descriptions are hard-capped at 160 bytes separately, because they appear
-  in discovery and listing output.
+  Maximum `SKILL.md` size in bytes for Workshop skills (allowed range:
+  1024-200000). Skill descriptions are capped at 1024 bytes separately; keep
+  them near 160 bytes because they appear in discovery and listing output.
 </ParamField>
+
+<ParamField path="skills.forge.approvalPolicy" type='"pending" | "auto"' default='"pending"'>
+  Skill Forge only. `pending` requires operator approval before an agent
+  promotes or retires a forged skill; `auto` lets the agent perform those
+  lifecycle actions without a prompt. It does not affect Skill Workshop edits.
+</ParamField>
+
+<ParamField path="skills.forge.autoInvoke" type="boolean" default="true">
+  Skill Forge only. Inlines a promoted recovery skill's guidance into a
+  matching failed tool result and records the use. Set `false` to stop the
+  runtime nudge without unloading the skills.
+</ParamField>
+
+`openclaw doctor --fix` migrates configs from the removed proposal flow: it
+moves `skills.workshop` to `skills.forge`, changes `autonomous.mode: "propose"`
+to `"off"`, and deletes the retired `maxPending` and
+`allowSymlinkTargetWrites` settings. Run
+`openclaw config set skills.forge.autonomous.mode auto` to turn automatic
+learning back on.
+
+See [Skill Workshop](/tools/skill-workshop) for the skill lifecycle, CLI
+commands, agent tool parameters, and Gateway methods this config controls.
+
 ## Symlinked skill roots
 
 By default, workspace, project-agent, extra-dir, and bundled skill roots are
@@ -461,8 +487,11 @@ for when changes become visible.
   <Card title="Creating skills" href="/tools/creating-skills" icon="hammer">
     Authoring custom workspace skills.
   </Card>
+  <Card title="Skill Workshop" href="/tools/skill-workshop" icon="flask">
+    Agent-learned skills, change history, and undo.
+  </Card>
   <Card title="Self-learning" href="/tools/self-learning" icon="brain">
-    Conservative, opt-in proposals from completed work.
+    Automatic, undoable skill learning from completed work.
   </Card>
   <Card title="Slash commands" href="/tools/slash-commands" icon="terminal">
     Native slash-command catalog and chat directives.

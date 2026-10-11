@@ -54,12 +54,14 @@ export type SkillsLimitsConfig = {
   maxSkillFileBytes?: number;
 };
 
-export type SkillsWorkshopAutonomousMode = "off" | "propose" | "auto";
+/** Autonomous learning mode: "auto" lets agents save and update Workshop skills; "off" disables it. */
+export type SkillsWorkshopAutonomousMode = "off" | "auto";
 
-/** Legacy upstream name (Skill Workshop -> Skill Forge); kept so upstream-authored consumers keep type-checking. */
-export type SkillsWorkshopConfig = SkillsForgeConfig;
-
-/** Skill Forge config (interactive/autonomous skill proposal + lifecycle pipeline). */
+/**
+ * Skill Forge config. Hosts the fork's promote/retire pipeline settings plus upstream's
+ * Skill Workshop autonomous-learning settings, which the fork reads from `skills.forge`
+ * (see resolveSkillWorkshopConfig) instead of upstream's `skills.workshop`.
+ */
 export type SkillsForgeConfig = {
   /** Whether skill_forge promote/retire actions need explicit approval. */
   approvalPolicy?: "pending" | "auto";
@@ -70,18 +72,16 @@ export type SkillsForgeConfig = {
    * unloading the skills.
    */
   autoInvoke?: boolean;
-  /** Autonomous Skill Forge behavior controlled separately from user-prompted proposals. */
+  /** Autonomous Skill Workshop learning. */
   autonomous?: {
-    /** Capture policy for durable conversation signals and substantial completed work. */
     mode?: SkillsWorkshopAutonomousMode;
   };
-  /** Allow Skill Forge apply to write through trusted skill symlink targets. */
-  allowSymlinkTargetWrites?: boolean;
-  /** Maximum pending/quarantined proposals retained per workspace. */
-  maxPending?: number;
-  /** Maximum generated skill proposal size in bytes. */
+  /** Maximum Workshop skill file size in bytes. */
   maxSkillBytes?: number;
 };
+
+/** Upstream name for the Workshop settings shape; in the fork it is the `skills.forge` block. */
+export type SkillsWorkshopConfig = SkillsForgeConfig;
 
 /** Top-level skills config block in openclaw config. */
 export type SkillsConfig = {
@@ -90,13 +90,10 @@ export type SkillsConfig = {
   load?: SkillsLoadConfig;
   install?: SkillsInstallConfig;
   limits?: SkillsLimitsConfig;
-  forge?: SkillsForgeConfig;
   /**
-   * Retired key (Skill Workshop -> Skill Forge). Runtime reads skills.forge only
-   * (resolveSkillWorkshopConfig) and user configs are doctor-migrated away from
-   * skills.workshop; the shape stays admitted so upstream-authored tests that
-   * build config literals with the legacy key keep type-checking.
+   * Skill Forge + Workshop settings. `skills.workshop` is a retired key: strict validation
+   * rejects it and the doctor migration rewrites it here, so it is deliberately not typed.
    */
-  workshop?: SkillsForgeConfig;
+  forge?: SkillsForgeConfig;
   entries?: Record<string, SkillConfig>;
 };
