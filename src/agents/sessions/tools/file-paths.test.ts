@@ -27,11 +27,11 @@ describe("session file tool path ownership", () => {
     const literal = await tools.read.execute("read-literal", { path: "@literal.txt" });
     expect(literal.content).toEqual([{ type: "text", text: "literal before\n" }]);
 
-    const written = await tools.write.execute("write-literal", {
+    // Fork write.ts returns no receipt details, so the write is proven by the readback below.
+    await tools.write.execute("write-literal", {
       path: "@literal.txt",
       content: "literal written\n",
     });
-    expect(written.details).toMatchObject({ changed: true, created: false });
     const edited = await tools.edit.execute("edit-literal", {
       path: "@literal.txt",
       edits: [{ oldText: "written", newText: "edited" }],
@@ -45,11 +45,10 @@ describe("session file tool path ownership", () => {
     );
 
     await fs.mkdir(path.join(cwd, "@directory"));
-    const created = await tools.write.execute("write-literal-child", {
+    await tools.write.execute("write-literal-child", {
       path: "@directory/new.txt",
       content: "literal child\n",
     });
-    expect(created.details).toMatchObject({ changed: true, created: true });
     const listed = await tools.ls.execute("list-literal-directory", { path: "@directory" });
     expect(listed.content).toEqual([{ type: "text", text: '"new.txt"' }]);
     await expect(fs.readFile(path.join(cwd, "@directory/new.txt"), "utf8")).resolves.toBe(
@@ -89,7 +88,8 @@ describe("session file tool path ownership", () => {
           },
         },
       }),
-      edit: createEditTool(cwd, { operations: { access, readFile, writeFile, statFile } }),
+      // Fork EditOperations has no statFile; only the write tool consumes it.
+      edit: createEditTool(cwd, { operations: { access, readFile, writeFile } }),
     };
 
     const read = await tools.read.execute("read-remote", { path: "@target.txt" });

@@ -169,18 +169,15 @@ describe("runExecProcess cursor tracking", () => {
     { raw: "\x1b[?1h", expected: "application" },
     { raw: "\x1b[?1h\x1b[?1l", expected: "normal" },
     { raw: "\x1b[?1l\x1b[?1h", expected: "application" },
-  ])(
-    "tracks the last cursor-mode toggle as $expected",
-    async ({ raw, expected }) => {
-      const { run } = await runExecWithExit({
-        stdout: raw,
-        usePty: true,
-        exit: createRunExit(),
-      });
+  ])("tracks the last cursor-mode toggle as $expected", async ({ raw, expected }) => {
+    const { run } = await runExecWithExit({
+      stdout: raw,
+      usePty: true,
+      exit: createRunExit(),
+    });
 
-      expect(run.session.cursorKeyMode).toBe(expected);
-    },
-  );
+    expect(run.session.cursorKeyMode).toBe(expected);
+  });
 });
 
 describe("sandbox exec preparation failures", () => {

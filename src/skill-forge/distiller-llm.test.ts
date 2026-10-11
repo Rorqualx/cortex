@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { RepetitionCandidate } from "./detector.js";
 import {
   buildUserPrompt,
   SKILL_FORGE_LLM_DISTILLER_SYSTEM,
@@ -76,7 +77,7 @@ describe("SKILL_FORGE_LLM_DISTILLER_SYSTEM", () => {
 });
 
 describe("buildUserPrompt", () => {
-  const baseCandidate = {
+  const baseCandidate: RepetitionCandidate = {
     lane: "tool-shape",
     candidateId: "abc123",
     toolShapeHash: "abc123",
@@ -84,7 +85,7 @@ describe("buildUserPrompt", () => {
     captureDirs: ["/captures/one", "/captures/two", "/captures/three"],
     occurrences: 3,
     successScore: 0.5,
-  } as const;
+  };
 
   it("omits the failure block when the candidate has no failure excerpts", () => {
     const prompt = buildUserPrompt({ ...baseCandidate });

@@ -377,7 +377,6 @@ describe("Astra async response tails", () => {
       sessionIdUsed: "session",
       messagesSnapshot: messages,
       assistantTexts: h.subscription.assistantTexts,
-      answerSegments: h.subscription.answerSegments,
       keptAnswer: h.subscription.getKeptAnswer(),
       lastAssistantTextMessageIndex: h.subscription.getLastAssistantTextMessageIndex(),
       toolMetas: h.subscription.toolMetas.filter(

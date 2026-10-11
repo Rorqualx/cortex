@@ -113,21 +113,25 @@ function createWorkspacePluginMetadataSnapshot(params: {
     setupProviders: new Map(),
     commandAliases: new Map(),
     contracts: new Map(),
+    modelIdNormalizationPolicies: new Map(),
+    providerAuthContributions: [],
+  };
+  const index: PluginMetadataSnapshot["index"] = {
+    version: 1,
+    hostContractVersion: "test",
+    compatRegistryVersion: "test",
+    migrationVersion: 1,
+    policyHash,
+    generatedAtMs: 1,
+    installRecords: {},
+    plugins: [],
+    diagnostics: [],
   };
   return {
     policyHash,
     workspaceDir: params.workspaceDir,
-    index: {
-      version: 1,
-      hostContractVersion: "test",
-      compatRegistryVersion: "test",
-      migrationVersion: 1,
-      policyHash,
-      generatedAtMs: 1,
-      installRecords: {},
-      plugins: [],
-      diagnostics: [],
-    },
+    index,
+    registryIndex: index,
     registryDiagnostics: [],
     manifestRegistry: params.manifestRegistry,
     plugins: params.manifestRegistry.plugins,
@@ -135,6 +139,7 @@ function createWorkspacePluginMetadataSnapshot(params: {
     byPluginId: new Map(params.manifestRegistry.plugins.map((plugin) => [plugin.id, plugin])),
     normalizePluginId: (pluginId) => pluginId,
     owners: ownerMaps,
+    declaredProviderOwners: new Map(),
     metrics: {
       registrySnapshotMs: 0,
       manifestRegistryMs: 0,
@@ -455,7 +460,7 @@ describe("loadWorkspaceSkillEntries", () => {
           defaults: {
             skills: ["github"],
           },
-          list: [{ id: "writer" }],
+          entries: { writer: {} },
         },
       },
       agentId: "writer",
@@ -469,7 +474,7 @@ describe("loadWorkspaceSkillEntries", () => {
           defaults: {
             skills: ["github"],
           },
-          list: [{ id: "writer", skills: ["docs-search"] }],
+          entries: { writer: { skills: ["docs-search"] } },
         },
       },
       agentId: "writer",
@@ -493,7 +498,7 @@ describe("loadWorkspaceSkillEntries", () => {
           defaults: {
             skills: ["remote-only"],
           },
-          list: [{ id: "writer" }],
+          entries: { writer: {} },
         },
       },
       agentId: "writer",

@@ -875,6 +875,7 @@ describe("runCliAgent reliability", () => {
     createContext: (params) => capturedContext({}, params),
     completeToolCall: completeCapturedToolCall,
     makeManagedRun,
+    admitContext: admitPreparedContext,
     run: runPreparedCliAgent,
   });
 

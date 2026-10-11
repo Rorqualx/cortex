@@ -487,7 +487,7 @@ describe("buildSkillSnapshot", () => {
   it("stamps the prompt format version so persisted snapshots stay reusable", async () => {
     const workspaceDir = await fixtureSuite.createCaseDir("workspace");
 
-    const snapshot = buildSnapshot(workspaceDir);
+    const snapshot = await buildSnapshot(workspaceDir);
 
     // The refresh check treats a missing promptFormatVersion as stale; without
     // this stamp every turn re-scans skills and re-persists the snapshot.

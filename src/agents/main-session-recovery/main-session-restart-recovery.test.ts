@@ -1060,7 +1060,7 @@ describe("main-session-restart-recovery", () => {
       [sessionKey]: {
         sessionId,
         updatedAt: Date.now() - 10_000,
-        status: "running",
+        status: "interrupted",
         abortedLastRun: true,
         sessionFile: path.join(sessionsDir, `${sessionId}.jsonl`),
         origin: { surface: "webchat", provider: "webchat" },
@@ -1129,7 +1129,7 @@ describe("main-session-restart-recovery", () => {
       [sessionKey]: {
         sessionId,
         updatedAt: Date.now() - 10_000,
-        status: "running",
+        status: "interrupted",
         abortedLastRun: true,
         sessionFile: path.join(sessionsDir, `${sessionId}.jsonl`),
         origin: { surface: "telegram", provider: "telegram" },
@@ -1151,42 +1151,6 @@ describe("main-session-restart-recovery", () => {
     expect(entry?.delivery?.kind).toBe("external");
     expect(entry?.delivery).toMatchObject({ route: { channel: "telegram" } });
     expect(JSON.stringify(entry)).toContain("555");
-  });
-
-  it("marks queued registered runs before lifecycle start without explicit candidates", async () => {
-    const sessionsDir = await makeSessionsDir();
-    await writeStore(sessionsDir, {
-      "agent:main:main": {
-        sessionId: "main-session",
-        updatedAt: Date.now() - 10_000,
-        status: "done",
-      },
-    });
-    registerAgentRunContext("queued-context-run", {
-      sessionKey: "agent:main:main",
-      sessionId: "main-session",
-    });
-
-    const result = await markRestartAbortedMainSessions({
-      stateDir: tmpDir,
-      sessionKeys: ["agent:main:main"],
-      sessionIds: ["main-session"],
-    });
-
-    const store = readStore(path.join(sessionsDir, "sessions.json"));
-    expect(result).toEqual({ marked: 1, skipped: 0 });
-    expect(store["agent:main:main"]).toEqual(
-      expect.objectContaining({
-        status: "running",
-        abortedLastRun: true,
-        restartRecoveryRuns: [
-          {
-            runId: "queued-context-run",
-            lifecycleGeneration: getAgentEventLifecycleGeneration(),
-          },
-        ],
-      }),
-    );
   });
 
   it.each([

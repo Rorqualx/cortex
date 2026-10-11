@@ -268,7 +268,6 @@ it("keeps a reply that already reports the blocker as the only reply after the c
   const assistant = prepared.subscription.getCurrentAttemptAssistant();
   const payloads = buildEmbeddedRunPayloads({
     assistantTexts: prepared.subscription.assistantTexts,
-    answerSegments: prepared.subscription.answerSegments,
     lastAssistant: assistant,
     currentAssistant: assistant ?? null,
     keptAnswer: prepared.subscription.getKeptAnswer(),

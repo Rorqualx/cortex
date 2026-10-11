@@ -210,8 +210,13 @@ function computeTestBrowserHash(params: {
 
 type EnsureSandboxBrowserParams = Parameters<typeof import("./browser.js").ensureSandboxBrowser>[0];
 
-async function ensureTestSandboxBrowser(params: Omit<EnsureSandboxBrowserParams, "bridgeAuth">) {
+async function ensureTestSandboxBrowser(
+  params: Omit<EnsureSandboxBrowserParams, "bridgeAuth" | "evaluateEnabled"> & {
+    evaluateEnabled?: boolean;
+  },
+) {
   return await ensureSandboxBrowser({
+    evaluateEnabled: true,
     ...params,
     bridgeAuth: { token: "test-bridge-token" },
   });

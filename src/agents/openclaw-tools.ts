@@ -45,12 +45,12 @@ import { createRequesterYieldCallback } from "./openclaw-tools.requester-yield.j
 import { createOpenClawSwarmToolGroups } from "./openclaw-tools.swarm.js";
 import type { OpenClawToolsOptions } from "./openclaw-tools.types.js";
 import { resolveWidgetPresentationForRun } from "./openclaw-tools.widget-presentation.js";
+import { createSessionAwarenessTool } from "./sessions/tools/session-awareness-tool.js";
 import {
   withPreparedToolConstruction,
   type PreparedToolConstruction,
   type ToolConstructionPreparationOptions,
 } from "./tool-construction-preparation.js";
-import { createSessionAwarenessTool } from "./sessions/tools/session-awareness-tool.js";
 import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
 import { createAskUserTool } from "./tools/ask-user-tool.js";

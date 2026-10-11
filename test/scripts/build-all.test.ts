@@ -426,9 +426,9 @@ describe("resolveBuildAllSteps", () => {
     );
     expect(ui.cache).toBeUndefined();
     // Fork deploy contract: runtime-postbuild-stamp is LAST (rebuild-restart watcher
-      // fires on it; emitting before ui:build restarts onto wiped control-ui).
-      expect(labels.indexOf("ui:build")).toBeGreaterThan(labels.indexOf("runtime-postbuild"));
-      expect(labels.indexOf("ui:build")).toBeLessThan(labels.indexOf("runtime-postbuild-stamp"));
+    // fires on it; emitting before ui:build restarts onto wiped control-ui).
+    expect(labels.indexOf("ui:build")).toBeGreaterThan(labels.indexOf("runtime-postbuild"));
+    expect(labels.indexOf("ui:build")).toBeLessThan(labels.indexOf("runtime-postbuild-stamp"));
     expect(labels.indexOf("ui:build")).toBeLessThan(labels.indexOf("write-build-info"));
   });
 
