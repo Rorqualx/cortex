@@ -19,6 +19,8 @@ type WorkerConversation = {
 /** A conversation never outlives the pool task or crosses worker generations. */
 export type WorkerTaskChannel = {
   consumeInput: () => void;
+  /** One-way observations do not acknowledge input or participate in request/reply ownership. */
+  notify: (value: unknown) => void;
   request: (
     value: unknown,
     transferList?: readonly Transferable[],
@@ -28,6 +30,7 @@ export type WorkerTaskChannel = {
 export type WorkerTaskServerHost<TaskContext> = {
   selectStartupPort?: (message: unknown) => MessagePort | undefined;
   initialize: (port: MessagePort) => void;
+  onReady?: () => void;
   onMessage: (sampleMemory: boolean) => void;
   installTaskContext: (context: TaskContext) => void;
   onIdle: () => void;
@@ -79,6 +82,7 @@ export function serveOwnedWorkerTasks<Output, TaskContext>(
           port = taskPort;
           host.initialize(port);
           port.on("message", receive);
+          host.onReady?.();
           return;
         }
       }
@@ -180,6 +184,10 @@ export function serveOwnedWorkerTasks<Output, TaskContext>(
         : undefined;
       const channel: WorkerTaskChannel | undefined = message.interactive
         ? {
+            notify: (value) => {
+              control.throwIfCancelled();
+              port.postMessage({ status: "notification", taskId: task.taskId, value });
+            },
             consumeInput: () =>
               port.postMessage({ status: "consumed", taskId: task.taskId, id: 0 }),
             request: (value, transferList) => {
@@ -242,4 +250,5 @@ export function serveOwnedWorkerTasks<Output, TaskContext>(
         .finally(() => host.onIdle());
     },
   );
+  host.onReady?.();
 }

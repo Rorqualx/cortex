@@ -38,7 +38,6 @@ import {
   TSDOWN_PACKAGE_OUTPUT_ROOTS,
   tsdownPackageOutputRoot,
 } from "./lib/tsdown-output-roots.mts";
-import { resolvePnpmRunner } from "./pnpm-runner.mts";
 import {
   TSDOWN_MAX_OLD_SPACE_MB_ENV,
   TSDOWN_DECLARATION_EXTENSIONS,
@@ -50,23 +49,12 @@ import {
 
 const nodeBin = resolveNodeRuntimeExecutable() ?? process.execPath;
 
-export type BuildAllStep = BuildCacheStep &
-  (
-    | {
-        kind: "pnpm";
-        args?: never;
-        pnpmArgs: string[];
-        windowsNodeOptions?: string;
-        nodeOptions?: string;
-      }
-    | {
-        kind?: "node";
-        args: string[];
-        pnpmArgs?: never;
-        windowsNodeOptions?: string;
-        nodeOptions?: string;
-      }
-  );
+// Fork: per-step Node flag fields (see resolveStepEnv) on upstream's node-only step shape.
+export type BuildAllStep = BuildCacheStep & {
+  args: string[];
+  windowsNodeOptions?: string;
+  nodeOptions?: string;
+};
 
 type BuildAllTiming = { label: string; durationMs: number; status: string };
 
@@ -76,11 +64,8 @@ export type BuildAllResult = {
   admissionRefused?: true;
 };
 type BuildAllStepParams = {
-  platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
   nodeExecPath?: string;
-  npmExecPath?: string;
-  comSpec?: string;
   deferIsolatedAssets?: boolean;
 };
 const RUN_NODE_SKIP_DTS_BUILD_ENV = "OPENCLAW_RUN_NODE_SKIP_DTS_BUILD";
@@ -92,25 +77,27 @@ const declarationCacheOutputs = (roots: string[]) =>
   roots.map((root) => ({ path: root, extensions: TSDOWN_DECLARATION_EXTENSIONS }));
 const WINDOWS_BUILD_MAX_OLD_SPACE_MB = 8192;
 const tsxScript = (script: string, ...args: string[]) => ["--import", "tsx", script, ...args];
-const nodeStep = (label: string, args: string[]): Extract<BuildAllStep, { kind?: "node" }> => ({
+const nodeStep = (label: string, args: string[]): BuildAllStep => ({
   label,
-  kind: "node",
   args,
 });
 const tsxStep = (label: string, script: string, ...args: string[]) =>
   nodeStep(label, tsxScript(script, ...args));
-const PNPM_STEP_NODE_FALLBACKS = new Map([
-  ["plugins:assets:build", tsxScript("scripts/bundled-plugin-assets.mts", "--phase", "build")],
-  ["plugins:assets:copy", tsxScript("scripts/bundled-plugin-assets.mts", "--phase", "copy")],
-  ["ui:build", ["scripts/ui.js", "build"]],
-]);
+const pluginAssetStep = (phase: "build" | "copy") =>
+  nodeStep(`plugins:assets:${phase}`, [
+    "--import",
+    "./scripts/tsx.mjs",
+    "scripts/bundled-plugin-assets.mts",
+    "--phase",
+    phase,
+  ]);
 export const BUILD_ALL_STEPS: BuildAllStep[] = [
   nodeStep("native-protocol", ["scripts/prepare-native-protocol.mjs"]),
   nodeStep("clean:dist", [
     "-e",
     'require("node:fs").rmSync("dist", { recursive: true, force: true })',
   ]),
-  { label: "plugins:assets:build", kind: "pnpm", pnpmArgs: ["plugins:assets:build"] },
+  pluginAssetStep("build"),
   tsxStep("tsdown", "scripts/tsdown-build.mts"),
   {
     ...tsxStep("tsdown-ai", "scripts/tsdown-build.mts", "--config", "tsdown.ai.config.ts"),
@@ -153,6 +140,10 @@ export const BUILD_ALL_STEPS: BuildAllStep[] = [
       "tsdown.config.ts",
       "--filter",
       TSDOWN_UNIFIED_CONFIG_GROUP,
+      // Limit overlapping Rolldown native allocations, which Node's heap limit
+      // does not cap. Individual bundles retain their internal parallelism.
+      "--concurrency",
+      "1",
     ),
     env: { OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1" },
   },
@@ -162,11 +153,7 @@ export const BUILD_ALL_STEPS: BuildAllStep[] = [
   },
   tsxStep("external-plugins:local-dist", "scripts/build-external-plugin-local-dist.mts"),
   tsxStep("check-cli-bootstrap-imports", "scripts/check-cli-bootstrap-imports.mts"),
-  {
-    label: "plugins:assets:copy",
-    kind: "pnpm",
-    pnpmArgs: ["plugins:assets:copy"],
-  },
+  pluginAssetStep("copy"),
   tsxStep("runtime-postbuild", "scripts/runtime-postbuild.mts"),
   tsxStep("build-stamp", "scripts/build-stamp.mts"),
   tsxStep("runtime-postbuild-stamp", "scripts/runtime-postbuild-stamp.mts"),
@@ -186,15 +173,26 @@ export const BUILD_ALL_STEPS: BuildAllStep[] = [
   },
   tsxStep("check-plugin-sdk-exports", "scripts/check-plugin-sdk-exports.mts"),
   {
-    label: "ui:build",
-    kind: "pnpm",
-    pnpmArgs: ["ui:build"],
+    ...nodeStep("ui:build", ["scripts/ui.js", "build"]),
     // No build-all cache: ui/vite.config.ts derives the Control UI build ID
     // from package.json, git HEAD, and OPENCLAW_CONTROL_UI_BUILD_ID env, so a
     // file-input signature cannot exactly invalidate generated assets and a
     // warm hit could restore stale service-worker/app cache metadata.
     cache: undefined,
   },
+  // Fork: the package.json `ui:build` script chains these enforcing Control UI
+  // gates after the Vite build. build-all now launches scripts/ui.js directly
+  // (no nested pnpm), and that script only reports the performance budget, so
+  // the gates run here as their own steps to keep `pnpm build` failing on a
+  // startup-budget or server-import regression.
+  nodeStep("ui:check-performance", [
+    "--experimental-strip-types",
+    "scripts/check-control-ui-performance.mts",
+  ]),
+  nodeStep("ui:check-server-imports", [
+    "--experimental-strip-types",
+    "scripts/check-control-ui-server-imports.ts",
+  ]),
   tsxStep("write-build-info", "scripts/write-build-info.ts"),
   {
     ...tsxStep("write-cli-startup-metadata", "scripts/write-cli-startup-metadata.ts"),
@@ -229,13 +227,22 @@ const ASSET_RUNTIME_STEP_LABELS = [
   ...RUNTIME_FINALIZE_STEP_LABELS,
 ];
 const BUILD_METADATA_STEP_LABELS = ["write-build-info", "write-cli-startup-metadata"] as const;
+// Fork: scripts/write-plugin-sdk-entry-dts.ts is the fork-owned flat SDK declaration
+// writer (not upstream's SDK-only config-group writer), so every typed profile still
+// runs it before the export check, after upstream's single unified declaration compile.
 const SDK_DECLARATION_STEP_LABELS = [
   "write-plugin-sdk-entry-dts",
   "check-plugin-sdk-exports",
 ] as const;
+// Fork: the enforcing Control UI gates always follow the build they validate.
+const UI_BUILD_STEP_LABELS = [
+  "ui:build",
+  "ui:check-performance",
+  "ui:check-server-imports",
+] as const;
 const FINAL_BUILD_ARTIFACTS_STEP_LABELS = [
   ...SDK_DECLARATION_STEP_LABELS,
-  "ui:build",
+  ...UI_BUILD_STEP_LABELS,
   ...BUILD_METADATA_STEP_LABELS,
 ] as const;
 const CI_ARTIFACT_STEP_LABELS = [
@@ -249,7 +256,7 @@ const FULL_COMPILER_STEP_LABELS = [
   "tsdown-unified",
   "write-unified-entry-dts",
 ] as const;
-// Typed builds cache declaration groups separately from the runtime graph.
+// The full declaration generation includes SDK outputs and has its own runtime-independent cache.
 const FULL_RUNTIME_STEP_LABELS = ASSET_RUNTIME_STEP_LABELS.flatMap((step) =>
   step === "tsdown" ? FULL_COMPILER_STEP_LABELS : [step],
 );
@@ -276,7 +283,7 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
     "build-stamp",
     "write-plugin-sdk-entry-dts",
     "check-plugin-sdk-exports",
-    "ui:build",
+    ...UI_BUILD_STEP_LABELS,
     "write-build-info",
     "write-cli-startup-metadata",
     // runtime-postbuild-stamp MUST be last for the deploy profile. Writing
@@ -317,7 +324,7 @@ const FULL_RUNTIME_ONLY_STEPS = [
   "plugins:assets:copy",
   "runtime-postbuild",
   "build-stamp",
-  "ui:build",
+  ...UI_BUILD_STEP_LABELS,
   "write-build-info",
   "write-cli-startup-metadata",
   // Same ordering contract as the `full` profile: runtime-postbuild-stamp is the
@@ -348,7 +355,7 @@ export const BUILD_ALL_PROFILE_STEP_ENV: Record<string, Record<string, NodeJS.Pr
     tsdown: {
       // Global declaration emission is ~95% of the tsdown wall clock and PR
       // CI's dist consumers are runtime JS only; the plugin-sdk gate below
-      // stages the two canonical SDK declaration groups instead. Release/package builds
+      // stages the canonical SDK-only declaration graph instead. Release/package builds
       // (full profile, docker packaging) keep canonical dts.
       OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1",
       OPENCLAW_PRESERVE_CLI_STARTUP_METADATA: "1",
@@ -532,48 +539,18 @@ function resolveStepEnv(step: BuildAllStep, env: NodeJS.ProcessEnv, platform: No
 }
 
 export function resolveBuildAllStep(step: BuildAllStep, params: BuildAllStepParams = {}) {
-  const platform = params.platform ?? process.platform;
-  const env = step.env
-    ? Object.assign({}, params.env ?? process.env, step.env)
-    : (params.env ?? process.env);
+  const env = resolveStepEnv(step, params.env ?? process.env, process.platform);
   const assetArgs =
     params.deferIsolatedAssets && step.label === "plugins:assets:build" ? ["--defer-isolated"] : [];
-  const pnpmArgs = step.kind === "pnpm" ? [...step.pnpmArgs, ...assetArgs] : undefined;
-  const nodeArgs =
-    step.kind !== "pnpm"
-      ? step.args
-      : env.OPENCLAW_BUILD_ALL_NO_PNPM === "1"
-        ? PNPM_STEP_NODE_FALLBACKS.get(step.label)
-        : undefined;
-  if (nodeArgs) {
-    return {
-      command: params.nodeExecPath ?? nodeBin,
-      args: [...nodeArgs, ...assetArgs],
-      options: {
-        stdio: "inherit",
-        env,
-        // Managed commands default to a Windows shell; Node needs literal argv,
-        // including percent-encoded file URLs passed to --import.
-        shell: false,
-      } satisfies SpawnSyncOptions,
-    };
-  }
-  const runner = resolvePnpmRunner({
-    env,
-    pnpmArgs,
-    nodeExecPath: params.nodeExecPath ?? nodeBin,
-    npmExecPath: params.npmExecPath ?? env.npm_execpath,
-    comSpec: params.comSpec,
-    platform,
-  });
   return {
-    command: runner.command,
-    args: runner.args,
+    command: params.nodeExecPath ?? nodeBin,
+    args: [...step.args, ...assetArgs],
     options: {
       stdio: "inherit",
       env,
-      shell: runner.shell,
-      windowsVerbatimArguments: runner.windowsVerbatimArguments,
+      // Managed commands default to a Windows shell; Node needs literal argv,
+      // including percent-encoded file URLs passed to --import.
+      shell: false,
     } satisfies SpawnSyncOptions,
   };
 }

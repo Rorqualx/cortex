@@ -1212,6 +1212,8 @@ export function subscribeEmbeddedAgentSession(input: SubscribeEmbeddedAgentSessi
       state.acceptedSessionSpawns.length > 0 ||
       state.visibleBlockReplyCount > 0;
     assistantTexts.length = 0;
+    state.inputAnswer = undefined;
+    state.keptAnswer = undefined;
     toolMetas.length = 0;
     toolMetaById.clear();
     toolSummaryById.clear();
@@ -1423,6 +1425,7 @@ export function subscribeEmbeddedAgentSession(input: SubscribeEmbeddedAgentSessi
     assistantTexts,
     getCurrentAttemptAssistant: () =>
       currentAttemptAssistant ? structuredClone(currentAttemptAssistant) : undefined,
+    getKeptAnswer: () => state.keptAnswer,
     hasSuccessfulModelResponse: () => hasSuccessfulModelResponse,
     getLastAssistantTextMessageIndex: () =>
       state.lastAssistantTextMessageIndex >= 0 ? state.lastAssistantTextMessageIndex : undefined,

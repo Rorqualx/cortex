@@ -7,6 +7,7 @@ import { CHAT_WORK_CONTEXT_DETAIL_LIMITS, CHAT_WORK_CONTEXT_LIMITS } from "../ch
 import {
   CHAT_INPUT_RECEIPT_MAX_RUN_IDS,
   CHAT_INPUT_RUN_ID_MAX_CHARS,
+  CHAT_MESSAGE_MAX_CHARS,
 } from "./chat-history-constants.js";
 import { closedObject } from "./closed-object.js";
 import { HumanMentionsSchema } from "./human-mentions.js";
@@ -168,6 +169,8 @@ export const AgentActivityItemSchema = closedObject({
   meta: Type.Optional(Type.String()),
   commandBearing: Type.Optional(Type.Boolean()),
   toolCallId: Type.Optional(Type.String()),
+  // The history page has no matching result; this is not a terminal receipt.
+  unpairedCall: Type.Optional(Type.Boolean()),
   startedAt: Type.Optional(Type.Number()),
   endedAt: Type.Optional(Type.Number()),
   error: Type.Optional(Type.String()),
@@ -225,6 +228,12 @@ export const ChatMetadataParamsSchema = Object.assign(
           "Include model and account selection metadata (default true). Set false when reading models.list separately.",
       }),
     ),
+    ifRevision: Type.Optional(
+      Type.String({
+        minLength: 1,
+        description: "For includeModels:false, omit unchanged commands.",
+      }),
+    ),
     authProfileId: Type.Optional(
       Type.String({
         minLength: 1,
@@ -274,8 +283,9 @@ export type ChatToolTitlesResult = Static<typeof ChatToolTitlesResultSchema>;
 export const ChatMessageGetParamsSchema = closedObject({
   sessionKey: NonEmptyString,
   agentId: Type.Optional(NonEmptyString),
+  sessionId: Type.Optional(NonEmptyString),
   messageId: NonEmptyString,
-  maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_000_000 })),
+  maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: CHAT_MESSAGE_MAX_CHARS })),
 });
 
 /**
@@ -431,6 +441,8 @@ export const ChatDeltaEventSchema = closedObject({
   deltaText: Type.String(),
   // Fork: real-time model thinking streamed to the Control UI alongside deltaText.
   deltaThinking: Type.Optional(Type.String()),
+  itemId: Type.Optional(Type.String()),
+  itemStartOffset: Type.Optional(Type.Integer({ minimum: 0 })),
   replace: Type.Optional(Type.Boolean()),
   usage: Type.Optional(Type.Unknown()),
 });

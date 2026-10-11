@@ -3,6 +3,7 @@ import { freezeDiagnosticTraceContext } from "../../../infra/diagnostic-trace-co
 import { isTransientNetworkError } from "../../../infra/retryable-network-errors.js";
 import { projectAgentRunAttemptTerminal } from "../../agent-run-terminal-outcome.js";
 import { isCloudCodeAssistFormatError } from "../../embedded-agent-helpers.js";
+import type { CompletedAssistantAnswer } from "../../embedded-agent-subscribe.handlers.types.js";
 import type { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
 import { extractEmbeddedAssistantText } from "../../embedded-agent-utils.js";
 import {
@@ -62,6 +63,8 @@ export function createAttemptCarryover() {
 }
 
 export type EmbeddedRunAttemptWithReceiptEvidence = EmbeddedRunAttemptResult & {
+  // Fork: the frozen subscriber exposes no answer segments, only the kept answer.
+  keptAnswer?: CompletedAssistantAnswer;
   successfulNestedToolNames?: string[];
 };
 
@@ -137,35 +140,18 @@ function normalizeEmbeddedAttemptToolMetas(
       (entry): entry is EmbeddedAttemptSubscription["toolMetas"][number] & { toolName: string } =>
         typeof entry.toolName === "string" && entry.toolName.trim().length > 0,
     )
-    .map((entry) => {
-      const normalized: EmbeddedRunAttemptResult["toolMetas"][number] = {
-        toolName: entry.toolName,
-        meta: entry.meta,
-        replaySafe: entry.replaySafe === true,
-      };
-      if (entry.toolCallId) {
-        normalized.toolCallId = entry.toolCallId;
-      }
-      if (typeof entry.isError === "boolean") {
-        normalized.isError = entry.isError;
-      }
-      if (entry.terminate === true) {
-        normalized.terminate = true;
-      }
-      if (entry.asyncStarted === true) {
-        normalized.asyncStarted = true;
-      }
-      if (entry.asyncTaskRunId) {
-        normalized.asyncTaskRunId = entry.asyncTaskRunId;
-      }
-      if (entry.asyncTaskId) {
-        normalized.asyncTaskId = entry.asyncTaskId;
-      }
-      if (entry.codeModeSuspended === true) {
-        normalized.codeModeSuspended = true;
-      }
-      return normalized;
-    });
+    .map((entry): EmbeddedRunAttemptResult["toolMetas"][number] =>
+      Object.assign(
+        { toolName: entry.toolName, meta: entry.meta, replaySafe: entry.replaySafe === true },
+        entry.toolCallId ? { toolCallId: entry.toolCallId } : {},
+        typeof entry.isError === "boolean" ? { isError: entry.isError } : {},
+        entry.terminate === true ? { terminate: true } : {},
+        entry.asyncStarted === true ? { asyncStarted: true } : {},
+        entry.asyncTaskRunId ? { asyncTaskRunId: entry.asyncTaskRunId } : {},
+        entry.asyncTaskId ? { asyncTaskId: entry.asyncTaskId } : {},
+        entry.codeModeSuspended === true ? { codeModeSuspended: true } : {},
+      ),
+    );
 }
 
 export function completeEmbeddedAttemptResult(
@@ -329,6 +315,7 @@ export function completeEmbeddedAttemptResult(
     currentAttemptReplayMetadata,
     itemLifecycle: subscription.getItemLifecycle(),
     assistantTurns: subscription.getAssistantTurnCount(),
+    keptAnswer: subscription.getKeptAnswer(),
     setTerminalLifecycleMeta,
     bootstrapPromptWarningSignaturesSeen: bootstrapPromptWarning.warningSignaturesSeen,
     bootstrapPromptWarningSignature: bootstrapPromptWarning.signature,

@@ -1,5 +1,4 @@
 import type { z } from "zod";
-// Defines shared agent configuration types across runtime schemas.
 import type { AgentRuntimePolicySchema } from "./zod-schema.agent-entry-base.js";
 import type { OsSandboxSettings } from "./types.sandbox.js";
 import type { AgentModelSchema, AgentToolModelSchema } from "./zod-schema.agent-model.js";

@@ -69,7 +69,6 @@ export async function getOrLoadBootstrapFiles(params: {
   return files;
 }
 
-/** Drop one cached bootstrap snapshot. */
 export function clearBootstrapSnapshot(sessionKey: string): void {
   cache.delete(sessionKey);
 }

@@ -156,6 +156,7 @@ export async function prepareCronRunContext(params: {
   const isGmailHook = hookExternalContentSource === "gmail";
   const now = Date.now();
   const sandbox = resolveCreatorSandbox(runtimeCfg, { actor: input.job.createdActor });
+  const usesExactRunSession = usesDetachedRunSession || baseSessionKey.startsWith("cron:");
   const cronSession = await prepareCronSession({
     cfg: runtimeCfg,
     sessionKey: agentSessionKey,
@@ -164,6 +165,7 @@ export async function prepareCronRunContext(params: {
     agentId,
     nowMs: now,
     forceNew: usesDetachedRunSession,
+    exactRunSession: usesExactRunSession,
     hookExternalContentSource,
   });
   const sourceEntry = sourceSessionKey ? cronSession.store[sourceSessionKey] : undefined;
@@ -183,7 +185,6 @@ export async function prepareCronRunContext(params: {
   }
   const runSessionId = cronSession.sessionEntry.sessionId;
   const currentRunSessionId = () => cronSession.sessionEntry.sessionId ?? runSessionId;
-  const usesExactRunSession = usesDetachedRunSession || baseSessionKey.startsWith("cron:");
   const runSessionKey = usesExactRunSession
     ? `${agentSessionKey}:run:${runSessionId}`
     : agentSessionKey;
@@ -248,7 +249,7 @@ export async function prepareCronRunContext(params: {
       await patchSessionEntryCore(
         { storePath, sessionKey, agentId },
         (_entry, context) => update(context.existingEntry),
-        { fallbackEntry, replaceEntry: true, assertCommitAllowed },
+        { fallbackEntry, replaceEntry: true, workerGuard: { assertCurrent: assertCommitAllowed } },
       );
     };
     const persistSessionEntry = createPersistCronSessionEntry({

@@ -2151,6 +2151,7 @@
                 "group": "Concepts and configuration",
                 "pages": [
                   "concepts/models",
+                  "concepts/recommended-models",
                   "concepts/decision-models",
                   "concepts/model-providers",
                   {
@@ -2512,11 +2513,11 @@
                           "gateway/cloud-workers/session-lifecycle",
                           "gateway/cloud-workers/desktop",
                           "gateway/cloud-workers/security-model",
+                          "gateway/cloud-workers/native-inference",
                           "gateway/cloud-workers/troubleshooting"
                         ]
                       },
-                      "gateway/multiple-gateways",
-                      "gateway/multi-tenant-hosting"
+                      "gateway/multiple-gateways"
                     ]
                   },
                   {
@@ -2726,7 +2727,6 @@
                     "group": "Running the service",
                     "pages": [
                       "cli/daemon",
-                      "cli/fleet",
                       "cli/gateway",
                       {
                         "group": "Gateway",

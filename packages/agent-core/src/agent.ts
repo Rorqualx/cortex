@@ -7,7 +7,7 @@ import type {
   ThinkingBudgets,
   Transport,
 } from "@openclaw/llm-core";
-import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.js";
+import { runAgentLoop } from "./agent-loop.js";
 import { TranscriptNotContinuableError } from "./errors.js";
 import {
   attachInternalSyncSteeringGetter,
@@ -169,10 +169,16 @@ class PendingMessageQueue {
   }
 
   enqueue(message: AgentMessage): void {
+    this.admit(message)();
+  }
+
+  admit(message: AgentMessage): () => void {
     this.messages.push(message);
-    for (const listener of this.listeners) {
-      listener();
-    }
+    return () => {
+      for (const listener of this.listeners) {
+        listener();
+      }
+    };
   }
 
   peek(): readonly AgentMessage[] {
@@ -412,12 +418,22 @@ export class Agent {
    * message's unstarted sequential tail can be skipped. Parallel batches always run.
    */
   steer(message: AgentMessage): void {
-    this.steeringQueue.enqueue(message);
-    if (this.preemptOnSteer) {
-      // Cut the in-flight tool batch (preemptable tools only) so this message is
-      // delivered at the next turn boundary instead of after the whole batch.
-      this.toolBatchPreemptController?.abort();
-    }
+    this.admitSteeringMessage(message)();
+  }
+
+  /** Install admitted input synchronously; notify listeners after admission custody ends. */
+  admitSteeringMessage(message: AgentMessage): () => void {
+    const notifyListeners = this.steeringQueue.admit(message);
+    return () => {
+      notifyListeners();
+      if (this.preemptOnSteer) {
+        // Cut the in-flight tool batch (preemptable tools only) so this message is
+        // delivered at the next turn boundary instead of after the whole batch.
+        // Abort handlers are arbitrary listeners, so they run with the notification,
+        // never while the caller still holds admission custody.
+        this.toolBatchPreemptController?.abort();
+      }
+    };
   }
 
   /** Cancel queued input unless a live provider response may already have admitted it. */
@@ -527,7 +543,7 @@ export class Agent {
       throw new TranscriptNotContinuableError(lastMessage.role);
     }
 
-    await this.runContinuation();
+    await this.runPromptMessages([]);
   }
 
   private normalizePromptInput(
@@ -558,18 +574,6 @@ export class Agent {
         messages,
         this.createContextSnapshot(),
         this.createLoopConfig(options),
-        (event) => this.processEvents(event),
-        signal,
-        this.streamFn,
-      );
-    });
-  }
-
-  private async runContinuation(): Promise<void> {
-    await this.runWithLifecycle(async (signal) => {
-      await runAgentLoopContinue(
-        this.createContextSnapshot(),
-        this.createLoopConfig(),
         (event) => this.processEvents(event),
         signal,
         this.streamFn,
@@ -684,6 +688,9 @@ export class Agent {
     try {
       await executor(abortController.signal);
     } catch (error) {
+      if (this.runtime?.isLocalError?.(error)) {
+        throw error;
+      }
       await this.handleRunFailure(error, abortController.signal.aborted);
     } finally {
       this.finishRun();

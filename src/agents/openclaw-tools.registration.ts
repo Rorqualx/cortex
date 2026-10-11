@@ -65,7 +65,6 @@ export function applyNodesToolWorkspaceGuard(
   );
 }
 
-/** Decides whether progress_card should be included in the assembled OpenClaw tool set. */
 export function shouldIncludeProgressCardToolForOpenClawTools(params: {
   agentId?: string;
   agentSessionKey?: string;

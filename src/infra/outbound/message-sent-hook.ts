@@ -39,6 +39,7 @@ export function createMessageSentEmitter(params: {
 }): { emitMessageSent: (event: MessageSentEvent) => void; hasMessageSentHooks: boolean } {
   const hasMessageSentHooks = params.hookRunner?.hasHooks("message_sent") ?? false;
   const canEmitInternalHook = Boolean(params.sessionKeyForInternalHooks);
+  const warn = (message: string) => log.warn(message);
   const emitMessageSent = (event: MessageSentEvent) => {
     if (!hasMessageSentHooks && !canEmitInternalHook) {
       return;
@@ -66,9 +67,7 @@ export function createMessageSentEmitter(params: {
           toPluginMessageContext(canonical),
         ),
         `${params.logPrefix}: message_sent plugin hook failed`,
-        (message) => {
-          log.warn(message);
-        },
+        warn,
       );
     }
     if (!canEmitInternalHook) {
@@ -84,9 +83,7 @@ export function createMessageSentEmitter(params: {
         ),
       ),
       `${params.logPrefix}: message:sent internal hook failed`,
-      (message) => {
-        log.warn(message);
-      },
+      warn,
     );
   };
   return { emitMessageSent, hasMessageSentHooks };

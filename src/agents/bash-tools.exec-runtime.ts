@@ -18,6 +18,13 @@ import {
   type ExecApprovalDecision,
   type ExecTarget,
 } from "../infra/exec-approvals.js";
+import {
+  execRequestAbortSignal,
+  retainExecRequestProcess,
+  readExecRequestOwners,
+  withExecRequestOwners,
+  type ExecRequestOwner,
+} from "../infra/exec-request-context.js";
 import { requestHeartbeat } from "../infra/heartbeat-wake.js";
 import { isDangerousHostInheritedEnvVarName } from "../infra/host-env-security.js";
 import { findPathKey, mergePathPrepend } from "../infra/path-prepend.js";
@@ -68,6 +75,7 @@ import {
   markExited,
   recordNotifyOnExitRemoval,
   resolveProcessCleanupMs,
+  waitForExecSession,
   tail,
 } from "./bash-process-registry.js";
 import { createExecLaunchLifecycle, ExecProcessPreflightError } from "./bash-tools.exec-launch.js";
@@ -77,6 +85,7 @@ import {
   renderExecOutputText,
   renderExecUpdateText,
 } from "./bash-tools.exec-output.js";
+import { isRequestedExecTargetAllowed } from "./bash-tools.exec-target.js";
 import { chunkString, clampWithDefault, readEnvInt } from "./bash-tools.shared.js";
 import { buildGitHubExecLaunchArgv } from "./github-exec-launch.js";
 import { recordAgentCleanupFailure } from "./run-cleanup-timeout.js";
@@ -84,8 +93,6 @@ import { createSessionSlug } from "./session-slug.js";
 import { maybeWrapCommandWithShellSnapshot } from "./shell-snapshot.js";
 import { createStreamingBinaryOutputSanitizer, getShellConfig } from "./shell-utils.js";
 import { registerTrustedToolNoStartError } from "./tool-result-error.js";
-
-export { execSchema } from "./bash-tools.schemas.js";
 
 function resolveExecTimeoutMs(timeoutSec: number | null | undefined): number | undefined {
   if (typeof timeoutSec !== "number" || !Number.isFinite(timeoutSec) || timeoutSec <= 0) {
@@ -253,27 +260,6 @@ export function renderExecTargetLabel(target: ExecTarget) {
   return target === "auto" ? "auto" : renderExecHostLabel(target);
 }
 
-/** Returns true when a per-call target override is allowed by configured policy. */
-export function isRequestedExecTargetAllowed(params: {
-  configuredTarget: ExecTarget;
-  requestedTarget: ExecTarget;
-  sandboxAvailable?: boolean;
-}) {
-  if (params.requestedTarget === params.configuredTarget) {
-    return true;
-  }
-  if (params.configuredTarget === "auto") {
-    if (
-      params.sandboxAvailable &&
-      (params.requestedTarget === "gateway" || params.requestedTarget === "node")
-    ) {
-      return false;
-    }
-    return true;
-  }
-  return false;
-}
-
 /** Resolves configured/requested/elevated exec target into an effective host. */
 export function resolveExecTarget(params: {
   configuredTarget?: ExecTarget;
@@ -382,6 +368,8 @@ function maybeNotifyOnExit(
   if (
     !session.backgrounded ||
     !session.notifyOnExit ||
+    session.requestCancelled ||
+    readExecRequestOwners(session)?.some((owner) => owner.signal.aborted) ||
     session.exitNotified ||
     session.terminalPollObserved
   ) {
@@ -687,6 +675,7 @@ export async function runExecProcess(opts: {
   /** Start-time subagent identity resolved from the persisted spawn envelope. */
   subagentSession?: boolean;
   notifyOnExitEmptySuccess?: boolean;
+  requestOwners?: readonly ExecRequestOwner[];
   scopeKey?: string;
   sessionKey?: string;
   /** Agent owner frozen when the exec process starts. */
@@ -713,9 +702,13 @@ export async function runExecProcess(opts: {
   initiateSpawn?: SpawnInitiation;
   releaseSpawn?: (reason?: "retry") => void;
 }): Promise<ExecProcessHandle> {
-  let assertSourceActive: (() => void) | undefined = captureAgentToolSourceExecutionGuard(
-    opts.startupSignal,
-  );
+  const requestSignal = execRequestAbortSignal(opts.requestOwners);
+  const startupSignal =
+    requestSignal && opts.startupSignal
+      ? AbortSignal.any([requestSignal, opts.startupSignal])
+      : (requestSignal ?? opts.startupSignal);
+  let assertSourceActive: (() => void) | undefined =
+    captureAgentToolSourceExecutionGuard(startupSignal);
   const startedAt = Date.now();
   const sessionId = createSessionSlug();
   let execCommand = opts.execCommand ?? opts.command;
@@ -794,39 +787,42 @@ export async function runExecProcess(opts: {
     }
   }
 
-  const session: ProcessSession = {
-    id: sessionId,
-    command: opts.command,
-    scopeKey: opts.scopeKey,
-    sessionKey: opts.sessionKey,
-    cleanupMs: resolveProcessCleanupMs(opts.cleanupMs),
-    agentId: opts.agentId,
-    eventRouting: opts.eventRouting,
-    notifyDeliveryContext: normalizeDeliveryContext(opts.notifyDeliveryContext),
-    notifyOnExit: opts.notifyOnExit,
-    notifyOnExitEmptySuccess: opts.notifyOnExitEmptySuccess === true,
-    exitNotified: false,
-    pendingOutputDropped: false,
-    child: undefined,
-    stdin: undefined,
-    pid: undefined,
-    startedAt,
-    cwd: opts.workdir,
-    maxOutputChars: opts.maxOutput,
-    pendingMaxOutputChars: opts.pendingMaxOutput,
-    totalOutputChars: 0,
-    pendingOutput: [],
-    pendingStdoutChars: 0,
-    pendingStderrChars: 0,
-    aggregated: "",
-    tail: "",
-    exited: false,
-    exitCode: undefined as number | null | undefined,
-    exitSignal: undefined as NodeJS.Signals | number | null | undefined,
-    truncated: false,
-    backgrounded: false,
-    cursorKeyMode: opts.usePty ? "unknown" : "normal",
-  };
+  const session: ProcessSession = withExecRequestOwners(
+    {
+      id: sessionId,
+      command: opts.command,
+      scopeKey: opts.scopeKey,
+      sessionKey: opts.sessionKey,
+      cleanupMs: resolveProcessCleanupMs(opts.cleanupMs),
+      agentId: opts.agentId,
+      eventRouting: opts.eventRouting,
+      notifyDeliveryContext: normalizeDeliveryContext(opts.notifyDeliveryContext),
+      notifyOnExit: opts.notifyOnExit,
+      notifyOnExitEmptySuccess: opts.notifyOnExitEmptySuccess === true,
+      exitNotified: false,
+      pendingOutputDropped: false,
+      child: undefined,
+      stdin: undefined,
+      pid: undefined,
+      startedAt,
+      cwd: opts.workdir,
+      maxOutputChars: opts.maxOutput,
+      pendingMaxOutputChars: opts.pendingMaxOutput,
+      totalOutputChars: 0,
+      pendingOutput: [],
+      pendingStdoutChars: 0,
+      pendingStderrChars: 0,
+      aggregated: "",
+      tail: "",
+      exited: false,
+      exitCode: undefined as number | null | undefined,
+      exitSignal: undefined as NodeJS.Signals | number | null | undefined,
+      truncated: false,
+      backgrounded: false,
+      cursorKeyMode: opts.usePty ? "unknown" : "normal",
+    },
+    opts.requestOwners,
+  );
   addSession(session);
 
   // Tracks whether the exec run's promise has settled (process exited or
@@ -997,6 +993,26 @@ export async function runExecProcess(opts: {
   })();
 
   let managedRun: ManagedRun | null = null;
+  const onRequestCancelled = () => {
+    session.requestCancelled = true;
+    session.cancellationRequested = true;
+    updatesDisabled = true;
+    if (managedRun) {
+      managedRun.cancel("manual-cancel");
+    } else {
+      // The supervisor reserves the process identity before asynchronous launch completes.
+      supervisor.cancel(sessionId, "manual-cancel");
+    }
+  };
+  requestSignal?.addEventListener("abort", onRequestCancelled, { once: true });
+  if (requestSignal?.aborted) {
+    onRequestCancelled();
+  }
+  if (opts.requestOwners?.length) {
+    // Retained only once every later exit settles the session (see the startup
+    // `finally` below); spec preparation above has no native process to join.
+    retainExecRequestProcess(opts.requestOwners, waitForExecSession(session));
+  }
   let usingPty = spawnSpec.mode === "pty";
   // Launch custody (upstream spawn initiation): the caller's grant is held from
   // consumption to native launch and released on every exit from startup.
@@ -1141,6 +1157,14 @@ export async function runExecProcess(opts: {
     }
   } finally {
     launchLifecycle.dispose();
+    if (!managedRun) {
+      requestSignal?.removeEventListener("abort", onRequestCancelled);
+      // Startup cancellation rethrows before the failure paths above mark the
+      // session exited; a retained request owner must never join it forever.
+      if (!session.exited) {
+        markExited(session, null, null, "failed");
+      }
+    }
   }
   session.stdin = managedRun.stdin;
   session.pid = managedRun.pid;
@@ -1214,6 +1238,9 @@ export async function runExecProcess(opts: {
         target: diagnosticTarget,
       });
       return outcome;
+    })
+    .finally(() => {
+      requestSignal?.removeEventListener("abort", onRequestCancelled);
     });
 
   return {

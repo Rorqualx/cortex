@@ -39,7 +39,7 @@ import {
   resolveAgentRunFailureText,
   resolveReplyFailureSummary,
 } from "./agent-runner-failure-reply.js";
-import type { AgentFallbackCycleState } from "./agent-runner-fallback-cycle.js";
+import type { AgentFallbackCycleState } from "./agent-runner-fallback-cycle.types.js";
 import type { AgentTurnTimingTracker } from "./agent-runner-turn-timing.js";
 import {
   buildRestartLifecycleReplyText,
@@ -230,6 +230,10 @@ export async function handleAgentExecutionError(params: {
     }
     return undefined;
   };
+  const finalFailure = (text: string) => ({
+    kind: "final" as const,
+    payload: markAgentRunFailureReplyPayload({ text }),
+  });
   const replyOperationAbortAction = resolveReplyOperationAbortAction(err);
   if (replyOperationAbortAction) {
     return replyOperationAbortAction;
@@ -252,12 +256,7 @@ export async function handleAgentExecutionError(params: {
         : "⚠️ Model switch could not be completed. The requested model may be temporarily unavailable. Please try again shortly.";
     turn.replyOperation?.fail("run_failed", err);
     await params.modelPatch.fail(err);
-    return {
-      kind: "final",
-      payload: markAgentRunFailureReplyPayload({
-        text: switchErrorText,
-      }),
-    };
+    return finalFailure(switchErrorText);
   }
   const message = formatErrorMessage(err);
   params.timing.logIfSlow({
@@ -335,10 +334,7 @@ export async function handleAgentExecutionError(params: {
         : "command_lane_cleared",
       restartLifecycleError,
     );
-    return {
-      kind: "final",
-      payload: markAgentRunFailureReplyPayload({ text: buildRestartLifecycleReplyText() }),
-    };
+    return finalFailure(buildRestartLifecycleReplyText());
   }
   if (isCompactionFailure) {
     takePendingLifecycleTerminal().emit("error", err);
@@ -346,20 +342,17 @@ export async function handleAgentExecutionError(params: {
       `Auto-compaction failed (${message}). Preserving existing session mapping for ${turn.sessionKey ?? turn.followupRun.run.sessionId}.`,
     );
     turn.replyOperation?.fail("run_failed", err);
-    return {
-      kind: "final",
-      payload: markAgentRunFailureReplyPayload({
-        text: buildContextOverflowRecoveryText({
-          cfg: params.runtimeConfig,
-          agentId: turn.followupRun.run.agentId,
-          primaryProvider: turn.followupRun.run.provider,
-          primaryModel: turn.followupRun.run.model,
-          runtimeProvider: params.state.attemptedRuntimeProvider,
-          runtimeModel: params.state.attemptedRuntimeModel,
-          activeSessionEntry: turn.getActiveSessionEntry(),
-        }),
+    return finalFailure(
+      buildContextOverflowRecoveryText({
+        cfg: params.runtimeConfig,
+        agentId: turn.followupRun.run.agentId,
+        primaryProvider: turn.followupRun.run.provider,
+        primaryModel: turn.followupRun.run.model,
+        runtimeProvider: params.state.attemptedRuntimeProvider,
+        runtimeModel: params.state.attemptedRuntimeModel,
+        activeSessionEntry: turn.getActiveSessionEntry(),
       }),
-    };
+    );
   }
   // The CLI boundary records this fact even when phase callbacks do not arrive.
   // Replaying an observed turn may duplicate already-started side effects.

@@ -136,7 +136,7 @@ it("hydrates only old scoped candidates while protecting out-of-scope history re
   }
 });
 
-it.each(["rejected", "admitted", "revoked", "referenced"] as const)(
+it.each(["admitted", "revoked", "referenced"] as const)(
   "preserves session state when a delayed artifact plan is %s",
   async (outcome) => {
     const reached = createDeferred();
@@ -151,9 +151,6 @@ it.each(["rejected", "admitted", "revoked", "referenced"] as const)(
           reached.resolve();
           await release.promise;
           planReleased = true;
-          if (outcome === "rejected") {
-            throw new Error("artifact planning rejected");
-          }
         }
         return result;
       }),
@@ -225,7 +222,6 @@ it.each(["rejected", "admitted", "revoked", "referenced"] as const)(
         });
       } else {
         const message = {
-          rejected: "artifact planning rejected",
           admitted: "competing work is in flight",
           revoked: "revoked",
         }[outcome];

@@ -226,6 +226,7 @@ describe("listGatewayMethods", () => {
       "sessions.storage.run",
       "plugins.reload",
       "claws.packages.remove",
+      "claws.removalJournal",
       "canvas.document.preview",
       "computer.status",
       "computer.invoke",
@@ -277,6 +278,8 @@ describe("listGatewayMethods", () => {
       "worktrees.retireSnapshot",
       "sessions.processes.list",
       "sessions.processes.stop",
+      "catalog.browse",
+      "catalog.searchKeywords",
     ];
     expect(listGatewayMethods().slice(-expectedSuffix.length)).toEqual(expectedSuffix);
     const methods = listGatewayMethods();
@@ -313,6 +316,7 @@ describe("listGatewayMethods", () => {
       "sessions.storage.run",
       "plugins.reload",
       "claws.packages.remove",
+      "claws.removalJournal",
       "canvas.document.preview",
       "computer.status",
       "computer.invoke",
@@ -364,6 +368,8 @@ describe("listGatewayMethods", () => {
       "worktrees.retireSnapshot",
       "sessions.processes.list",
       "sessions.processes.stop",
+      "catalog.browse",
+      "catalog.searchKeywords",
     ]);
   });
 
@@ -427,7 +433,14 @@ describe("listGatewayMethods", () => {
   it("classifies cron mutations as control-plane writes", () => {
     const descriptors = createCoreGatewayMethodDescriptors(coreGatewayHandlers);
 
-    for (const method of ["cron.add", "cron.update", "cron.remove", "cron.run", "claws.monitors"]) {
+    for (const method of [
+      "cron.add",
+      "cron.update",
+      "cron.remove",
+      "cron.run",
+      "claws.monitors",
+      "claws.removalJournal",
+    ]) {
       expect(descriptors.find((descriptor) => descriptor.name === method)).toMatchObject({
         name: method,
         scope: "operator.admin",
@@ -534,6 +547,7 @@ describe("listGatewayMethods", () => {
       "sessions.storage.run",
       "plugins.reload",
       "claws.packages.remove",
+      "claws.removalJournal",
       "canvas.document.preview",
       "computer.status",
       "computer.invoke",
@@ -585,6 +599,8 @@ describe("listGatewayMethods", () => {
       "worktrees.retireSnapshot",
       "sessions.processes.list",
       "sessions.processes.stop",
+      "catalog.browse",
+      "catalog.searchKeywords",
     ];
     expect(coreMethods.slice(-expectedCoreSuffix.length)).toEqual(expectedCoreSuffix);
     expect(methods.indexOf("approval.get")).toBeGreaterThan(methods.indexOf("tts.speak"));

@@ -82,6 +82,8 @@ export type SessionsListResultBase<TDefaults, TRow> = {
   people?: SessionPerson[];
   peopleIncomplete?: boolean;
   peopleSessionCount?: number;
+  /** Earliest activeMinutes boundary among visible candidates, before person filters/pagination. */
+  activityExpiresAt?: number;
   /** Civil-day activity from `activityPulseSince` to `activityPulseUntil`, before pagination. */
   activityPulse?: SessionActivityPulse;
   /** Canonical profile selected by the person-association filter. */

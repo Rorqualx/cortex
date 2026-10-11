@@ -1,4 +1,3 @@
-// Defines auth profile configuration types.
 export type AuthProfileConfig = {
   /** Provider id this auth profile can satisfy. */
   provider: string;

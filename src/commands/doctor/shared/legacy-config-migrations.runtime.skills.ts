@@ -1,6 +1,5 @@
 // Legacy skills config migrations for the retired Skill Workshop block.
 import {
-  defineLegacyConfigMigration,
   getRecord,
   type LegacyConfigMigrationSpec,
   type LegacyConfigRule,
@@ -17,9 +16,8 @@ const SKILLS_WORKSHOP_RULE: LegacyConfigRule = {
 
 /** Legacy config migration specs for skills runtime config. */
 export const LEGACY_CONFIG_MIGRATIONS_RUNTIME_SKILLS: LegacyConfigMigrationSpec[] = [
-  defineLegacyConfigMigration({
+  {
     id: "skills.workshop->skills.forge",
-    describe: "Move skills.workshop settings to skills.forge and drop the retired workshop block",
     legacyRules: [SKILLS_WORKSHOP_RULE],
     apply: (raw, changes) => {
       const skills = getRecord(raw.skills);
@@ -73,10 +71,9 @@ export const LEGACY_CONFIG_MIGRATIONS_RUNTIME_SKILLS: LegacyConfigMigrationSpec[
         "Removed retired skills.workshop config (Skill Workshop was replaced by Skill Forge).",
       );
     },
-  }),
-  defineLegacyConfigMigration({
+  },
+  {
     id: "skills.workshop.allowSymlinkTargetWrites-retired",
-    describe: "Remove the retired Skill Workshop symlink write option.",
     legacyRules: [
       {
         path: ["skills", "workshop", "allowSymlinkTargetWrites"],
@@ -91,5 +88,5 @@ export const LEGACY_CONFIG_MIGRATIONS_RUNTIME_SKILLS: LegacyConfigMigrationSpec[
         );
       }
     },
-  }),
+  },
 ];

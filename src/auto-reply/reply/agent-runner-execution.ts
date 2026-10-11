@@ -69,10 +69,8 @@ import {
   buildTerminalAgentRunFailureReplyPayload,
   markAgentRunFailureReplyPayload,
 } from "./agent-runner-failure-reply.js";
-import {
-  executeAgentFallbackCycle,
-  type AgentFallbackCycleState,
-} from "./agent-runner-fallback-cycle.js";
+import { executeAgentFallbackCycle } from "./agent-runner-fallback-cycle.js";
+import type { AgentFallbackCycleState } from "./agent-runner-fallback-cycle.types.js";
 import { createAgentTurnPresentation } from "./agent-runner-presentation.js";
 import {
   createAgentTurnTimingTracker,
@@ -85,8 +83,7 @@ import { type CurrentTurnImages, resolveCurrentTurnImages } from "./current-turn
 import type { FollowupRun } from "./queue.js";
 import { resolveFollowupAbortSignal } from "./queue/types.js";
 import { resolveReplyFailureVisibility, type DirectBlockDelivery } from "./reply-delivery.js";
-import type { ReplyMediaContext } from "./reply-media-paths.js";
-import { createReplyMediaContext } from "./reply-media-paths.runtime.js";
+import { createReplyMediaContext, type ReplyMediaContext } from "./reply-media-paths.js";
 import { resolveReplyOperationAbortReason } from "./reply-operation-abort.js";
 // Fork does not wire markReplyOperationExecutionStarted here (fork notifyAgentRunStart
 // intentionally passes only runId); only the retain fence is used in this file.
@@ -278,6 +275,7 @@ async function executeAgentTurnInternalLoop(
           }),
       };
       return (transcriptStartPreparation = (async () => {
+        using _ = agentTurnTiming.observe(params.opts?.onTranscriptStartPreparation);
         const { readSessionTranscriptStartAsync } =
           await import("../../config/sessions/session-transcript-watermark.js");
         const prepared = await readSessionTranscriptStartAsync(target);
@@ -589,6 +587,7 @@ async function executeAgentTurnInternal(
     readChannelContextGatewayContextResolver(params.sessionCtx) ??
     getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext;
   const preparedRunAdmission = prepareChannelRunAdmission({
+    sourceContext: params.followupRun.run,
     cfg: resolveQueuedReplyRuntimeConfig(params.followupRun.run.config),
     runId,
     agentId: params.followupRun.run.agentId,

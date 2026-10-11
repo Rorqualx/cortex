@@ -216,7 +216,7 @@ function filterSkillEntries(
         entry.skill.name,
         resolvedFilter,
         skillOverrides,
-        resolveSkillKey(entry.skill, entry),
+        resolveSkillKey(entry),
       ),
     );
     skillsLogger.debug(
@@ -1592,7 +1592,7 @@ export function buildWorkspaceSkillSnapshot(
     prompt,
     skills: eligible.map((entry) => ({
       name: entry.skill.name,
-      skillKey: resolveSkillKey(entry.skill, entry),
+      skillKey: resolveSkillKey(entry),
       primaryEnv: entry.metadata?.primaryEnv,
       requiredEnv: entry.metadata?.requires?.env?.slice(),
     })),

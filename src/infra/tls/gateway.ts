@@ -34,29 +34,15 @@ type GatewayTlsLog = {
   warn?: (message: string, meta?: Record<string, unknown>) => void;
 };
 
-type GatewayTlsDegradation = {
-  event: "gateway.tls.degraded";
-  ownerKind: "gateway";
-  ownerId: "tls";
-  reason: "atomic hard-link publication unavailable" | "directory durability unavailable";
-  state: "best-effort";
-};
-
-function gatewayTlsDegradation(reason: GatewayTlsDegradation["reason"]): GatewayTlsDegradation {
-  return {
-    event: "gateway.tls.degraded",
-    ownerKind: "gateway",
-    ownerId: "tls",
-    reason,
-    state: "best-effort",
-  };
-}
+type GatewayTlsDegradationReason =
+  | "atomic hard-link publication unavailable"
+  | "directory durability unavailable";
 
 async function publishGeneratedTlsOutput(
   stagedPath: string,
   finalPath: string,
-): Promise<GatewayTlsDegradation["reason"][]> {
-  const degradationReasons: GatewayTlsDegradation["reason"][] = [];
+): Promise<GatewayTlsDegradationReason[]> {
+  const degradationReasons: GatewayTlsDegradationReason[] = [];
   const stagedHandle = await fs.open(stagedPath, "r+");
   let stagedIdentity: Stats;
   try {
@@ -172,7 +158,7 @@ async function generateSelfSignedCert(params: {
       fs.readFile(stagedKeyPath, "utf8"),
     ]);
     tls.createSecureContext({ cert, key, minVersion: "TLSv1.3" });
-    const degradationReasons = new Set<GatewayTlsDegradation["reason"]>();
+    const degradationReasons = new Set<GatewayTlsDegradationReason>();
     if (
       certDirectory.parentSync.status === "unsupported" ||
       keyDirectory.parentSync.status === "unsupported"
@@ -191,7 +177,13 @@ async function generateSelfSignedCert(params: {
     );
     keyDegradationReasons.forEach((reason) => degradationReasons.add(reason));
     for (const reason of degradationReasons) {
-      const degradation = gatewayTlsDegradation(reason);
+      const degradation = {
+        event: "gateway.tls.degraded",
+        ownerKind: "gateway",
+        ownerId: "tls",
+        reason,
+        state: "best-effort",
+      };
       params.log?.warn?.(
         `[GATEWAY_TLS_DEGRADED] best-effort gateway:tls: ${degradation.reason}.`,
         degradation,

@@ -228,7 +228,6 @@ export function mergeModelProviderRequestOverrides(
   return hasMerged ? merged : undefined;
 }
 
-/** Normalizes provider base URLs by trimming trailing slashes. */
 export function normalizeBaseUrl(baseUrl: string | undefined, fallback: string): string;
 export function normalizeBaseUrl(
   baseUrl: string | undefined,
@@ -454,7 +453,7 @@ function applyResolvedAuthHeader(
     auth.mode === "authorization-bearer"
       ? `Bearer ${auth.value}`
       : `${auth.prefix ?? ""}${auth.value}`;
-  return Object.keys(next).length > 0 ? next : undefined;
+  return next;
 }
 
 function toTlsConnectOptions(
@@ -478,7 +477,6 @@ function toTlsConnectOptions(
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
-/** Builds the dispatcher proxy/TLS policy for outbound provider requests. */
 export function buildProviderRequestDispatcherPolicy(
   request: Pick<ResolvedProviderRequestConfig, "proxy" | "tls">,
 ): PinnedDispatcherPolicy | undefined {
@@ -501,7 +499,6 @@ export function buildProviderRequestDispatcherPolicy(
   };
 }
 
-/** Resolves the full provider request policy, headers, auth, proxy, and TLS config. */
 export function resolveProviderRequestPolicyConfig(
   params: ResolveProviderRequestPolicyConfigParams,
 ) {
@@ -602,7 +599,6 @@ export function resolveProviderRequestConfig(params: {
 
 type ResolvedProviderRequestConfig = ReturnType<typeof resolveProviderRequestConfig>;
 
-/** Resolves final headers for one provider request route. */
 export function resolveProviderRequestHeaders(params: {
   provider: string;
   api?: RequestApi;
@@ -665,7 +661,6 @@ export function attachModelProviderRequestTransport<TModel extends object>(
   return { ...model, [MODEL_PROVIDER_REQUEST_TRANSPORT_SYMBOL]: request };
 }
 
-/** Reads provider request transport metadata attached to a model definition. */
 export function getModelProviderRequestTransport(
   model: object,
 ): ModelProviderRequestTransportOverrides | undefined {
@@ -702,7 +697,6 @@ export function attachModelProviderRequestRouteFacts<TModel extends ProviderRequ
   };
 }
 
-/** Reads the prepared provider route attached to a transport model. */
 export function getModelProviderRequestRouteFacts(
   model: object,
 ): ProviderRequestRouteFacts | undefined {

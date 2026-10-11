@@ -57,11 +57,9 @@ export function createPostCompactionLoopGuard(
   const enabled = options?.enabled ?? true;
   const windowSize = asPositiveInt(config?.windowSize, DEFAULT_WINDOW_SIZE);
   const recentCalls: PostCompactionGuardObservation[] = [];
-  let remainingAttempts = 0;
-  let history: PostCompactionGuardObservation[] = [];
+  let history: PostCompactionGuardObservation[] | undefined;
   let baselineSignatures: Set<string> | undefined;
-  let windowRepeats = 0;
-  let repeatTools = new Set<string>();
+  let repeatedToolNames: string[] = [];
 
   const armPostCompaction = (): void => {
     // Snapshot the pre-compaction call tail before the new window starts. A re-arm
@@ -71,10 +69,8 @@ export function createPostCompactionLoopGuard(
       enabled && recentCalls.length > 0
         ? new Set(recentCalls.map(observationSignature))
         : undefined;
-    remainingAttempts = windowSize;
     history = [];
-    windowRepeats = 0;
-    repeatTools = new Set<string>();
+    repeatedToolNames = [];
     if (enabled) {
       log.info(`post-compaction guard armed for ${windowSize} attempts`);
     }
@@ -88,13 +84,12 @@ export function createPostCompactionLoopGuard(
     if (recentCalls.length > BASELINE_WINDOW_SIZE) {
       recentCalls.shift();
     }
-    if (remainingAttempts <= 0) {
+    if (!history || history.length >= windowSize) {
       return { shouldAbort: false, armed: false, remainingAttempts: 0 };
     }
-    remainingAttempts -= 1;
+    const remainingAttempts = windowSize - history.length - 1;
     if (baselineSignatures?.has(observationSignature(call))) {
-      windowRepeats += 1;
-      repeatTools.add(call.toolName);
+      repeatedToolNames.push(call.toolName);
     }
     history.push(call);
     const armedAfter = remainingAttempts > 0;
@@ -124,14 +119,13 @@ export function createPostCompactionLoopGuard(
     }
 
     if (!armedAfter) {
-      const tools = [...repeatTools].toSorted().join(",");
+      const tools = [...new Set(repeatedToolNames)].toSorted().join(",");
       log.info(
         `post-compaction window closed: toolCalls=${history.length} ` +
-          `preCompactionRepeats=${windowRepeats}${tools ? ` tools=${tools}` : ""}`,
+          `preCompactionRepeats=${repeatedToolNames.length}${tools ? ` tools=${tools}` : ""}`,
       );
       baselineSignatures = undefined;
-      windowRepeats = 0;
-      repeatTools = new Set<string>();
+      repeatedToolNames = [];
     }
 
     return { shouldAbort: false, armed: armedAfter, remainingAttempts };
@@ -140,7 +134,6 @@ export function createPostCompactionLoopGuard(
   return { armPostCompaction, observe };
 }
 
-/** Error raised when the post-compaction loop guard aborts a run. */
 export class PostCompactionLoopPersistedError extends Error {
   readonly detector: "compaction_loop_persisted";
   readonly count: number;

@@ -180,7 +180,7 @@ export function updateWatchBuildDetection(
 ): { buffer: string; triggered: boolean; reason: string | null } {
   const combined = `${state.buffer ?? ""}${String(chunk)}`;
   const next = appendBoundedWatchLog("", combined, WATCH_BUILD_DETECTION_MAX_CHARS);
-  const reason = detectWatchBuildReason(combined, "");
+  const reason = combined.match(/Building TypeScript \(dist is stale: ([a-z_]+)/)?.[1] ?? null;
   const triggered = state.triggered || combined.includes("Building TypeScript (dist is stale");
   return {
     buffer: next.text,
@@ -884,12 +884,6 @@ function warn(message: string) {
   console.error(`WARN: ${message}`);
 }
 
-function detectWatchBuildReason(stdout: string, stderr: string): string | null {
-  const combined = `${stdout}\n${stderr}`;
-  const match = combined.match(/Building TypeScript \(dist is stale: ([a-z_]+)/);
-  return match?.[1] ?? null;
-}
-
 function buildRunNodeDeps(env: NodeJS.ProcessEnv) {
   const cwd = process.cwd();
   return {
@@ -1074,7 +1068,7 @@ async function main() {
     // CI's skip-build path restores a built dist artifact after checkout.
     // Refresh the stamps so checkout mtimes for package/config files do not
     // force a duplicate build during the bounded gateway:watch window.
-    writeBuildAndRuntimePostBuildStamps();
+    refreshLocalBuildStampTimes();
     preflightBuildRequirement = resolveBuildRequirement(buildRunNodeDeps(probeEnv));
   }
   if (preflightBuildRequirement.shouldBuild) {

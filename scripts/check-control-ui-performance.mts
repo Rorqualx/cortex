@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// Reports and enforces compressed Control UI asset budgets after a production build.
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";

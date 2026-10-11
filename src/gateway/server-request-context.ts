@@ -1,5 +1,3 @@
-// Gateway request context factory.
-// Wires live runtime state into method handlers and client management helpers.
 import {
   GATEWAY_CLIENT_CAPS,
   GATEWAY_CLIENT_IDS,
@@ -482,6 +480,7 @@ export function createGatewayRequestContext(
         });
       }
     },
+    sharedGatewaySessionGenerationState,
     disconnectClientsUsingSharedGatewayAuth: () => {
       disconnectStaleSharedGatewayAuthClients({
         clients,

@@ -213,7 +213,6 @@ const ownerRoutedUnitTestPatterns = [
   "src/agents/openai-transport-stream.*.test.ts",
   // Split transport suites install module mocks through their shared harness.
   "src/agents/provider-transport-fetch.*.test.ts",
-  "src/agents/embedded-agent-runner/run.inherited-auth-owner.test.ts",
   "src/agents/embedded-agent-runner/run.session-permissions.test.ts",
   "src/agents/embedded-agent-runner/run.shared-integration.test.ts",
   "src/auto-reply/reply/dispatch-from-config.test.ts",
@@ -299,7 +298,8 @@ const disqualifyingPatterns = [
   },
   {
     code: "runtime-singleton-state",
-    pattern: /\b(?:setActivePluginRegistry|resetPluginRuntimeStateForTest|reset.*ForTest)\s*\(/u,
+    pattern:
+      /\b(?:drainGlobalSingletonLifecycleState|setActivePluginRegistry|resetPluginRuntimeStateForTest|reset.*ForTest)\s*\(/u,
   },
 ];
 

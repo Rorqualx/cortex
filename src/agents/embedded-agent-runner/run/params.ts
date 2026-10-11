@@ -228,7 +228,7 @@ export type RunEmbeddedAgentParams = {
   execApprovalContinuationTranscriptPromptRange?: ExecApprovalContinuationPromptRange;
   /** Trusted runtime-only authorization for one bounded cross-conversation recall pass. */
   conversationRecall?: ConversationRecallContext;
-  onExecutionStarted?: (info?: { lifecycleGeneration?: string }) => unknown;
+  onExecutionStarted?: (info?: { lifecycleGeneration?: string; backend?: string }) => unknown;
   onExecutionPhase?: (info: {
     phase: EmbeddedAgentExecutionPhase;
     provider?: string;
@@ -339,39 +339,17 @@ export type EmbeddedForegroundPromptContext = Pick<
   | "sandboxAgentId"
   | "promptCacheKey"
   | "reasoningLevel"
-  | "messageChannel"
-  | "messageProvider"
   | "clientCaps"
   | "gatewayUiCommandTarget"
   | "toolBindings"
-  | "chatType"
-  | "agentAccountId"
   | "trigger"
   | "messageTo"
   | "messageThreadId"
   | "conversationToolPolicy"
-  | "groupId"
-  | "groupChannel"
-  | "groupSpace"
   | "memberRoleIds"
-  | "messageActionTurnCapability"
-  | "spawnedBy"
   | "isCanonicalWorkspace"
-  | "senderId"
-  | "senderName"
-  | "senderUsername"
-  | "senderE164"
-  | "senderIsOwner"
-  | "approvalReviewerDeviceId"
-  | "currentChannelId"
   | "chatId"
-  | "channelContext"
   | "currentMessagingTarget"
-  | "currentThreadTs"
-  | "currentMessageId"
-  | "currentInboundAudio"
-  | "replyToMode"
-  | "requireExplicitMessageTarget"
   | "disableMessageTool"
   | "conversationRecall"
   | "toolOverrides"
@@ -390,8 +368,6 @@ export type EmbeddedForegroundPromptContext = Pick<
   | "allowGatewaySubagentBinding"
   | "extraSystemPrompt"
   | "gitCoauthorPrompt"
-  | "sourceReplyDeliveryMode"
-  | "taskSuggestionDeliveryMode"
   | "silentReplyPromptMode"
   | "ownerNumbers"
   | "toolsAllow"
@@ -400,12 +376,14 @@ export type EmbeddedForegroundPromptContext = Pick<
   | "scheduledToolPolicy"
   | "modelThinkingCapability"
   | "modelFallbacksOverride"
-> & {
-  /** SDK observation of the completed attempt; new runs recheck publication availability. */
-  githubPublicationAvailable?: boolean;
-  agentId: string;
-  workspaceDir: string;
-  cwd?: string;
-  sandboxSessionKey: string;
-  cronCreatorCallerOrigin?: CronScheduledToolCallerOrigin;
-};
+> &
+  AgentRunMessageContext &
+  AgentRunChannelContext & {
+    /** SDK observation of the completed attempt; new runs recheck publication availability. */
+    githubPublicationAvailable?: boolean;
+    agentId: string;
+    workspaceDir: string;
+    cwd?: string;
+    sandboxSessionKey: string;
+    cronCreatorCallerOrigin?: CronScheduledToolCallerOrigin;
+  };

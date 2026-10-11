@@ -24,7 +24,6 @@ import {
   compareStoreTimestampDesc,
   isShortTermMemoryPath,
   normalizeMemoryPathForWorkspace,
-  normalizeSnippet,
   parseEntryRangeFromKey,
   parseStoreTimestampMs,
   toFiniteNonNegativeInt,
@@ -106,7 +105,7 @@ export async function loadShortTermPromotionDreamingStats(params: {
   const promotedEntries: ShortTermDreamingStatsEntry[] = [];
 
   for (const [entryKey, entry] of Object.entries(store.entries)) {
-    if (entry.source !== "memory" || !entry.path || !isShortTermMemoryPath(entry.path)) {
+    if (!isShortTermMemoryPath(entry.path)) {
       continue;
     }
     const range = parseEntryRangeFromKey(entryKey, entry.startLine, entry.endLine);
@@ -120,7 +119,7 @@ export async function loadShortTermPromotionDreamingStats(params: {
       path: normalizedEntryPath,
       startLine: range.startLine,
       endLine: Math.max(range.startLine, range.endLine),
-      snippet: normalizeSnippet(entry.snippet) || normalizedEntryPath,
+      snippet: entry.snippet || normalizedEntryPath,
       recallCount,
       dailyCount,
       groundedCount,
@@ -161,8 +160,7 @@ export async function loadShortTermPromotionDreamingStats(params: {
     if (!detail) {
       continue;
     }
-    const lightHits = toFiniteNonNegativeInt(phaseEntry.lightHits);
-    const remHits = toFiniteNonNegativeInt(phaseEntry.remHits);
+    const { lightHits, remHits } = phaseEntry;
     lightPhaseHitCount += lightHits;
     remPhaseHitCount += remHits;
     phaseSignalCount += lightHits + remHits;

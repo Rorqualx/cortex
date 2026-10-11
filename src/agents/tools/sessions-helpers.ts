@@ -39,6 +39,7 @@ export {
   resolveMainSessionAlias,
   resolveSessionReference,
   resolveVisibleSessionReference,
+  isSessionToolMainAlias,
   shouldResolveSessionIdInput,
 } from "./sessions-resolution.js";
 export {

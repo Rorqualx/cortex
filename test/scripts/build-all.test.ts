@@ -81,6 +81,18 @@ function buildMemoryLimit(cgroupGiB: number) {
   };
 }
 
+function buildRunner() {
+  return {
+    env: {},
+    logger: { error: vi.fn(), warn: vi.fn() },
+    memoryLimit: buildMemoryLimit(5),
+    resolveCacheState: vi.fn(() => ({ cacheable: false, fresh: false, reason: "no-cache" })),
+    runStep: vi.fn<(invocation: ReturnType<typeof resolveBuildAllStep>) => { status: number }>(
+      () => ({ status: 0 }),
+    ),
+  };
+}
+
 function withBuildCacheFixture(
   run: (fixture: {
     rootDir: string;
@@ -188,43 +200,11 @@ describe("resolveBuildAllStep", () => {
     ).toBe("2026-07-10T01:02:03.000Z");
   });
 
-  it.each([false, true])(
-    "routes pnpm steps through the npm_execpath pnpm runner on Windows (defer isolated: %s)",
-    (deferIsolatedAssets) => {
-      const step = getBuildAllStep("plugins:assets:build");
-      const tempDir = tempDirs.make("openclaw-pnpm-runner-");
-      const npmExecPath = path.join(tempDir, "pnpm.cjs");
-      fs.writeFileSync(npmExecPath, "console.log('pnpm');\n");
-      const result = resolveBuildAllStep(step, {
-        platform: "win32",
-        nodeExecPath: "C:\\Program Files\\nodejs\\node.exe",
-        npmExecPath,
-        env: {},
-        deferIsolatedAssets,
-      });
-
-      expect(result).toEqual({
-        command: "C:\\Program Files\\nodejs\\node.exe",
-        args: [
-          npmExecPath,
-          "plugins:assets:build",
-          ...(deferIsolatedAssets ? ["--defer-isolated"] : []),
-        ],
-        options: {
-          stdio: "inherit",
-          env: {},
-          shell: false,
-          windowsVerbatimArguments: undefined,
-        },
-      });
-    },
-  );
-
   it("passes encoded import URLs literally to managed Node on Windows", () => {
     const importUrl = "file:///C:/Users/RUNNER%7E1/Project/scripts/tsx.mjs";
     const result = resolveBuildAllStep(
       { label: "tsdown-unified", args: ["--import", importUrl, "scripts/tsdown-build.mts"] },
-      { platform: "win32", nodeExecPath: "C:\\Program Files\\nodejs\\node.exe", env: {} },
+      { nodeExecPath: "C:\\Program Files\\nodejs\\node.exe", env: {} },
     );
 
     expect(
@@ -282,11 +262,10 @@ describe("resolveBuildAllStep", () => {
     });
   });
 
-  it("merges step nodeOptions into NODE_OPTIONS on every platform and preserves an inherited value", () => {
+  it("merges step nodeOptions into NODE_OPTIONS and preserves an inherited value", () => {
     const step = getBuildAllStep("write-plugin-sdk-entry-dts");
 
     const linuxResult = resolveBuildAllStep(step, {
-      platform: "linux",
       nodeExecPath: "/custom/node",
       env: { NODE_OPTIONS: "--disable-warning=DEP011" },
     });
@@ -295,7 +274,6 @@ describe("resolveBuildAllStep", () => {
     );
 
     const again = resolveBuildAllStep(step, {
-      platform: "linux",
       nodeExecPath: "/custom/node",
       env: { NODE_OPTIONS: "--max-old-space-size=8192" },
     });
@@ -305,16 +283,36 @@ describe("resolveBuildAllStep", () => {
   it.each([
     {
       label: "plugins:assets:build",
-      args: ["--import", "tsx", "scripts/bundled-plugin-assets.mts", "--phase", "build"],
+      args: [
+        "--import",
+        "./scripts/tsx.mjs",
+        "scripts/bundled-plugin-assets.mts",
+        "--phase",
+        "build",
+      ],
     },
     {
       label: "plugins:assets:copy",
-      args: ["--import", "tsx", "scripts/bundled-plugin-assets.mts", "--phase", "copy"],
+      args: [
+        "--import",
+        "./scripts/tsx.mjs",
+        "scripts/bundled-plugin-assets.mts",
+        "--phase",
+        "copy",
+      ],
     },
     { label: "ui:build", args: ["scripts/ui.js", "build"] },
-  ])("runs the $label native fallback through managed Node on Windows", ({ label, args }) => {
+    // Fork: enforcing Control UI gates that `pnpm ui:build` chains after the build.
+    {
+      label: "ui:check-performance",
+      args: ["--experimental-strip-types", "scripts/check-control-ui-performance.mts"],
+    },
+    {
+      label: "ui:check-server-imports",
+      args: ["--experimental-strip-types", "scripts/check-control-ui-server-imports.ts"],
+    },
+  ])("runs the $label step through managed Node on Windows", ({ label, args }) => {
     const result = resolveBuildAllStep(getBuildAllStep(label), {
-      platform: "win32",
       nodeExecPath: "C:\\Program Files\\nodejs\\node.exe",
       env: { OPENCLAW_BUILD_ALL_NO_PNPM: "1" },
     });
@@ -353,18 +351,17 @@ describe("resolveBuildAllStep", () => {
     expect(resolveBuildAllStepOnCacheHit(step)).not.toBeNull();
   });
   it.each([false, true])(
-    "runs pnpm-free plugin builds through managed Node on Windows (defer isolated: %s)",
+    "runs plugin builds through managed Node on Windows (defer isolated: %s)",
     (deferIsolatedAssets) => {
       const args = [
         "--import",
-        "tsx",
+        "./scripts/tsx.mjs",
         "scripts/bundled-plugin-assets.mts",
         "--phase",
         "build",
         ...(deferIsolatedAssets ? ["--defer-isolated"] : []),
       ];
       const result = resolveBuildAllStep(getBuildAllStep("plugins:assets:build"), {
-        platform: "win32",
         nodeExecPath: "C:\\Program Files\\nodejs\\node.exe",
         env: { OPENCLAW_BUILD_ALL_NO_PNPM: "1" },
         deferIsolatedAssets,
@@ -427,7 +424,6 @@ describe("resolveBuildAllSteps", () => {
       steps.find(({ label }) => label === "ui:build"),
       "UI build",
     );
-    expect(ui.pnpmArgs).toEqual(["ui:build"]);
     expect(ui.cache).toBeUndefined();
     // Fork deploy contract: runtime-postbuild-stamp is LAST (rebuild-restart watcher
       // fires on it; emitting before ui:build restarts onto wiped control-ui).
@@ -487,6 +483,7 @@ describe("resolveBuildAllSteps", () => {
 
   it("uses declaration-cache groups only for the full build", () => {
     expect(resolveBuildAllSteps("full").map((step) => step.label)).toEqual([
+      "native-protocol",
       "plugins:assets:build",
       "tsdown-ai",
       "tsdown-packages",
@@ -500,6 +497,8 @@ describe("resolveBuildAllSteps", () => {
       "write-plugin-sdk-entry-dts",
       "check-plugin-sdk-exports",
       "ui:build",
+      "ui:check-performance",
+      "ui:check-server-imports",
       "write-build-info",
       "write-cli-startup-metadata",
       "runtime-postbuild-stamp",
@@ -514,6 +513,7 @@ describe("resolveBuildAllSteps", () => {
     // stays the canonical FULL_BUILD_STEP_LABELS order with clean:dist in front.
     expect(packageSteps.map((step) => step.label)).toEqual([
       "clean:dist",
+      "native-protocol",
       "plugins:assets:build",
       "tsdown-ai",
       "tsdown-packages",
@@ -528,6 +528,8 @@ describe("resolveBuildAllSteps", () => {
       "write-plugin-sdk-entry-dts",
       "check-plugin-sdk-exports",
       "ui:build",
+      "ui:check-performance",
+      "ui:check-server-imports",
       "write-build-info",
       "write-cli-startup-metadata",
     ]);
@@ -826,6 +828,8 @@ describe("resolveBuildAllSteps", () => {
       "tsdown.config.ts",
       "--filter",
       TSDOWN_UNIFIED_CONFIG_GROUP,
+      "--concurrency",
+      "1",
     ]);
     expect(unified.env).toMatchObject({ OPENCLAW_RUN_NODE_SKIP_DTS_BUILD: "1" });
     expect(unified.cache).toBeUndefined();
@@ -845,6 +849,7 @@ describe("resolveBuildAllSteps", () => {
 
   it("uses a runtime artifact plus plugin SDK export profile for ci artifacts", () => {
     expect(resolveBuildAllSteps("ciArtifacts").map((step) => step.label)).toEqual([
+      "native-protocol",
       "plugins:assets:build",
       "tsdown",
       "external-plugins:local-dist",
@@ -856,6 +861,8 @@ describe("resolveBuildAllSteps", () => {
       "write-plugin-sdk-entry-dts",
       "check-plugin-sdk-exports",
       "ui:build",
+      "ui:check-performance",
+      "ui:check-server-imports",
       "write-build-info",
       "write-cli-startup-metadata",
     ]);
@@ -922,7 +929,7 @@ describe("resolveBuildAllSteps", () => {
         memoryLimit: buildMemoryLimit(5),
         resolveCacheState: () => ({ cacheable: false, fresh: false, reason: "no-cache" }),
         runStep: (invocation) => ({
-          status: invocation.args.includes("scripts/write-plugin-sdk-entry-dts.ts") ? 23 : 0,
+          status: invocation.args.includes("scripts/write-unified-entry-dts.ts") ? 23 : 0,
         }),
       });
       const labels = result.timings.map((timing) => timing.label);
@@ -934,10 +941,9 @@ describe("resolveBuildAllSteps", () => {
           "tsdown-packages",
           "tsdown-unified",
           "write-unified-entry-dts",
-          "runtime-postbuild",
         ]),
       );
-      expect(labels.at(-1)).toBe("write-plugin-sdk-entry-dts");
+      expect(labels.at(-1)).toBe("write-unified-entry-dts");
       expect(labels).not.toContain("check-plugin-sdk-exports");
       for (const step of ["write-build-info", "write-cli-startup-metadata"]) {
         expect(resolveBuildAllSteps(profile).some(({ label }) => label === step)).toBe(false);
@@ -1100,6 +1106,7 @@ describe("resolveBuildAllSteps", () => {
     const labels = steps.map((step) => step.label);
 
     expect(labels).toEqual([
+      "native-protocol",
       "plugins:assets:build",
       "tsdown",
       "external-plugins:local-dist",
@@ -1108,6 +1115,8 @@ describe("resolveBuildAllSteps", () => {
       "runtime-postbuild",
       "build-stamp",
       "ui:build",
+      "ui:check-performance",
+      "ui:check-server-imports",
       "write-build-info",
       "write-cli-startup-metadata",
       // Fork: runtime-postbuild-stamp is last — deploy restart-trigger contract.
@@ -1377,8 +1386,7 @@ describe("resolveBuildAllSteps", () => {
     // step uncached avoids restoring stale service-worker/app cache
     // metadata after `tsdown` clears `dist`.
     const step = getBuildAllStep("ui:build");
-    expect(step.kind).toBe("pnpm");
-    expect(step.pnpmArgs).toEqual(["ui:build"]);
+    expect(step.args).toEqual(["scripts/ui.js", "build"]);
     expect(step.cache).toBeUndefined();
   });
 

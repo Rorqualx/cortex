@@ -1,4 +1,4 @@
-import { IsLiteralString, IsObject, IsUnion } from "typebox";
+import { IsLiteralString, IsObject, IsUnion, type TSchema } from "typebox";
 import { generateKotlinProtocol } from "../../../scripts/protocol-gen-kotlin.js";
 import { generateSwiftProtocol } from "../../../scripts/protocol-gen-swift.js";
 import { ProtocolSchemas } from "../src/schema/protocol-schemas.js";
@@ -47,7 +47,10 @@ export function assertNativeProtocolContract(
   if (language !== "swift") {
     return;
   }
-  for (const [name, schema] of Object.entries(ProtocolSchemas)) {
+  // Fork: the registry also carries fork-owned schema modules (activity, session-row, vault).
+  // Iterating per-key schema types unions every anyOf tuple and exceeds the checker's union
+  // budget (TS2590), so read entries at the fragment contract type instead.
+  for (const [name, schema] of Object.entries<TSchema>(ProtocolSchemas)) {
     if (IsObject(schema) && !source.includes(`public struct ${name}:`)) {
       throw new Error(`Missing Swift model for ProtocolSchemas.${name}`);
     }

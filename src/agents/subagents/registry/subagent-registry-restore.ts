@@ -1,3 +1,4 @@
+import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import { getRuntimeConfig } from "../../../config/config.js";
 import { ADMIN_SCOPE } from "../../../gateway/method-scopes.js";
 import type { GatewayContextResolver } from "../../../gateway/server-methods/types.js";
@@ -5,10 +6,7 @@ import {
   getAgentEventLifecycleGeneration,
   isAgentEventLifecycleGenerationCurrent,
 } from "../../../infra/agent-events.js";
-import {
-  bindGatewayContextResolver,
-  getGatewayContextResolver as getEntryGatewayContextResolver,
-} from "../../../plugins/runtime/gateway-request-scope.js";
+import { getGatewayContextResolver as getEntryGatewayContextResolver } from "../../../plugins/runtime/gateway-request-scope.js";
 import {
   runWithGatewayIndependentRootWorkAdmission,
   GatewayDrainingError,
@@ -25,19 +23,19 @@ import { bindSwarmRunReservation, enqueueSwarmRun } from "../swarm/swarm-schedul
 import { shouldSuppressSubagentRecoverySessionEffects } from "./subagent-recovery-state.js";
 import { callSubagentRegistryGateway } from "./subagent-registry-deps.js";
 import { updateSubagentArchiveAtMs } from "./subagent-registry-helpers.js";
+import type { SubagentLifecycleOptions } from "./subagent-registry-lifecycle-context.js";
 import type { SubagentLifecycleController } from "./subagent-registry-lifecycle.js";
 import {
   getCurrentSubagentRunOwner,
-  subagentRuns,
   waitForSubagentRetirementPublication,
 } from "./subagent-registry-memory.js";
 import {
   assertSubagentRegistryWriteSourceCurrent,
   mutateSubagentRuns,
   restoreSubagentRunsFromDisk,
-  SubagentRegistryMutationRejectedError,
 } from "./subagent-registry-persistence.js";
 import { getLatestSubagentRunForChild } from "./subagent-registry-queries.js";
+import type { SubagentRunReadRecord } from "./subagent-registry-read.types.js";
 import { isRetiredSubagentSessionOwner } from "./subagent-registry-restart-recovery-helpers.js";
 import { settleRestoredRequesterTurns } from "./subagent-registry-restore-requester.js";
 import type { SubagentRunRecord } from "./subagent-registry.types.js";
@@ -59,56 +57,22 @@ export function isRestoredQueuedFailureSettlementClaimed(entry: SubagentRunRecor
   return restoredQueuedFailureSettlementClaims.has(getSubagentRunRuntimeKey(entry));
 }
 
-/** A closed Gateway's durable terminal wake acquires fresh host custody, never its old aliases. */
-export async function recoverSubagentRunGatewayOwner(
-  expected: SubagentRunRecord,
-  resolver: GatewayContextResolver,
-  onRecovered: (entry: SubagentRunRecord) => void,
-): Promise<boolean> {
-  const previousResolver = getEntryGatewayContextResolver(expected);
-  const gateway = resolver();
-  if (!previousResolver || previousResolver() !== undefined || !gateway) {
-    return false;
-  }
-  return mutateSubagentRuns(
-    [expected.runId],
-    (rows) => {
-      const current = rows.get(expected.runId);
-      if (!current) {
-        throw new SubagentRegistryMutationRejectedError(
-          "Subagent Gateway recovery row disappeared",
-        );
-      }
-      return { value: true, postimages: new Map([[current.runId, structuredClone(current)]]) };
-    },
-    {
-      gatewayRecovery: { expected, previousResolver, resolver, gateway },
-      onPublished: (postimages) => {
-        const row = postimages.get(expected.runId);
-        if (row) {
-          bindGatewayContextResolver(row, resolver);
-          onRecovered(row);
-          subagentRuns.commitOwnership(row);
-        }
-      },
-    },
-  );
-}
-
 export function createSubagentRegistryRestorer(config: {
   runs: Map<string, SubagentRunRecord>;
   getGatewayContextResolver: () => GatewayContextResolver | undefined;
   bindGatewayOwners: () => boolean | Promise<boolean>;
   settleRequesterTurn: SubagentLifecycleController["settleRequesterTurnAfterSessionSpawns"];
+  retireSupersededRun: SubagentLifecycleOptions["retireSupersededRun"];
   ensureListener: () => void;
   startSweeper: () => void;
   scheduleSweep: () => void;
+  recoverInterruptedRuns: () => Promise<void>;
   resumeRun: (runId: string) => void;
   listSwarmRunsForGroup: (
     groupId: string,
     requesterSessionKey?: string,
     requesterAgentId?: string,
-  ) => SubagentRunRecord[];
+  ) => SubagentRunReadRecord[];
   startQueuedSubagentRun: (
     runId: string,
     gatewayRunId?: string,
@@ -135,7 +99,7 @@ export function createSubagentRegistryRestorer(config: {
   const { listSwarmRunsForGroup, startQueuedSubagentRun } = config;
   const { terminateAcceptedRestoredCollectorRun, cleanupCollectorLaunchResources } = config;
   const { settleFailedQueuedSubagentLaunch, completeCollectorLaunchCleanup } = config;
-  let restoreState: "idle" | "in-progress" | "succeeded" = "idle";
+  let restoreState: "idle" | "succeeded" = "idle";
   let activationRequested = false;
   let activated = false;
   // Transfer retries must not enqueue the same restored collectors again.
@@ -248,10 +212,16 @@ export function createSubagentRegistryRestorer(config: {
       stateContext,
       assertCurrent,
       settleRequesterTurn,
+      retireSupersededRun: config.retireSupersededRun,
     });
     assertCurrent();
     if (!runsResumed) {
-      resumeRestoredRuns(cfg);
+      await resumeRestoredRuns(cfg, assertCurrent);
+      assertCurrent();
+      // Requester transfer precedes interruption settlement; ordinary wake retries
+      // and cleanup retain their scheduled maintenance pass.
+      await config.recoverInterruptedRuns();
+      assertCurrent();
       runsResumed = true;
     }
     if (transferFailures.length > 0) {
@@ -275,14 +245,28 @@ export function createSubagentRegistryRestorer(config: {
     activated = true;
   }
 
-  function resumeRestoredRuns(cfg: ReturnType<typeof getRuntimeConfig>) {
+  async function resumeRestoredRuns(
+    cfg: ReturnType<typeof getRuntimeConfig>,
+    assertCurrent: () => void,
+  ) {
     if (runs.size === 0) {
       return;
     }
     ensureListener();
     // Session-mode runs have no archive deadline but still need TTL cleanup.
     startSweeper();
-    for (const [runId, entry] of runs) {
+    // Resume only this captured owner set; registration may change the live map while we yield.
+    const capturedRuns = [...runs];
+    let visited = 0;
+    for (const [runId, snapshot] of capturedRuns) {
+      if (++visited % 128 === 0) {
+        await yieldToEventLoop();
+        assertCurrent();
+      }
+      const entry = getCurrentSubagentRunOwner(runs, snapshot);
+      if (!entry) {
+        continue;
+      }
       // Restart recovery exclusively owns receipt-bearing source rows until it
       // remaps or terminalizes them. Generic resume would wait on an obsolete run.
       if (entry.execution.restartRecovery || entry.killIntent || entry.killReconciliation) {
@@ -353,17 +337,17 @@ export function createSubagentRegistryRestorer(config: {
                 throw new Error("Restored collector launch lost its queued owner");
               }
               launchLifecycleGeneration = getAgentEventLifecycleGeneration();
-              const request = {
-                params: applySubagentLaunchAuthorization(launch.request, launch.authorization),
-                timeoutMs: launch.timeoutMs,
-              };
+              const request = applySubagentLaunchAuthorization(
+                launch.request,
+                launch.authorization,
+              );
               const gatewayRuntime = getGatewayContextResolver()?.()?.recoveryRuntime;
               if (!gatewayRuntime) {
                 throw new GatewayDrainingError();
               }
               const response = await gatewayRuntime.dispatchAgent(
-                request.params as Parameters<typeof gatewayRuntime.dispatchAgent>[0],
-                request.timeoutMs,
+                request as Parameters<typeof gatewayRuntime.dispatchAgent>[0],
+                launch.timeoutMs,
                 launch.authorization
                   ? { allowModelOverride: true, scopes: [ADMIN_SCOPE] }
                   : undefined,
@@ -461,7 +445,6 @@ export function createSubagentRegistryRestorer(config: {
     if (restoreState === "succeeded") {
       return Promise.resolve();
     }
-    restoreState = "in-progress";
     const originalGeneration = generation;
     const assertCurrent = () => {
       assertSubagentRegistryWriteSourceCurrent(stateContext);
@@ -490,7 +473,7 @@ export function createSubagentRegistryRestorer(config: {
           (rows) => {
             const postimages = new Map<string, SubagentRunRecord>();
             for (const [runId, entry] of rows) {
-              const draft = structuredClone(entry);
+              const draft = { ...entry };
               const requesterAgentId = resolveSubagentRequesterAgentId(cfg, draft);
               const ownerChanged = !draft.requesterAgentId && requesterAgentId !== undefined;
               if (ownerChanged) {
@@ -542,6 +525,8 @@ export function createSubagentRegistryRestorer(config: {
     expectedSessionId?: string,
     expectedLifecycleRevision?: string,
   ): Promise<boolean> {
+    const warnCleanup = (message: string, failure: unknown) =>
+      warn(message, { runId, childSessionKey: entry.childSessionKey, error: failure });
     // Root custody includes the terminal commit and final cleanup publication.
     return runWithGatewayIndependentRootWorkAdmission(async () => {
       // Descriptorless restore failures enter here without onStartFailure; their
@@ -614,15 +599,14 @@ export function createSubagentRegistryRestorer(config: {
           { runs },
         );
       const ownsCleanup = () => ownsClaim() && ownsSessionEffects();
-      let sessionOwnershipChanged = false;
-      let sessionDeleted = false;
+      let sessionCleanup: Awaited<ReturnType<typeof deleteSubagentSessionForCleanup>> | undefined;
       try {
         const cleanupComplete = await (async () => {
           if (!ownsCleanup()) {
             return false;
           }
           if (!expectedSessionId || !expectedLifecycleRevision) {
-            sessionOwnershipChanged = true;
+            sessionCleanup = "changed";
             return true;
           }
           const cleanupSettled = await retrySubagentCleanup(
@@ -630,7 +614,7 @@ export function createSubagentRegistryRestorer(config: {
               if (!ownsCleanup()) {
                 return false;
               }
-              const outcome = await deleteSubagentSessionForCleanup({
+              sessionCleanup = await deleteSubagentSessionForCleanup({
                 callGateway: callSubagentRegistryGateway,
                 gatewayBinding: { resolveGatewayContext: getEntryGatewayContextResolver(entry) },
                 isCurrent: ownsCleanup,
@@ -641,30 +625,23 @@ export function createSubagentRegistryRestorer(config: {
                   throw cleanupError;
                 },
               });
-              sessionDeleted = outcome === "deleted";
-              sessionOwnershipChanged = outcome === "changed";
-              return outcome !== "failed";
+              return sessionCleanup !== "failed";
             },
             {
               shouldRetry: () => !launchTerminationConfirmed && ownsCleanup(),
               onError: (cleanupError) =>
-                warn("failed to delete restored collector session after launch failure", {
-                  runId,
-                  childSessionKey: entry.childSessionKey,
-                  error: cleanupError,
-                }),
+                warnCleanup(
+                  "failed to delete restored collector session after launch failure",
+                  cleanupError,
+                ),
             },
           );
-          if (!cleanupSettled || !ownsCleanup() || sessionOwnershipChanged) {
+          if (!cleanupSettled || !ownsCleanup() || sessionCleanup === "changed") {
             return cleanupSettled && ownsCleanup();
           }
           return await cleanupCollectorLaunchResources(entry, { isCurrent: ownsCleanup });
         })().catch((cleanupError: unknown) => {
-          warn("failed to clean restored collector after launch failure", {
-            runId,
-            childSessionKey: entry.childSessionKey,
-            error: cleanupError,
-          });
+          warnCleanup("failed to clean restored collector after launch failure", cleanupError);
           return false;
         });
 
@@ -687,11 +664,7 @@ export function createSubagentRegistryRestorer(config: {
           {
             shouldRetry: ownsClaim,
             onError: (persistError) =>
-              warn("failed to persist restored collector launch failure", {
-                runId,
-                childSessionKey: entry.childSessionKey,
-                error: persistError,
-              }),
+              warnCleanup("failed to persist restored collector launch failure", persistError),
           },
         );
         if (!failureSettled) {
@@ -699,7 +672,7 @@ export function createSubagentRegistryRestorer(config: {
         }
         await suppressRetiredSessionEffects();
         if (cleanupComplete && isSameSubagentRunOwner(currentEntry(), entry)) {
-          if (sessionDeleted && !sessionOwnershipChanged) {
+          if (sessionCleanup === "deleted") {
             emitSessionLifecycleEvent({
               sessionKey: entry.childSessionKey,
               reason: "delete",

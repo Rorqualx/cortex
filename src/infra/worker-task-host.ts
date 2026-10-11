@@ -13,6 +13,8 @@ import {
   captureRetainedNativeWorkerSource,
   createRetainedNativeWorker,
 } from "./worker-native-lifecycle.js";
+import { classifyWorkerRequest, trackWorkerRequest } from "./worker-request-diagnostics.js";
+import { workerRequestKind } from "./worker-request-kind.js";
 import { getWorkerComputeCapacity } from "./worker-task-capacity.js";
 import { liveWorkerTaskPools } from "./worker-task-pool-registry.js";
 import type { WorkerTaskPoolOwnerOptions } from "./worker-task-pool.types.js";
@@ -24,6 +26,7 @@ export function createWorkerTaskHost(owner: WorkerTaskPoolOwnerOptions = {}): Wo
     ? (owner.nativeSource ?? captureRetainedNativeWorkerSource({ runtimeGeneration: undefined }))
     : undefined;
   return {
+    requiresReady: owner.retainedTransport,
     createWorker(url, options) {
       const workerOptions = { execArgv: resolveRuntimeWorkerThreadExecArgv(url), ...options };
       if (owner.retainedTransport) {
@@ -45,12 +48,24 @@ export function createWorkerTaskHost(owner: WorkerTaskPoolOwnerOptions = {}): Wo
       }
       return { worker: createCpuTrackedWorker(url, workerOptions) };
     },
+    serviceNativeWorkers(workers) {
+      // This factory binds every native worker in the pool to the same captured source.
+      workers[0]?.service();
+    },
     prepareResources,
     async releaseTemporaryDirectory(directory) {
       const { removeTemporaryArtifacts } = await prepareResources();
       await removeTemporaryArtifacts(directory, "Worker task");
     },
     captureTaskContext: captureDeletedAgentDatabaseFences,
+    createTaskObserver(url) {
+      const kind = workerRequestKind(url);
+      return (operation) =>
+        trackWorkerRequest(
+          kind,
+          operation === undefined ? "task" : classifyWorkerRequest(operation),
+        );
+    },
     receiveMessage: receiveWorkerMemoryPort,
     workerStarted: attributeWorkerToPool,
     workerRetiring: markWorkerRetirement,

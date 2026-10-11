@@ -216,18 +216,6 @@ function resolveFetchHeaders(fetch?: WebFetchConfig): Record<string, string> | u
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
-function resolveFetchMaxCharsCap(fetch?: WebFetchConfig): number {
-  return resolveIntegerOption(fetch?.maxCharsCap, DEFAULT_FETCH_MAX_CHARS, { min: 100 });
-}
-
-function resolveFetchMaxResponseBytes(fetch?: WebFetchConfig): number {
-  return resolveIntegerOption(
-    asPositiveFiniteNumber(fetch?.maxResponseBytes),
-    DEFAULT_FETCH_MAX_RESPONSE_BYTES,
-    { min: FETCH_MAX_RESPONSE_BYTES_MIN, max: FETCH_MAX_RESPONSE_BYTES_MAX },
-  );
-}
-
 function looksLikeHtml(value: string): boolean {
   const head = normalizeLowercaseStringOrEmpty(value.trimStart().slice(0, 256));
   return head.startsWith("<!doctype html") || head.startsWith("<html");
@@ -236,9 +224,8 @@ function looksLikeHtml(value: string): boolean {
 function formatWebFetchErrorDetail(params: {
   detail: string;
   contentType?: string | null;
-  maxChars: number;
 }): string {
-  const { detail, contentType, maxChars } = params;
+  const { detail, contentType } = params;
   if (!detail) {
     return "";
   }
@@ -249,7 +236,7 @@ function formatWebFetchErrorDetail(params: {
     const withTitle = rendered.title ? `${rendered.title}\n${rendered.text}` : rendered.text;
     text = markdownToText(withTitle);
   }
-  return truncateWebFetchText(text.trim(), maxChars).text;
+  return truncateWebFetchText(text.trim(), DEFAULT_ERROR_MAX_CHARS).text;
 }
 
 function redactUrlForDebugLog(rawUrl: string): string {
@@ -337,7 +324,7 @@ async function spillWebFetchContent(
   value: string,
   wrapped: WebFetchWrappedContent,
   maxChars: number,
-  sourceTruncated = false,
+  sourceTruncated: boolean,
 ): Promise<WebFetchWrappedContent> {
   if (!wrapped.truncated) {
     return sourceTruncated ? { ...wrapped, truncated: true } : wrapped;
@@ -408,10 +395,7 @@ type WebFetchRuntimeParams = {
 
 function normalizeProviderFinalUrl(value: unknown): string | undefined {
   const trimmed = normalizeOptionalString(value);
-  if (!trimmed) {
-    return undefined;
-  }
-  if (containsAsciiControlCharacter(trimmed) || trimmed.includes(" ")) {
+  if (!trimmed || containsAsciiControlCharacter(trimmed) || trimmed.includes(" ")) {
     return undefined;
   }
   const url = URL.parse(trimmed);
@@ -701,7 +685,6 @@ async function fetchWebPayload(
       const detail = formatWebFetchErrorDetail({
         detail: rawDetailResult.text,
         contentType: res.headers.get("content-type"),
-        maxChars: DEFAULT_ERROR_MAX_CHARS,
       });
       const wrappedDetail = wrapWebFetchContent(detail || res.statusText, DEFAULT_ERROR_MAX_CHARS);
       throw new Error(`Web fetch failed (${res.status}): ${wrappedDetail.text}`);
@@ -725,44 +708,7 @@ async function fetchWebPayload(
         text = markdownToText(body);
       }
     } else if (["text/html", "application/xhtml+xml"].includes(normalizedContentType)) {
-      if (params.readabilityEnabled) {
-        const readable = await extractReadableContent({
-          html: body,
-          url: finalUrl,
-          extractMode: params.extractMode,
-          config: params.config,
-        });
-        if (readable?.text) {
-          text = readable.text;
-          title = readable.title;
-          extractor = readable.extractor;
-        } else {
-          let payload: Record<string, unknown> | null = null;
-          try {
-            payload = await fetchProviderPayload(finalUrl);
-          } catch {
-            throwIfFetchAborted(params.signal);
-          }
-          if (payload) {
-            return payload;
-          }
-          const basic = await extractBasicHtmlContent({
-            html: body,
-            extractMode: params.extractMode,
-          });
-          if (basic?.text) {
-            text = basic.text;
-            title = basic.title;
-            extractor = "raw-html";
-          } else {
-            const providerLabel =
-              (await params.resolveProviderFallback())?.provider.label ?? "provider fallback";
-            throw new Error(
-              `Web fetch extraction failed: Readability, ${providerLabel}, and basic HTML cleanup returned no content.`,
-            );
-          }
-        }
-      } else {
+      if (!params.readabilityEnabled) {
         const payload = await fetchProviderPayload(finalUrl);
         if (payload) {
           return payload;
@@ -771,6 +717,36 @@ async function fetchWebPayload(
           "Web fetch extraction failed: Readability disabled and no fetch provider is available.",
         );
       }
+      let extracted = await extractReadableContent({
+        html: body,
+        url: finalUrl,
+        extractMode: params.extractMode,
+        config: params.config,
+      });
+      if (!extracted?.text) {
+        let payload: Record<string, unknown> | null = null;
+        try {
+          payload = await fetchProviderPayload(finalUrl);
+        } catch {
+          throwIfFetchAborted(params.signal);
+        }
+        if (payload) {
+          return payload;
+        }
+        const basic = await extractBasicHtmlContent({
+          html: body,
+          extractMode: params.extractMode,
+        });
+        if (!basic?.text) {
+          const providerLabel =
+            (await params.resolveProviderFallback())?.provider.label ?? "provider fallback";
+          throw new Error(
+            `Web fetch extraction failed: Readability, ${providerLabel}, and basic HTML cleanup returned no content.`,
+          );
+        }
+        extracted = { ...basic, extractor: "raw-html" };
+      }
+      ({ text, title, extractor } = extracted);
     } else if (
       normalizedContentType === "application/json" ||
       normalizedContentType.endsWith("+json")
@@ -860,7 +836,11 @@ export function createWebFetchTool(options?: {
       const userAgent =
         (typeof executionFetch?.userAgent === "string" && executionFetch.userAgent) ||
         DEFAULT_FETCH_USER_AGENT;
-      const maxResponseBytes = resolveFetchMaxResponseBytes(executionFetch);
+      const maxResponseBytes = resolveIntegerOption(
+        asPositiveFiniteNumber(executionFetch?.maxResponseBytes),
+        DEFAULT_FETCH_MAX_RESPONSE_BYTES,
+        { min: FETCH_MAX_RESPONSE_BYTES_MIN, max: FETCH_MAX_RESPONSE_BYTES_MAX },
+      );
       const resolveProviderFallback = createLazyPromise(async () => {
         const { resolveWebFetchDefinition } = await loadWebFetchRuntime();
         return resolveWebFetchDefinition({
@@ -877,7 +857,11 @@ export function createWebFetchTool(options?: {
       const extractMode =
         readToolStringParam(params, "extractMode") === "text" ? "text" : "markdown";
       const maxChars = readPositiveIntegerParam(params, "maxChars");
-      const maxCharsCap = resolveFetchMaxCharsCap(executionFetch);
+      const maxCharsCap = resolveIntegerOption(
+        executionFetch?.maxCharsCap,
+        DEFAULT_FETCH_MAX_CHARS,
+        { min: 100 },
+      );
       const hostnameAllowlist = options?.hostnameAllowlistRef?.value;
       // The progress line is emitted only if the fetch is still pending after
       // the threshold; fast cache/network hits clear the timer before it fires.

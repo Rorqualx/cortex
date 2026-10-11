@@ -13,7 +13,6 @@ export const AUTOMATIONS_TOOL_NAME = "automations";
  */
 export const LEGACY_AUTOMATIONS_TOOL_NAMES = ["cron"] as const;
 
-/** True when a tool name refers to the scheduler tool, including legacy names. */
 export function isAutomationsToolName(name: string): boolean {
   return (
     name === AUTOMATIONS_TOOL_NAME ||
