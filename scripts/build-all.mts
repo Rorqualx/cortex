@@ -241,7 +241,7 @@ const FULL_BUILD_STEP_LABELS = [
 const RUNTIME_ONLY_STEP_LABELS = [
   "native-protocol",
   ...ASSET_RUNTIME_STEP_LABELS.filter((label) => label !== "runtime-postbuild-stamp"),
-  "ui:build",
+  ...UI_BUILD_STEP_LABELS,
   ...BUILD_METADATA_STEP_LABELS,
   // Fork: runtime-postbuild-stamp must stay last (after ui:build) — it is the
   // deploy restart trigger; see the `full` profile comment above.
@@ -256,7 +256,7 @@ export const BUILD_ALL_PROFILES: Record<string, string[]> = {
     "plugins:assets:build",
     "tsdown-ai",
     "tsdown-packages",
-    "tsdown-unified",
+    "tsdown",
     // Upstream order: declarations follow isolated-plugin asset generation so the
     // first build seals reusable declaration cache inputs.
     "external-plugins:local-dist",
