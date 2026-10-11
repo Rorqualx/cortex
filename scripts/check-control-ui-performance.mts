@@ -108,7 +108,10 @@ const controlUiPerformanceBudgets = {
   // permanent fork divergence on hot upstream files re-conflicting every batch
   // outweighs ~1.5 KiB headroom. Baseline ratcheted to the measured 626209 B
   // (10-06/10-07 huey proofs); headroom to this cap is ~479 B.
-  startupJsGzipBytes: 612 * KIB,
+  // 612 -> 614 KiB on 2026-10-11 (maintainer-approved, RESYNC_LEDGER 2026-10-10d):
+  // upstream text sanitizers on the startup path (glm-arg-key-payload, xml-tag-at,
+  // strip-inbound-meta); baseline set to the huey-measured 627749 B, ~987 B headroom.
+  startupJsGzipBytes: 614 * KIB,
   startupCssGzipBytes: 128 * KIB,
   largestJsGzipBytes: 380 * KIB,
   largestCssGzipBytes: 128 * KIB,

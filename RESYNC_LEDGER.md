@@ -901,4 +901,5 @@ ENHANCE-OURS on the provider surface, consumer untouched.
 - Not carried: upstream snapshot-based block-reply reconciliation, raw-directive XML stripping in `resolveStreamingReply`, `downgradedToolCallTextFilter`.
 - Test harness (fork UI is Lit, not Solid): removed `controlUiSolidPlugin` from `test/vitest/vitest.shared.config.ts` and `cleanupSolid` from `test/non-isolated-runner.ts` (both import ui files the fork does not ship; every vitest run failed at startup), kept the fork `tsconfig.core.test.shard.json` (upstream's `solid-elements.d.ts` reference collapsed the lane to one TS6053). DELETE upstream-new `embedded-agent-subscribe.handlers.messages.tool-markup.test.ts` (tests the fork-deleted snapshot module). `chat-branch.test.ts` imports `appendTranscriptEventSync` from test support.
 - Autoreview (claude, P1 threshold): clean.
+- Proof round 1 (huey 2026-10-11): FAIL on startup JS only - 627749 B vs 627264 B envelope. DECISION (maintainer, 2026-10-11): cap 612 -> 614 KiB (628736 B), baseline = measured 627749 B. All 7 tsgo lanes new=0.
 
