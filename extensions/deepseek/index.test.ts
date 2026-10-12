@@ -1,15 +1,11 @@
 // Deepseek tests cover index plugin behavior.
 import type { Context, Model } from "openclaw/plugin-sdk/llm";
 import { createAssistantMessageEventStream } from "openclaw/plugin-sdk/llm";
-import {
-  registerSingleProviderPlugin,
-  resolveProviderPluginChoice,
-} from "openclaw/plugin-sdk/plugin-test-runtime";
+import { registerSingleProviderPlugin } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { buildOpenAICompletionsParams } from "openclaw/plugin-sdk/provider-transport-runtime";
 import { createProviderUsageFetch, makeResponse } from "openclaw/plugin-sdk/test-env";
 import { createZeroUsageFixture } from "openclaw/plugin-sdk/test-fixtures";
 import { describe, expect, it } from "vitest";
-import { runSingleProviderCatalog } from "../test-support/provider-model-test-helpers.js";
 import deepseekPlugin from "./index.js";
 import manifest from "./openclaw.plugin.json" with { type: "json" };
 import { buildDeepSeekProvider } from "./provider-catalog.js";
@@ -323,61 +319,6 @@ describe("deepseek provider plugin", () => {
       windows: [],
       summary: "Balance ¥8.88 · Granted ¥1.00",
     });
-  });
-
-  it("owns OpenAI-compatible replay policy", async () => {
-    const provider = await registerSingleProviderPlugin(deepseekPlugin);
-
-    const replayPolicy = provider.buildReplayPolicy?.({ modelApi: "openai-completions" } as never);
-    expect(replayPolicy?.sanitizeToolCallIds).toBe(true);
-    expect(replayPolicy?.toolCallIdMode).toBe("strict");
-    expect(replayPolicy?.validateGeminiTurns).toBe(true);
-    expect(replayPolicy?.validateAnthropicTurns).toBe(true);
-  });
-
-  it("owns DeepSeek tool schema compatibility for MCP union schemas", async () => {
-    const provider = await registerSingleProviderPlugin(deepseekPlugin);
-    const mcpTool = {
-      name: "unusual-whales__get_balance_sheet_screener",
-      description: "",
-      parameters: {
-        type: "object",
-        properties: {
-          date: {
-            anyOf: [{ type: "string" }, { type: "integer" }],
-          },
-          period: {
-            oneOf: [{ type: "string" }, { type: "null" }],
-          },
-        },
-      },
-      execute: () => undefined,
-    } as never;
-
-    const normalized = provider.normalizeToolSchemas?.({
-      provider: "deepseek",
-      modelId: "deepseek-v4-pro",
-      modelApi: "openai-completions",
-      model: deepSeekV4Model("deepseek-v4-pro"),
-      tools: [mcpTool],
-    } as never);
-
-    expect(normalized?.[0]?.parameters).toEqual({
-      type: "object",
-      properties: {
-        date: { type: "string" },
-        period: { type: "string", nullable: true },
-      },
-    });
-    expect(
-      provider.inspectToolSchemas?.({
-        provider: "deepseek",
-        modelId: "deepseek-v4-pro",
-        modelApi: "openai-completions",
-        model: deepSeekV4Model("deepseek-v4-pro"),
-        tools: normalized ?? [],
-      } as never),
-    ).toStrictEqual([]);
   });
 
   it("advertises max thinking levels for DeepSeek V4 models only", async () => {

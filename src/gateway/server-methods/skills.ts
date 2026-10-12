@@ -18,7 +18,7 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { SkillLibrarySelection } from "../../../packages/gateway-protocol/src/schema/skill-library.js";
 import { listAgentIds, resolveAgentWorkspaceDir } from "../../agents/agent-scope-config.js";
-import { resolveNodeExecEligibility } from "../../agents/exec-defaults.js";
+import { resolveNodeExecEligibilityAsync } from "../../agents/exec-defaults.js";
 import { redactConfigObject } from "../../config/redact-snapshot.js";
 import { fetchClawHubSkillDetail } from "../../infra/clawhub-skills.js";
 import { formatErrorMessage } from "../../infra/errors.js";
@@ -100,13 +100,13 @@ function installClawHubSkillDeduped(params: ClawHubInstallParams): Promise<ClawH
   return install;
 }
 
-function buildRemoteAwareWorkspaceSkillStatus(
+async function buildRemoteAwareWorkspaceSkillStatus(
   resolved: ResolvedSkillsWorkspace,
   selections?: SkillLibrarySelection[],
 ) {
   // Remote skill availability depends on the agent's executable-node surface,
   // not only the workspace contents, so status reports include live eligibility.
-  const nodeSkills = resolveNodeExecEligibility({
+  const nodeSkills = await resolveNodeExecEligibilityAsync({
     cfg: resolved.cfg,
     agentId: resolved.agentId,
   });
@@ -289,7 +289,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
   // retired skills.proposals.* / skills.curator.* methods; fork skills.forge.* stays below.
   ...skillsWorkshopHandlers,
   ...skillsRetiredHandlers,
-  "skills.status": ({ params, respond, context, client }) => {
+  "skills.status": async ({ params, respond, context, client }) => {
     if (!assertValidParams(params, validateSkillsStatusParams, "skills.status", respond)) {
       return;
     }
@@ -321,7 +321,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       config: resolved.cfg,
       agentId: resolved.agentId,
     });
-    const report = buildRemoteAwareWorkspaceSkillStatus(
+    const report = await buildRemoteAwareWorkspaceSkillStatus(
       resolved,
       target?.entry.skillLibrarySelections,
     );
@@ -344,7 +344,7 @@ export const skillsHandlers: GatewayRequestHandlers = {
       return;
     }
     try {
-      const report = buildRemoteAwareWorkspaceSkillStatus(resolved);
+      const report = await buildRemoteAwareWorkspaceSkillStatus(resolved);
       const targets = collectClawHubVerdictTargets(report);
       if (targets.length === 0) {
         respond(true, { schema: "openclaw.skills.security-verdicts.v1", items: [] }, undefined);

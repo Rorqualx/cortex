@@ -82,6 +82,7 @@ export type BuildTelegramMessageContextParams = {
   storeAllowFrom: string[];
   options?: TelegramMessageContextOptions;
   bot: Bot;
+  resolveDirectAvatar?: (ctx: TelegramContext, cfg: OpenClawConfig) => string | undefined;
   cfg: OpenClawConfig;
   account: { accountId: string };
   ownerAgentId?: string;

@@ -232,7 +232,7 @@ export async function loadReplySessionInitializationSnapshot(
     lifecycleTimestamps = prepared.lifecycleTimestamps;
     coldArchives = prepared.coldArchives;
   } else {
-    const { database, source, assertSourceCurrent } = captureReplySessionInitializationSource({
+    const { database, source } = captureReplySessionInitializationSource({
       ...params,
       storePath,
     });
@@ -241,7 +241,6 @@ export async function loadReplySessionInitializationSnapshot(
       database,
       source,
     );
-    assertSourceCurrent();
   }
   assertCurrent();
   const resolved = resolveSessionEntryFromStore({ store, sessionKey: params.sessionKey });
@@ -313,7 +312,6 @@ export async function commitReplySessionInitialization(params: {
   const store = await measureDiagnosticsTimelineSpan("reply.session.commit.fresh_read", () =>
     loadReplySessionInitializationEntriesAsync({ ...params, storePath }, database, source),
   );
-  assertSourceCurrent();
   const resolved = resolveSessionEntryFromStore({ store, sessionKey: params.sessionKey });
   const currentEntry = resolved.existing ? { ...resolved.existing } : undefined;
   const revision = createReplySessionInitializationRevision(currentEntry);
@@ -375,7 +373,6 @@ export async function commitReplySessionInitialization(params: {
     });
   }
   try {
-    assertSourceCurrent();
     const mutation = {
       activeSessionKey: params.activeSessionKey,
       agentId: params.agentId,
@@ -443,7 +440,6 @@ export async function commitReplySessionInitialization(params: {
       database,
       source?.key.startsWith("file:") ? source : undefined,
     );
-    assertSourceCurrent(true);
     return createStaleReplySessionInitializationResult(current[resolved.normalizedKey]);
   }
   if (staleCommit !== undefined) {

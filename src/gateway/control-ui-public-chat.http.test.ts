@@ -6,10 +6,11 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { computeInlineScriptHashes } from "./control-ui-csp.js";
 import { AUTH_TOKEN, createTestGatewayServer, sendRequest } from "./server-http.test-harness.js";
 import { createSessionRowProjectionFixture } from "./session-row-projection.test-support.js";
-const { resolveSession, reader, active } = vi.hoisted(() => ({
+const { resolveSession, reader, active, mediaToken } = vi.hoisted(() => ({
   resolveSession: vi.fn(),
   reader: vi.fn(),
   active: vi.fn(),
+  mediaToken: vi.fn(),
 }));
 vi.mock(import("./control-ui-session-path-resolve.js"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -19,6 +20,10 @@ vi.mock(import("./control-ui-public-session-read.js"), async (importOriginal) =>
   ...(await importOriginal()),
   readPublicSessionShare: reader,
   isPublicSessionShareActive: active,
+}));
+vi.mock(import("./control-ui-public-session-token.js"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  mintExistingPublicSessionShareToken: mediaToken,
 }));
 vi.mock(import("./session-row-projection-access.js"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -79,6 +84,7 @@ beforeEach(() => {
     truncated: false,
   });
   active.mockReset().mockReturnValue(true);
+  mediaToken.mockReset().mockResolvedValue(`v1.${"a".repeat(96)}`);
 });
 afterEach(() => {
   for (const instance of servers.splice(0)) {

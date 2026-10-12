@@ -10,6 +10,7 @@ import type { RuntimePluginToolGrant } from "../../plugins/runtime/tool-grant.js
 import type { InputProvenance } from "../../sessions/input-provenance.js";
 import type { ExecToolDefaults } from "../bash-tools.exec-types.js";
 import type { AgentRunSessionTarget } from "../run-session-target.types.js";
+import type { ModelCallUrgency } from "../run-trigger.js";
 import type { AgentRuntimeAuthPlan, AgentRuntimePlan } from "../runtime-plan/types.js";
 import type { ScheduledToolPolicyContext } from "../scheduled-tool-policy.js";
 import type { TrustedSubagentCompletionHandoff } from "../subagents/announce/subagent-announce-handoff.js";
@@ -160,6 +161,8 @@ export type CompactEmbeddedAgentSessionParams = Pick<
   /** Diagnostic trigger that made preflight compaction mandatory. */
   preflightCompactionTrigger?: "tokens" | "transcript_bytes";
   trigger?: "budget" | "overflow" | "manual";
+  /** Source-turn urgency survives replacing its trigger with a compaction reason. */
+  modelCallUrgency?: ModelCallUrgency;
   /**
    * Preflight callers can allow native/current-session harness compaction but
    * move plugin-owned budget compaction onto background turn maintenance.

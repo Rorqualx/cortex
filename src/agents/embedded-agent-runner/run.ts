@@ -2039,7 +2039,10 @@ export async function runEmbeddedAgent(
                     sessionKey: attemptSessionKey,
                     agentHarnessId: agentHarness.id,
                   }),
-                  () => !attemptAbortController.signal.aborted,
+                  // Upstream collapsed the provider to (attempt, run): the async
+                  // publication-availability window that needed attempt-currentity
+                  // asserts is gone (sync fact read), and abort routing stays in
+                  // the surrounding .catch(postCompactionAbortError) / .finally.
                   () => runEmbeddedAttemptWithBackend(attemptParams),
                 )
               : runEmbeddedAttemptWithBackend(attemptParams)

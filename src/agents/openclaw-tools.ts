@@ -23,7 +23,10 @@ import {
   wrapToolWithBeforeToolCallHook,
 } from "./agent-tools.before-tool-call.js";
 import { ensureAuthProfileStoreWithoutExternalProfiles } from "./auth-profiles/store-runtime.js";
-import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
+import {
+  resolveOpenClawPluginToolsForOptions,
+  resolveOpenClawPluginToolsForOptionsAsync,
+} from "./openclaw-plugin-tools.js";
 import { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
 import { createHostedGatewayTools } from "./openclaw-tools.gateway.js";
 import {
@@ -141,10 +144,13 @@ export async function createOpenClawToolsWithPreparation(
   const steps = createOpenClawToolsSteps(captured, delegated, webSearchConfigured, mediaTools);
   let next = steps.next();
   while (!next.done) {
-    const messageTool = await createMessageToolAsync(next.value);
+    const tools =
+      "message" in next.value
+        ? [await createMessageToolAsync(next.value.message)]
+        : await resolveOpenClawPluginToolsForOptionsAsync(next.value.plugins);
     shared.assertCurrent();
     captured.assertInvocationCurrent?.();
-    next = steps.next(messageTool);
+    next = steps.next(tools);
   }
   return next.value;
 }
@@ -172,7 +178,11 @@ export function createOpenClawTools(
   );
   let next = steps.next();
   while (!next.done) {
-    next = steps.next(createMessageTool(next.value));
+    next = steps.next(
+      "message" in next.value
+        ? [createMessageTool(next.value.message)]
+        : resolveOpenClawPluginToolsForOptions(next.value.plugins),
+    );
   }
   return next.value;
 }
@@ -182,7 +192,12 @@ function* createOpenClawToolsSteps(
   preparedDelegateTools?: AnyAgentTool[],
   preparedWebSearchConfigured?: boolean,
   preparedMediaTools?: Readonly<ReturnType<typeof resolveOptionalMediaToolFactoryPlan>>,
-): Generator<Parameters<typeof createMessageTool>[0], AnyAgentTool[], AnyAgentTool> {
+): Generator<
+  | { message: Parameters<typeof createMessageTool>[0] }
+  | { plugins: Parameters<typeof resolveOpenClawPluginToolsForOptions>[0] },
+  AnyAgentTool[],
+  AnyAgentTool[]
+> {
   const resolvedConfig = options?.config;
   const sessionConfig = options?.sessionConfigSource === "runtime" ? undefined : resolvedConfig;
   const activeProjectKeys = options?.preparedModelRuntime?.activeProjectKeys ?? [];
@@ -339,41 +354,44 @@ function* createOpenClawToolsSteps(
   options?.recordToolPrepStage?.("openclaw-tools:web-fetch-tool");
   const messageTool = options?.disableMessageTool
     ? null
-    : yield {
-        ...options,
-        agentSessionKey: options?.messageToolTurnCapability?.sessionKey ?? options?.agentSessionKey,
-        runSessionKey:
-          options?.runSessionKey ??
-          (options?.messageToolTurnCapability ? options.agentSessionKey : undefined),
-        agentId: sessionAgentId,
-        messageActionTurnCapability:
-          options?.messageToolTurnCapability?.token ?? options?.messageActionTurnCapability,
-        // Upstream contract: scheduled authority arrives under the factory-option
-        // name; without this mapping the message tool sees no admission callback
-        // and fails closed on every scheduled send (cron announce, isolated runs).
-        admitScheduledInvocation: options?.admitScheduledMessageInvocation,
-        config: options?.config,
-        preparedMessageToolCatalog: options?.preparedModelRuntime?.messageToolCatalog,
-        currentMessagingTarget:
-          options?.currentMessagingTarget ??
-          (options?.sourceReplyOnly ? options.agentTo : undefined),
-        currentChannelProvider: options?.agentChannel,
-        currentThreadTs: options?.currentThreadTs,
-        currentInboundAudio: options?.currentInboundAudio,
-        hasCurrentInboundAudio: options?.hasCurrentInboundAudio,
-        agentThreadId: options?.agentThreadId,
-        currentMessageId: options?.currentMessageId,
-        replyToMode: options?.replyToMode,
-        hasRepliedRef: options?.hasRepliedRef,
-        sameChannelThreadRequired: options?.sameChannelThreadRequired,
-        sandboxRoot: options?.sandboxRoot,
-        sandboxContainerWorkdir: options?.sandboxContainerWorkdir,
-        sandboxFsBridge: options?.sandboxFsBridge,
-        sandboxWorkspaceMediaReadAllowed: options?.sandboxWorkspaceMediaReadAllowed,
-        requireExplicitTarget: options?.requireExplicitMessageTarget,
-        requesterSenderId: options?.requesterSenderId ?? undefined,
-        workspaceDir,
-      };
+    : ((yield {
+        message: {
+          ...options,
+          agentSessionKey:
+            options?.messageToolTurnCapability?.sessionKey ?? options?.agentSessionKey,
+          runSessionKey:
+            options?.runSessionKey ??
+            (options?.messageToolTurnCapability ? options.agentSessionKey : undefined),
+          agentId: sessionAgentId,
+          messageActionTurnCapability:
+            options?.messageToolTurnCapability?.token ?? options?.messageActionTurnCapability,
+          // Upstream contract: scheduled authority arrives under the factory-option
+          // name; without this mapping the message tool sees no admission callback
+          // and fails closed on every scheduled send (cron announce, isolated runs).
+          admitScheduledInvocation: options?.admitScheduledMessageInvocation,
+          config: options?.config,
+          preparedMessageToolCatalog: options?.preparedModelRuntime?.messageToolCatalog,
+          currentMessagingTarget:
+            options?.currentMessagingTarget ??
+            (options?.sourceReplyOnly ? options.agentTo : undefined),
+          currentChannelProvider: options?.agentChannel,
+          currentThreadTs: options?.currentThreadTs,
+          currentInboundAudio: options?.currentInboundAudio,
+          hasCurrentInboundAudio: options?.hasCurrentInboundAudio,
+          agentThreadId: options?.agentThreadId,
+          currentMessageId: options?.currentMessageId,
+          replyToMode: options?.replyToMode,
+          hasRepliedRef: options?.hasRepliedRef,
+          sameChannelThreadRequired: options?.sameChannelThreadRequired,
+          sandboxRoot: options?.sandboxRoot,
+          sandboxContainerWorkdir: options?.sandboxContainerWorkdir,
+          sandboxFsBridge: options?.sandboxFsBridge,
+          sandboxWorkspaceMediaReadAllowed: options?.sandboxWorkspaceMediaReadAllowed,
+          requireExplicitTarget: options?.requireExplicitMessageTarget,
+          requesterSenderId: options?.requesterSenderId ?? undefined,
+          workspaceDir,
+        },
+      })[0] ?? null);
   const heartbeatTool = options?.enableHeartbeatTool ? createHeartbeatResponseTool() : null;
   options?.recordToolPrepStage?.("openclaw-tools:message-tool");
   const nodesToolBase = createNodesTool({
@@ -749,10 +767,12 @@ function* createOpenClawToolsSteps(
     }
     allTools = [
       ...tools,
-      ...resolveOpenClawPluginToolsForOptions({
-        options: { ...options, activeProjectKeys },
-        resolvedConfig,
-        existingToolNames,
+      ...(yield {
+        plugins: {
+          options: { ...options, activeProjectKeys },
+          resolvedConfig,
+          existingToolNames,
+        },
       }),
     ];
     options?.recordToolPrepStage?.("openclaw-tools:plugin-tools");
