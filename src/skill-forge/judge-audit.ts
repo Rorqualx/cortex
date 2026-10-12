@@ -1,6 +1,5 @@
 import type { Candidate } from "./detector.js";
 import {
-  describeJudgeSpec,
   JUDGE_PROMPT_REVISION,
   SKILL_FORGE_JUDGE_AUDIT_SPEC_CORE,
   type JudgeSpec,
