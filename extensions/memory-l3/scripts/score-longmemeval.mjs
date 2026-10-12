@@ -13,6 +13,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  describeJudgeSpec,
+  JUDGE_PROMPT_REVISION,
+  LONGMEMEVAL_SCORER_SPEC_CORE,
+} from "../src/judge-estimand.js";
+import { computeRobustnessBar } from "./robustness.mjs";
 
 const HOME = os.homedir();
 const ORACLE_PATH = "/tmp/longmemeval/oracle.json";
@@ -39,6 +45,20 @@ const STABILITY_SEED = 20261002;
 // knowledge-update question measures whether revision→slot-merge answers land
 // in the right slot. Disable with --no-supersession.
 const SUPERSESSION_SPLIT = !args.includes("--no-supersession");
+// Robustness bar (ARCH-2, 2026-10-12): --robustness[=N] re-judges a
+// deterministic sample with each judge variant from ROBUSTNESS_JUDGE_MODELS
+// (CSV of SECONDARY judges; the primary judge is always variant 0) and
+// reports the interface-sensitivity bar (max pairwise accuracy delta). Bare
+// flag samples 50. Empty CSV degrades to a SKIPPED line — never fatal.
+const robArg = args.find((a) => a === "--robustness" || a.startsWith("--robustness="));
+const ROBUSTNESS_SAMPLE_N = robArg
+  ? robArg.includes("=")
+    ? Math.max(1, Number.parseInt(robArg.split("=")[1], 10) || 50)
+    : 50
+  : 0;
+// Fixed seed (same algorithm as STABILITY_SEED) so robustness samples stay
+// comparable across invocations.
+const ROBUSTNESS_SEED = 20261008;
 
 // Dimension weights for composite scoring (from PubHealthBench hybrid-retrieval
 // study: judge-human agreement is strongest for faithfulness and completeness).
@@ -239,6 +259,29 @@ export function summarizeSupersession(rows) {
 
 // ── End supersession split helpers ───────────────────────────────────────
 
+// ── Judge-spec stamp (ARCH-2 H1, 2026-10-12) ───────────────────────────────
+// Composes this run's JudgeSpec: canonical core (surface/estimand/resolution)
+// + the evaluator stamp. Resolution flips to "confidence" when dimension
+// scoring is on (the judge then emits 0-10 dimension scores, not just yes/no).
+
+export function buildJudgeSpec() {
+  return {
+    ...LONGMEMEVAL_SCORER_SPEC_CORE,
+    resolution: process.env.LONGMEMEVAL_DIMENSION_SCORING === "1" ? "confidence" : "verdict",
+    evaluator: { model: JUDGE_MODEL, promptRevision: JUDGE_PROMPT_REVISION },
+  };
+}
+
+/** H2: judgeSpec header record first, then verdict lines — additive-only. */
+export function buildEvalOutputLines(verdicts, judgeSpec) {
+  return [
+    JSON.stringify({ recordType: "judgeSpec", ...judgeSpec }),
+    ...verdicts.map((v) => JSON.stringify(v)),
+  ];
+}
+
+// ── End judge-spec stamp helpers ─────────────────────────────────────────
+
 // ── End miss attribution helpers ───────────────────────────────────────────
 
 // Verbatim prompt templates from LongMemEval's evaluate_qa.py.
@@ -389,9 +432,10 @@ async function throttleJudge() {
 // can bypass a congested Z.ai. Set JUDGE_BASE_URL + JUDGE_API_KEY + JUDGE_MODEL.
 const JUDGE_BASE_URL = process.env.JUDGE_BASE_URL ?? null;
 
-async function callJudge({ apiKey, prompt }) {
+async function callJudge({ apiKey, prompt, model }) {
   await throttleJudge();
-  const isOpenAI = JUDGE_MODEL.startsWith("gpt-");
+  const judgeModel = model ?? JUDGE_MODEL;
+  const isOpenAI = judgeModel.startsWith("gpt-");
   const isZai = !isOpenAI && !JUDGE_BASE_URL;
   const url = JUDGE_BASE_URL
     ? `${JUDGE_BASE_URL.replace(/\/$/, "")}/chat/completions`
@@ -399,7 +443,7 @@ async function callJudge({ apiKey, prompt }) {
       ? "https://api.openai.com/v1/chat/completions"
       : "https://api.z.ai/api/coding/paas/v4/chat/completions";
   const body = {
-    model: JUDGE_MODEL,
+    model: judgeModel,
     messages: [{ role: "user", content: prompt }],
     temperature: 0,
   };
@@ -489,6 +533,22 @@ async function main() {
   if (!SUPERSESSION_SPLIT) {
     console.log(`Supersession split: disabled (--no-supersession)`);
   }
+  // H3: render the judge spec beside the results so every number this run
+  // prints is attributable to an estimator + evaluator pair.
+  const judgeSpec = buildJudgeSpec();
+  console.log(`Judge spec: ${describeJudgeSpec(judgeSpec)}`);
+  if (ROBUSTNESS_SAMPLE_N > 0) {
+    const secondaryCsv = process.env.ROBUSTNESS_JUDGE_MODELS ?? "";
+    const secondaryModels = secondaryCsv
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    console.log(
+      secondaryModels.length > 0
+        ? `Robustness: sample ${ROBUSTNESS_SAMPLE_N} across ${secondaryModels.length + 1} judge variants (primary + ROBUSTNESS_JUDGE_MODELS)`
+        : `Robustness: configured but ROBUSTNESS_JUDGE_MODELS is empty — will report SKIPPED`,
+    );
+  }
 
   // Echo the run manifest (sibling of the hypothesis file) so scored numbers
   // are always printed next to the configuration that produced them.
@@ -504,6 +564,8 @@ async function main() {
         promptVersion: manifest.promptVersion,
         timestamp: manifest.timestamp,
         filterTag: manifest.filterTag,
+        judgeSpec,
+        judgeSpecRender: describeJudgeSpec(judgeSpec),
       };
       console.log(`Manifest: ${JSON.stringify(echo)}`);
     } catch {
@@ -810,8 +872,49 @@ async function main() {
     console.log(`Wrote ${stabilityPath}`);
   }
 
+  // Robustness bar (ARCH-2, 2026-10-12): interface-sensitivity measurement —
+  // the SAME deterministic sample judged by every variant; max pairwise
+  // accuracy delta is the bar. Judge calls = sample × variants (bounded like
+  // the stability path). Degrades to a SKIPPED line with no secondaries.
+  if (ROBUSTNESS_SAMPLE_N > 0) {
+    const secondaryCsv = process.env.ROBUSTNESS_JUDGE_MODELS ?? "";
+    const secondaryModels = secondaryCsv
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const sample = pickStabilitySample(tasks, ROBUSTNESS_SAMPLE_N, ROBUSTNESS_SEED);
+    const bar = await computeRobustnessBar({
+      sample,
+      primaryModel: JUDGE_MODEL,
+      secondaryModels,
+      judge: async (t, model) =>
+        parseVerdict(
+          await callJudge({
+            apiKey,
+            model,
+            prompt: buildPrompt(
+              t.oracle.question_type,
+              t.oracle.question,
+              t.oracle.answer,
+              t.hyp.hypothesis ?? "",
+            ),
+          }),
+        ),
+    });
+    console.log(`  ${bar.render}`);
+    if (bar.status === "ok") {
+      const robustnessPath = `${hypArg}.robustness-${JUDGE_MODEL}.jsonl`;
+      const rows = [
+        ...bar.rows.map((r) => JSON.stringify(r)),
+        JSON.stringify({ recordType: "robustnessBar", maxDelta: bar.maxDelta, render: bar.render }),
+      ];
+      await writeFile(robustnessPath, rows.join("\n") + "\n");
+      console.log(`Wrote ${robustnessPath}`);
+    }
+  }
+
   const outPath = `${hypArg}.eval-${JUDGE_MODEL}.jsonl`;
-  await writeFile(outPath, verdicts.map((v) => JSON.stringify(v)).join("\n") + "\n");
+  await writeFile(outPath, buildEvalOutputLines(verdicts, judgeSpec).join("\n") + "\n");
   console.log(`\nWrote ${outPath}`);
 }
 

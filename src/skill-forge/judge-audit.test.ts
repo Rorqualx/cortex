@@ -8,6 +8,7 @@ import {
   type JudgeAuditTestCase,
   type JudgeAuditVerdict,
 } from "./judge-audit.js";
+import { describeJudgeSpec } from "./judge-spec.js";
 
 describe("buildBadTestCases", () => {
   it("produces at least 5 bad test cases", () => {
@@ -321,5 +322,60 @@ describe("computeAuditReport", () => {
 
     const report = computeAuditReport({ testCases, verdicts });
     expect(report.warnings.some((w) => w.includes("inconclusive"))).toBe(true);
+  });
+});
+
+// Judge-spec stamp (ARCH-2, 2026-10-12): the report states WHAT it measured
+// (estimand) and HOW (resolution) plus the evaluator stamp. Sole constructor
+// is computeAuditReport — every fixture above flows through it, so the
+// required field breaks nothing (case-12 discipline holds).
+
+describe("computeAuditReport judgeSpec stamp", () => {
+  const makeVerdict = (
+    tc: JudgeAuditTestCase,
+    verdict: "SAFE_USEFUL" | "SAFE_NEUTRAL" | "UNSAFE_OR_HARMFUL",
+  ): JudgeAuditVerdict => ({
+    testCase: tc,
+    result: {
+      status: "ran",
+      verdict,
+      rationale: "ok",
+      provider: "test",
+      modelId: "test",
+    },
+  });
+
+  const buildReport = (judgeModel?: string) => {
+    const bad = buildBadTestCases();
+    const good = buildGoodTestCases();
+    const testCases = [...bad, ...good];
+    const verdicts = [
+      ...bad.map((tc) => makeVerdict(tc, "UNSAFE_OR_HARMFUL")),
+      ...good.map((tc) => makeVerdict(tc, "SAFE_USEFUL")),
+    ];
+    return computeAuditReport({ testCases, verdicts, judgeModel });
+  };
+
+  it("stamps the required judgeSpec with surface/estimand/resolution + evaluator", () => {
+    const report = buildReport("glm-5.2");
+    expect(report.judgeSpec).toEqual({
+      surface: "skill-forge-judge-audit",
+      estimand: "manifestation",
+      resolution: "verdict",
+      evaluator: { model: "glm-5.2", promptRevision: "v1" },
+    });
+  });
+
+  it('evaluator.model falls back to "unknown" when judgeModel is absent', () => {
+    const report = buildReport();
+    expect(report.judgeSpec.evaluator.model).toBe("unknown");
+    expect(report.judgeSpec.evaluator.promptRevision).toBe("v1");
+  });
+
+  it("renders through describeJudgeSpec for report output (H3-analog)", () => {
+    const report = buildReport("glm-5.2");
+    expect(describeJudgeSpec(report.judgeSpec)).toBe(
+      "skill-forge-judge-audit: estimand=manifestation resolution=verdict evaluator=glm-5.2@v1",
+    );
   });
 });

@@ -1,5 +1,11 @@
 import type { Candidate } from "./detector.js";
 import {
+  describeJudgeSpec,
+  JUDGE_PROMPT_REVISION,
+  SKILL_FORGE_JUDGE_AUDIT_SPEC_CORE,
+  type JudgeSpec,
+} from "./judge-spec.js";
+import {
   type LlmReplayGateResult,
   type LlmJudgeVerdict,
   SKILL_FORGE_LLM_JUDGE_SYSTEM,
@@ -35,6 +41,8 @@ export type JudgeAuditReport = {
   threshold: number;
   passed: boolean;
   warnings: string[];
+  /** Estimand & interface pins (ARCH-2): what this audit measured and how. */
+  judgeSpec: JudgeSpec;
 };
 
 // ── Default threshold (paper suggests ~15%) ────────────────────────────────
@@ -337,8 +345,17 @@ export function computeAuditReport(params: {
   testCases: JudgeAuditTestCase[];
   verdicts: JudgeAuditVerdict[];
   threshold?: number;
+  judgeModel?: string;
 }): JudgeAuditReport {
   const threshold = params.threshold ?? DEFAULT_FALSE_PASS_THRESHOLD;
+  // Estimand stamp (ARCH-2): sole constructor stamps the spec — the report
+  // always states what was judged, by which model, under which prompt
+  // revision. Absent judgeModel falls back to "unknown" (identity-fallback
+  // convention).
+  const judgeSpec: JudgeSpec = {
+    ...SKILL_FORGE_JUDGE_AUDIT_SPEC_CORE,
+    evaluator: { model: params.judgeModel ?? "unknown", promptRevision: JUDGE_PROMPT_REVISION },
+  };
   const goodCases = params.testCases.filter((tc) => tc.label === "good");
   const badCases = params.testCases.filter((tc) => tc.label === "bad");
   const warnings: string[] = [];
@@ -418,6 +435,7 @@ export function computeAuditReport(params: {
     threshold,
     passed,
     warnings,
+    judgeSpec,
   };
 }
 
@@ -426,6 +444,7 @@ export function computeAuditReport(params: {
 export type JudgeAuditRunOptions = {
   agentId?: string;
   threshold?: number;
+  judgeModel?: string;
 };
 
 export async function runJudgeAudit(opts: JudgeAuditRunOptions = {}): Promise<JudgeAuditReport> {
@@ -445,6 +464,7 @@ export async function runJudgeAudit(opts: JudgeAuditRunOptions = {}): Promise<Ju
     testCases,
     verdicts,
     threshold: opts.threshold,
+    judgeModel: opts.judgeModel,
   });
 }
 

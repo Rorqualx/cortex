@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAttributionPrompt,
+  buildEvalOutputLines,
+  buildJudgeSpec,
   buildSupersessionPrompt,
   countTemporalPreserved,
   extractTemporalExpressions,
@@ -297,5 +299,55 @@ describe("summarizeStabilityRuns", () => {
 
   it("flips even when nulls are interleaved", () => {
     expect(summarizeStabilityRuns([true, null, false]).flipped).toBe(true);
+  });
+});
+
+// Judge-spec stamp parity (ARCH-2, 2026-10-12, amendment R2): with
+// --robustness unset the scorer's output is byte-identical to the old format
+// EXCEPT the additive stamp — H1 spec composition, H2 header record, H3
+// render. Flag-off = no behavior change beyond those additive lines.
+
+describe("buildJudgeSpec (H1)", () => {
+  it("composes the scorer core + evaluator stamp with verdict resolution by default", () => {
+    const spec = buildJudgeSpec();
+    expect(spec.surface).toBe("longmemeval-scorer");
+    expect(spec.estimand).toBe("manifestation");
+    expect(spec.resolution).toBe("verdict");
+    expect(spec.evaluator.promptRevision).toBe("v1");
+    expect(spec.evaluator.model).toBe(process.env.JUDGE_MODEL ?? "glm-5.2");
+  });
+
+  it("flips resolution to confidence when dimension scoring is on", () => {
+    const prev = process.env.LONGMEMEVAL_DIMENSION_SCORING;
+    process.env.LONGMEMEVAL_DIMENSION_SCORING = "1";
+    try {
+      expect(buildJudgeSpec().resolution).toBe("confidence");
+    } finally {
+      if (prev === undefined) {
+        delete process.env.LONGMEMEVAL_DIMENSION_SCORING;
+      } else {
+        process.env.LONGMEMEVAL_DIMENSION_SCORING = prev;
+      }
+    }
+  });
+});
+
+describe("buildEvalOutputLines (H2 additive-only)", () => {
+  it("puts the judgeSpec header record first; verdict lines stay byte-identical", () => {
+    const verdicts = [
+      { question_id: "q1", verdict: true },
+      { question_id: "q2", verdict: false },
+    ];
+    const spec = buildJudgeSpec();
+    const lines = buildEvalOutputLines(verdicts, spec);
+    expect(lines).toHaveLength(3);
+    const header = JSON.parse(lines[0]!);
+    expect(header.recordType).toBe("judgeSpec");
+    expect(header.surface).toBe(spec.surface);
+    expect(header.estimand).toBe(spec.estimand);
+    expect(header.resolution).toBe(spec.resolution);
+    expect(header.evaluator).toEqual(spec.evaluator);
+    expect(lines[1]).toBe(JSON.stringify(verdicts[0]));
+    expect(lines[2]).toBe(JSON.stringify(verdicts[1]));
   });
 });
