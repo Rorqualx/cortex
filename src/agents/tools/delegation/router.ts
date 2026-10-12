@@ -176,7 +176,11 @@ const TIER_DEFAULT: Record<string, Record<"backbone" | "execution" | "read", str
   deepseek: {
     backbone: "deepseek-v4-pro",
     execution: "deepseek-v4-pro",
-    read: "deepseek-v4-flash",
+    // 2026-10-12 (QW1): repointed off the retired `deepseek-v4-flash` alias —
+    // deepseek-flash is the 2026-09 consolidation rename. The router must not
+    // pin deprecated ids; the alias still resolves via `upgradedFrom` in model
+    // discovery, and stale user pins are repointed by doctor --fix.
+    read: "deepseek-flash",
   },
   moonshot: { backbone: "kimi-k2.6", execution: "kimi-k2.6", read: "kimi-k2.5" },
 };

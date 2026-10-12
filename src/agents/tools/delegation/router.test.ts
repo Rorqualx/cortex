@@ -33,7 +33,11 @@ function cfgWith(providers: Record<string, string[]>): OpenClawConfig {
 const FULL = cfgWith({
   zai: ["glm-5.1", "glm-4.7", "glm-4.6", "glm-4.6v"],
   kimi: ["kimi-for-coding"],
-  deepseek: ["deepseek-v4-pro", "deepseek-v4-flash"],
+  // deepseek list carries both the canonical `deepseek-flash` and the retired
+  // `deepseek-v4-flash` alias — mirrors a real transitioning configured catalog
+  // (the alias still serves and resolves via upgradedFrom) and keeps the
+  // no-collapse assertions honest.
+  deepseek: ["deepseek-v4-pro", "deepseek-flash", "deepseek-v4-flash"],
   moonshot: ["kimi-k2.6"],
 });
 
@@ -232,7 +236,9 @@ describe("delegation router adaptive latency balancing", () => {
     resolveRoute({ kind, cfg: FULL }).fallbacks.map((c) => c.provider);
 
   it("preserves subscription-before-metered order when nobody has latency data", () => {
-    // One preferred model per provider (priority order), then the deep-fallback tail.
+    // One preferred model per provider (priority order), then the deep-fallback
+    // tail. FULL's deepseek list carries three models (v4-pro, flash, retired
+    // alias), so the tail ends with two deepseek entries (no-collapse contract).
     expect(providerOrder("code")).toEqual([
       "zai",
       "kimi",
@@ -240,6 +246,7 @@ describe("delegation router adaptive latency balancing", () => {
       "moonshot",
       "zai",
       "zai",
+      "deepseek",
       "deepseek",
     ]);
   });
@@ -305,7 +312,7 @@ describe("operation-class routing (QW-D)", () => {
   const WITH_FAST = cfgWith({
     zai: ["glm-5.1", "glm-5-turbo", "glm-4.7"],
     kimi: ["kimi-for-coding"],
-    deepseek: ["deepseek-v4-pro", "deepseek-v4-flash"],
+    deepseek: ["deepseek-v4-pro", "deepseek-flash", "deepseek-v4-flash"],
   });
 
   it("read-shaped backbone calls prefer the cheap/fast variant", () => {
@@ -350,7 +357,7 @@ describe("operation-class routing (QW-D)", () => {
   it("read preference applies per provider (deepseek flash)", () => {
     expect(
       resolveRoute({ kind: "research", cfg: FULL, provider: "deepseek", opClass: "read" }).primary,
-    ).toEqual({ provider: "deepseek", model: "deepseek-v4-flash" });
+    ).toEqual({ provider: "deepseek", model: "deepseek-flash" });
   });
 
   it("read routing never collapses the fallback chain", () => {
