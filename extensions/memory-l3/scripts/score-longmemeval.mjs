@@ -7,12 +7,18 @@
 // paper-comparable numbers.
 //
 // Usage:
-//   node extensions/memory-l3/scripts/score-longmemeval.mjs [hypothesis.jsonl] [--concurrency=N] [--stability-check=N] [--stability-sample=M]
+//   node extensions/memory-l3/scripts/score-longmemeval.mjs [hypothesis.jsonl] [--concurrency=N] [--stability-check=N] [--stability-sample=M] [--no-supersession]
 
 import { readFile, writeFile } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  describeJudgeSpec,
+  JUDGE_PROMPT_REVISION,
+  LONGMEMEVAL_SCORER_SPEC_CORE,
+} from "../src/judge-estimand.js";
+import { computeRobustnessBar } from "./robustness.mjs";
 
 const HOME = os.homedir();
 const ORACLE_PATH = "/tmp/longmemeval/oracle.json";
@@ -35,6 +41,24 @@ const STABILITY_SAMPLE = stabSampleArg
   : 8;
 // Fixed seed so stability samples are comparable across invocations.
 const STABILITY_SEED = 20261002;
+// Supersession split (QW3, 2026-10-12): one extra judge pass per
+// knowledge-update question measures whether revision→slot-merge answers land
+// in the right slot. Disable with --no-supersession.
+const SUPERSESSION_SPLIT = !args.includes("--no-supersession");
+// Robustness bar (ARCH-2, 2026-10-12): --robustness[=N] re-judges a
+// deterministic sample with each judge variant from ROBUSTNESS_JUDGE_MODELS
+// (CSV of SECONDARY judges; the primary judge is always variant 0) and
+// reports the interface-sensitivity bar (max pairwise accuracy delta). Bare
+// flag samples 50. Empty CSV degrades to a SKIPPED line — never fatal.
+const robArg = args.find((a) => a === "--robustness" || a.startsWith("--robustness="));
+const ROBUSTNESS_SAMPLE_N = robArg
+  ? robArg.includes("=")
+    ? Math.max(1, Number.parseInt(robArg.split("=")[1], 10) || 50)
+    : 50
+  : 0;
+// Fixed seed (same algorithm as STABILITY_SEED) so robustness samples stay
+// comparable across invocations.
+const ROBUSTNESS_SEED = 20261008;
 
 // Dimension weights for composite scoring (from PubHealthBench hybrid-retrieval
 // study: judge-human agreement is strongest for faithfulness and completeness).
@@ -158,6 +182,105 @@ export function parseAttribution(raw) {
   }
   return null;
 }
+
+// ── Supersession split (knowledge-update probe, QW3 2026-10-12) ────────────
+// LongMemEval `knowledge-update` questions are the ones whose ground truth
+// involves an updated value (revision → slot-merge recall). The official KU
+// judge template tolerates responses that carry the old value next to the
+// updated one ("contains some previous information along with an updated
+// answer … considered as correct"), so plain accuracy cannot tell a clean
+// merge from a both-slots answer. One extra judge pass per knowledge-update
+// question splits that exposure: (a) correct-slot — does the response state
+// the updated value? (b) stale-exposure — does it also state the superseded
+// value? Baseline measurement that gates the A2 MINDSET hysteresis lane; no
+// behavior change to the memory engine.
+
+export function buildSupersessionPrompt(question, answer, response) {
+  return `I will give you a question whose correct answer reflects the user's most recent update to a fact, the correct updated answer, and a response from a model. Judge the response on two independent axes:
+
+1. slot: Does the response state the updated value (allowing trivial paraphrase or simple one-step derivation)?
+2. stale: Does the response also state a prior, superseded value for the same attribute — an outdated value that the user later changed?
+
+Question: ${question}
+
+Correct (updated) Answer: ${answer}
+
+Model Response: ${response}
+
+Answer with exactly one line in this format (choose one value for each label) and nothing else:
+slot=<correct|incorrect> stale=<exposed|clean>
+Example: slot=correct stale=clean`;
+}
+
+// The instruction line spells labels as slot=<correct|incorrect>, so an echo
+// of the format line cannot match. Take the LAST match per axis — judges that
+// elaborate put the final answer on the final line.
+function lastLabelMatch(re, s) {
+  re.lastIndex = 0;
+  let last = null;
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    last = m;
+  }
+  return last;
+}
+
+export function parseSupersession(raw) {
+  const s = String(raw ?? "").toLowerCase();
+  const slot = lastLabelMatch(/slot\s*=\s*(correct|incorrect)/g, s);
+  const stale = lastLabelMatch(/stale\s*=\s*(exposed|clean)/g, s);
+  return {
+    correctSlot: slot ? slot[1] === "correct" : null,
+    staleExposed: stale ? stale[1] === "exposed" : null,
+  };
+}
+
+/** Cross-tab of the probe against the main yes/no verdict. */
+export function summarizeSupersession(rows) {
+  const out = {
+    probed: rows.length,
+    unparseable: rows.filter((r) => r.correctSlot === null || r.staleExposed === null).length,
+    correctSlot: rows.filter((r) => r.correctSlot === true).length,
+    staleExposed: rows.filter((r) => r.staleExposed === true).length,
+    staleAmongJudgedCorrect: { n: 0, stale: 0 },
+    staleAmongJudgedMisses: { n: 0, stale: 0 },
+  };
+  for (const r of rows) {
+    if (r.verdict === true) {
+      out.staleAmongJudgedCorrect.n += 1;
+      if (r.staleExposed === true) out.staleAmongJudgedCorrect.stale += 1;
+    } else if (r.verdict === false) {
+      out.staleAmongJudgedMisses.n += 1;
+      if (r.staleExposed === true) out.staleAmongJudgedMisses.stale += 1;
+    }
+  }
+  return out;
+}
+
+// ── End supersession split helpers ───────────────────────────────────────
+
+// ── Judge-spec stamp (ARCH-2 H1, 2026-10-12) ───────────────────────────────
+// Composes this run's JudgeSpec: canonical core (surface/estimand/resolution)
+// + the evaluator stamp. Resolution flips to "confidence" when dimension
+// scoring is on (the judge then emits 0-10 dimension scores, not just yes/no).
+
+export function buildJudgeSpec() {
+  return {
+    ...LONGMEMEVAL_SCORER_SPEC_CORE,
+    resolution: process.env.LONGMEMEVAL_DIMENSION_SCORING === "1" ? "confidence" : "verdict",
+    evaluator: { model: JUDGE_MODEL, promptRevision: JUDGE_PROMPT_REVISION },
+  };
+}
+
+/** H2: judgeSpec header record first, then verdict lines — additive-only. */
+export function buildEvalOutputLines(verdicts, judgeSpec) {
+  return [
+    JSON.stringify({ recordType: "judgeSpec", ...judgeSpec }),
+    ...verdicts.map((v) => JSON.stringify(v)),
+  ];
+}
+
+// ── End judge-spec stamp helpers ─────────────────────────────────────────
 
 // ── End miss attribution helpers ───────────────────────────────────────────
 
@@ -309,9 +432,10 @@ async function throttleJudge() {
 // can bypass a congested Z.ai. Set JUDGE_BASE_URL + JUDGE_API_KEY + JUDGE_MODEL.
 const JUDGE_BASE_URL = process.env.JUDGE_BASE_URL ?? null;
 
-async function callJudge({ apiKey, prompt }) {
+async function callJudge({ apiKey, prompt, model }) {
   await throttleJudge();
-  const isOpenAI = JUDGE_MODEL.startsWith("gpt-");
+  const judgeModel = model ?? JUDGE_MODEL;
+  const isOpenAI = judgeModel.startsWith("gpt-");
   const isZai = !isOpenAI && !JUDGE_BASE_URL;
   const url = JUDGE_BASE_URL
     ? `${JUDGE_BASE_URL.replace(/\/$/, "")}/chat/completions`
@@ -319,7 +443,7 @@ async function callJudge({ apiKey, prompt }) {
       ? "https://api.openai.com/v1/chat/completions"
       : "https://api.z.ai/api/coding/paas/v4/chat/completions";
   const body = {
-    model: JUDGE_MODEL,
+    model: judgeModel,
     messages: [{ role: "user", content: prompt }],
     temperature: 0,
   };
@@ -406,6 +530,25 @@ async function main() {
       `Stability check: ${STABILITY_CHECK} repeats over a deterministic sample of up to ${STABILITY_SAMPLE} byte-identical answers`,
     );
   }
+  if (!SUPERSESSION_SPLIT) {
+    console.log(`Supersession split: disabled (--no-supersession)`);
+  }
+  // H3: render the judge spec beside the results so every number this run
+  // prints is attributable to an estimator + evaluator pair.
+  const judgeSpec = buildJudgeSpec();
+  console.log(`Judge spec: ${describeJudgeSpec(judgeSpec)}`);
+  if (ROBUSTNESS_SAMPLE_N > 0) {
+    const secondaryCsv = process.env.ROBUSTNESS_JUDGE_MODELS ?? "";
+    const secondaryModels = secondaryCsv
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    console.log(
+      secondaryModels.length > 0
+        ? `Robustness: sample ${ROBUSTNESS_SAMPLE_N} across ${secondaryModels.length + 1} judge variants (primary + ROBUSTNESS_JUDGE_MODELS)`
+        : `Robustness: configured but ROBUSTNESS_JUDGE_MODELS is empty — will report SKIPPED`,
+    );
+  }
 
   // Echo the run manifest (sibling of the hypothesis file) so scored numbers
   // are always printed next to the configuration that produced them.
@@ -421,6 +564,8 @@ async function main() {
         promptVersion: manifest.promptVersion,
         timestamp: manifest.timestamp,
         filterTag: manifest.filterTag,
+        judgeSpec,
+        judgeSpecRender: describeJudgeSpec(judgeSpec),
       };
       console.log(`Manifest: ${JSON.stringify(echo)}`);
     } catch {
@@ -532,6 +677,30 @@ async function main() {
         }
       }
     }
+    // Supersession split (QW3): one extra judge pass per knowledge-update
+    // question, regardless of verdict — a judged-correct both-slots merge is
+    // exactly the tolerated noise this probe exists to count.
+    if (SUPERSESSION_SPLIT && t.oracle.question_type === "knowledge-update") {
+      try {
+        const rawSup = await callJudge({
+          apiKey,
+          prompt: buildSupersessionPrompt(
+            t.oracle.question,
+            t.oracle.answer,
+            t.hyp.hypothesis ?? "",
+          ),
+        });
+        const sup = parseSupersession(rawSup);
+        if (sup.correctSlot !== null) {
+          result.supersession_correct_slot = sup.correctSlot;
+        }
+        if (sup.staleExposed !== null) {
+          result.supersession_stale_exposed = sup.staleExposed;
+        }
+      } catch (e) {
+        result.supersession_error = e.message;
+      }
+    }
     return result;
   });
   const elapsedMin = ((Date.now() - t0) / 60000).toFixed(1);
@@ -593,6 +762,49 @@ async function main() {
     console.log(
       `  miss attribution: ${retrievalMisses} retrieval-miss, ${readerMisses} reader-miss, ${unattributed} unattributed, of ${judgedMisses.length} judged misses`,
     );
+  }
+
+  // Supersession split (QW3, 2026-10-12): stale-exposure + correct-slot rates
+  // over knowledge-update questions — the revision→slot-merge baseline that
+  // gates MINDSET hysteresis. Deliberately "X of N" shaped; must not match the
+  // `type hits/total (pct%)` lines optimize-weights.ts parses.
+  const supRows = verdicts
+    .filter(
+      (v) =>
+        v.question_type === "knowledge-update" &&
+        (typeof v.supersession_correct_slot === "boolean" ||
+          typeof v.supersession_stale_exposed === "boolean"),
+    )
+    .map((v) => ({
+      verdict: v.verdict,
+      correctSlot:
+        typeof v.supersession_correct_slot === "boolean" ? v.supersession_correct_slot : null,
+      staleExposed:
+        typeof v.supersession_stale_exposed === "boolean" ? v.supersession_stale_exposed : null,
+    }));
+  if (supRows.length > 0) {
+    const s = summarizeSupersession(supRows);
+    const slotPct = Math.round((s.correctSlot / s.probed) * 100);
+    const stalePct = Math.round((s.staleExposed / s.probed) * 100);
+    console.log(
+      `  supersession correct-slot: ${s.correctSlot} of ${s.probed} probed knowledge-update answers (${slotPct}%)`,
+    );
+    console.log(
+      `  supersession stale-exposure: ${s.staleExposed} of ${s.probed} probed knowledge-update answers (${stalePct}%)`,
+    );
+    console.log(
+      `  stale exposure among judged-correct: ${s.staleAmongJudgedCorrect.stale} of ${s.staleAmongJudgedCorrect.n} (both-slots merges the KU template tolerates)`,
+    );
+    console.log(
+      `  stale exposure among judged-misses: ${s.staleAmongJudgedMisses.stale} of ${s.staleAmongJudgedMisses.n} (old-value answers)`,
+    );
+    if (s.unparseable > 0) {
+      console.log(`  supersession unparseable probe outputs: ${s.unparseable}`);
+    }
+    const supErrors = verdicts.filter((v) => v.supersession_error).length;
+    if (supErrors > 0) {
+      console.log(`  supersession probe errors: ${supErrors}`);
+    }
   }
 
   if (doDimensionScoring) {
@@ -660,8 +872,49 @@ async function main() {
     console.log(`Wrote ${stabilityPath}`);
   }
 
+  // Robustness bar (ARCH-2, 2026-10-12): interface-sensitivity measurement —
+  // the SAME deterministic sample judged by every variant; max pairwise
+  // accuracy delta is the bar. Judge calls = sample × variants (bounded like
+  // the stability path). Degrades to a SKIPPED line with no secondaries.
+  if (ROBUSTNESS_SAMPLE_N > 0) {
+    const secondaryCsv = process.env.ROBUSTNESS_JUDGE_MODELS ?? "";
+    const secondaryModels = secondaryCsv
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const sample = pickStabilitySample(tasks, ROBUSTNESS_SAMPLE_N, ROBUSTNESS_SEED);
+    const bar = await computeRobustnessBar({
+      sample,
+      primaryModel: JUDGE_MODEL,
+      secondaryModels,
+      judge: async (t, model) =>
+        parseVerdict(
+          await callJudge({
+            apiKey,
+            model,
+            prompt: buildPrompt(
+              t.oracle.question_type,
+              t.oracle.question,
+              t.oracle.answer,
+              t.hyp.hypothesis ?? "",
+            ),
+          }),
+        ),
+    });
+    console.log(`  ${bar.render}`);
+    if (bar.status === "ok") {
+      const robustnessPath = `${hypArg}.robustness-${JUDGE_MODEL}.jsonl`;
+      const rows = [
+        ...bar.rows.map((r) => JSON.stringify(r)),
+        JSON.stringify({ recordType: "robustnessBar", maxDelta: bar.maxDelta, render: bar.render }),
+      ];
+      await writeFile(robustnessPath, rows.join("\n") + "\n");
+      console.log(`Wrote ${robustnessPath}`);
+    }
+  }
+
   const outPath = `${hypArg}.eval-${JUDGE_MODEL}.jsonl`;
-  await writeFile(outPath, verdicts.map((v) => JSON.stringify(v)).join("\n") + "\n");
+  await writeFile(outPath, buildEvalOutputLines(verdicts, judgeSpec).join("\n") + "\n");
   console.log(`\nWrote ${outPath}`);
 }
 
