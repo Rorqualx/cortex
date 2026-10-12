@@ -156,7 +156,6 @@ describe("Codex context window config", () => {
 });
 
 describe("Codex ring-zero thread config", () => {
-
   // Fork: re-applied upstream-sync graft (fork test coverage kept over upstream rewrite)
   it("accepts upstream-shaped inactive rows for the disabled MCP names", async () => {
     const request = vi.fn(async () => ({
@@ -177,7 +176,7 @@ describe("Codex ring-zero thread config", () => {
       { threadId: "thread-restricted", detail: "toolsAndAuthOnly" },
       { signal: undefined },
     );
-  })
+  });
   it.each([
     {
       name: "a missing admitted app",
@@ -568,7 +567,6 @@ function expectSingleLogMessage(
 }
 
 describe("Codex app-server native code mode config", () => {
-
   // Fork: re-applied upstream-sync graft (fork test coverage kept over upstream rewrite)
   it("preserves the OpenClaw default for Codex's materialized unauthored default", () => {
     expect(buildCodexProjectDocThreadConfig()).toEqual({ project_doc_max_bytes: 131_072 });
@@ -579,11 +577,11 @@ describe("Codex app-server native code mode config", () => {
         layers: [],
       }),
     ).toEqual({ project_doc_max_bytes: 131_072 });
-  })
+  });
 
   // Fork: re-applied upstream-sync graft (fork test coverage kept over upstream rewrite)
-  it("keeps the configured runtime reviewer on turn start", () => {
-    const request = buildTurnStartParams(createAttemptParams({ provider: "openai" }), {
+  it("keeps the configured runtime reviewer on turn start", async () => {
+    const request = await buildTurnStartParams(createAttemptParams({ provider: "openai" }), {
       threadId: "thread-1",
       cwd: "/repo",
       appServer: {
@@ -593,7 +591,7 @@ describe("Codex app-server native code mode config", () => {
     });
 
     expect(request.approvalsReviewer).toBe("auto_review");
-  })
+  });
 
   // Fork: re-applied upstream-sync graft (fork test coverage kept over upstream rewrite)
   it("uses the shared Skill Forge guidance when skill_forge is available", () => {
@@ -623,7 +621,7 @@ describe("Codex app-server native code mode config", () => {
     expect(instructions).toContain(
       "Do not directly modify forge skill files with `write`, `edit`, or `exec`. Use `skill_forge` actions to manage the pipeline.",
     );
-  })
+  });
   it("never advertises unavailable delegation or session tools", () => {
     const restrictedParams = [
       Object.assign(createAttemptParams({ provider: "openai" }), {
@@ -1091,7 +1089,6 @@ describe("Codex app-server turn params", () => {
 });
 
 describe("Codex app-server model provider selection", () => {
-
   // Fork: re-applied upstream-sync graft (fork test coverage kept over upstream rewrite)
   it("omits public openai modelProvider when forwarding native Codex auth on thread/start", () => {
     const request = buildThreadStartParams(
@@ -1109,7 +1106,7 @@ describe("Codex app-server model provider selection", () => {
     );
 
     expect(request).not.toHaveProperty("modelProvider");
-  })
+  });
   it.each([
     {
       name: "bound native profile",
