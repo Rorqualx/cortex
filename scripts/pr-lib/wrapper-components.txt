@@ -344,6 +344,7 @@ src/agents/worktrees/repository-paths.ts
 src/agents/worktrees/run-end-lifecycle.ts
 src/agents/sandbox/registry-lifecycle.ts
 src/agents/sandbox/registry-publication.ts
+src/config/sessions/session-actor-command.ts
 src/config/sessions/session-actor-executor.ts
 src/config/sessions/session-actor-sqlite.ts
 src/config/sessions/session-actor-transaction.ts
@@ -585,6 +586,7 @@ src/config/redact-snapshot.secret-ref.ts
 src/config/redact-snapshot.ts
 src/config/resolution-facts.ts
 src/config/runtime-config-capture-state.ts
+src/config/runtime-config-publication.ts
 src/config/runtime-config-snapshot-match.ts
 src/config/runtime-overrides.ts
 src/config/runtime-session-changes.ts
@@ -646,10 +648,13 @@ src/config/sessions/session-incognito-transcript-contract.ts
 src/state/artifact-preserving-state-reads.ts
 src/state/incognito-session-error.ts
 src/config/sessions/session-model-context-projection.ts
+src/config/sessions/session-model-context-navigation.ts
+src/config/sessions/session-model-context-read.ts
 src/config/sessions/session-model-context-window.ts
 src/config/sessions/session-mutation-conflict-error.ts
 src/config/sessions/session-pending-input-custody-error.ts
 src/config/sessions/session-pending-input-operations.types.ts
+src/config/sessions/session-predicate-columns.ts
 src/config/sessions/session-transcript-writer-claim-error.ts
 src/config/sessions/session-source-authority.ts
 src/config/sessions/session-sqlite-target-paths.ts
@@ -670,9 +675,10 @@ src/config/sessions/store-entry.ts
 src/config/sessions/targets-collision.ts
 src/config/sessions/targets-configured-agents.ts
 src/config/sessions/targets-path-validation.ts
-src/config/sessions/targets-read-availability.ts
+src/config/sessions/targets-read-availability.worker.ts
 src/config/sessions/targets.ts
 src/config/sessions/transcript-payload.ts
+src/config/sessions/transcript-predicate-fields.ts
 src/config/sessions/transcript-target-binding.ts
 src/config/sessions/version.ts
 src/config/shell-env-expected-keys.ts
@@ -1037,6 +1043,7 @@ src/infra/sqlite-index-schema.ts
 src/infra/sqlite-integrity-worker-error.ts
 src/infra/sqlite-integrity-worker.ts
 src/infra/sqlite-integrity.ts
+src/infra/sqlite-jsonl-budget-error.ts
 src/infra/sqlite-jsonl-budget.ts
 src/infra/sqlite-live-snapshot.ts
 src/infra/sqlite-lifecycle-errors.ts
@@ -1134,7 +1141,6 @@ src/infra/state-migrations.media-persistence-targets.ts
 src/infra/state-migrations.receipts.ts
 src/infra/tcp-port.ts
 src/infra/temp-artifact-cleanup.ts
-src/infra/temp-directory-usage.ts
 src/infra/test-runtime-env.ts
 src/infra/tmp-openclaw-dir.ts
 src/infra/update-channels.ts
@@ -1280,6 +1286,8 @@ src/plugins/clawhub-error-codes.ts
 src/plugins/command-execution-lock.ts
 src/plugins/compat/agent-harness-records.ts
 src/plugins/compat/agent-list-runtime-projection-records.ts
+src/plugins/compat/assistant-text-phase-terminal-hint-record.ts
+src/plugins/compat/auth-async-record.ts
 src/plugins/compat/channel-pairing-record.ts
 src/plugins/compat/deprecation-marking.ts
 src/plugins/compat/media-legacy-projection.ts
@@ -1471,7 +1479,6 @@ src/plugins/plugin-source-admission-store.ts
 src/plugins/plugin-source-admission.types.ts
 src/plugins/plugin-source-build.ts
 src/plugins/plugin-source-capture-context.ts
-src/plugins/plugin-source-capture-cleanup.ts
 src/plugins/plugin-source-capture-directory.ts
 src/plugins/plugin-source-capture-native-loads.ts
 src/plugins/plugin-source-capture-path.ts
@@ -1674,6 +1681,7 @@ src/state/config-machine-state-async.ts
 src/state/config-machine-state-write.ts
 src/state/config-machine-state.ts
 src/state/creator-namespace-migration.ts
+src/state/json-predicate-fields.ts
 src/state/openclaw-agent-board-schema.ts
 src/state/openclaw-agent-canonical-validation-migration.ts
 src/state/openclaw-agent-canonical-validation-receipt.ts
@@ -1727,6 +1735,7 @@ src/state/openclaw-agent-execution-owner.ts
 src/state/openclaw-agent-execution-scope.ts
 src/state/openclaw-agent-execution.ts
 src/state/openclaw-agent-goal-operations-schema.ts
+src/state/openclaw-agent-json-predicate-schema.ts
 src/state/openclaw-agent-message-tool-outcome-schema.ts
 src/state/openclaw-agent-participants-migration.ts
 src/state/openclaw-agent-pending-inputs-schema.ts
@@ -1978,6 +1987,7 @@ src/config/sessions/session-accessor.sqlite-entry-facts.worker.ts
 src/config/sessions/session-accessor.sqlite-entry-receipt.ts
 src/config/sessions/session-accessor.sqlite-entry-worker-publication.ts
 src/config/sessions/session-transcript-authority.ts
+src/config/sessions/session-transcript-context-facts.ts
 src/config/sessions/session-accessor.sqlite-incognito-sharing.ts
 src/config/sessions/session-accessor.sqlite-maintenance-age-queries.ts
 src/config/sessions/session-accessor.sqlite-maintenance-age.ts

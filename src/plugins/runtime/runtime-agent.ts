@@ -1,6 +1,9 @@
 import { resolveAgentDir, resolveAgentWorkspaceDir } from "../../agents/agent-scope.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../../agents/defaults.js";
-import { resolveEmbeddedCliBackendDispatchEligibility } from "../../agents/embedded-agent-runner/cli-backend-dispatch-eligibility.js";
+import {
+  resolveEmbeddedCliBackendDispatchEligibility,
+  resolveEmbeddedCliBackendDispatchEligibilityAsync,
+} from "../../agents/embedded-agent-runner/cli-backend-dispatch-eligibility.js";
 import { resolveAgentIdentity } from "../../agents/identity.js";
 import {
   buildConfiguredModelCatalog,
@@ -32,6 +35,7 @@ import {
   getSessionEntryByIdAsync,
 } from "../../plugin-sdk/session-store-runtime-internal.js";
 import {
+  listSessionEntriesAsync,
   patchSessionEntry,
   prepareSessionEntryPatch,
   updateSessionStoreEntry,
@@ -39,6 +43,7 @@ import {
 } from "../../plugin-sdk/session-store-runtime.js";
 import { beginSessionWorkAdmission } from "../../sessions/session-lifecycle-admission.js";
 import { createLazyRuntimeMethod, createLazyRuntimeModule } from "../../shared/lazy-runtime.js";
+import { warnPluginSdkDeprecation } from "../sdk-deprecation.js";
 import { resolveAgentCatalogCreateTarget } from "./runtime-agent-session-catalog.js";
 import { createRuntimeSessionEntry } from "./runtime-agent-session-create.js";
 import { ensurePluginAgentWorkspace } from "./runtime-agent-workspace.js";
@@ -79,6 +84,11 @@ function getSessionEntry(params: RuntimeSessionStoreReadParams): SessionEntry | 
 }
 
 const listSessionEntries: RuntimeSession["listSessionEntries"] = (params = {}) => {
+  warnPluginSdkDeprecation({
+    family: "session-store",
+    method: "runtime.agent.session.listSessionEntries",
+    replacement: "runtime.agent.session.listSessionEntriesAsync",
+  });
   const listEntries = params.readOnly
     ? listAccessorSessionEntriesReadOnly
     : listAccessorSessionEntries;
@@ -109,18 +119,11 @@ async function runWithSessionWorkAdmission<T>(
   return runAdmittedWork();
 
   async function runAdmittedWork(): Promise<T> {
-    // Capture native identity before yielding so queued work cannot adopt a replacement.
-    const initialEntry = source
-      ? await readSessionEntryReadOnlyInWorker({
-          storePath: params.storePath,
-          sessionKey: params.sessionKey,
-          readConsistency: "latest",
-        })
-      : getSessionEntry({
-          storePath: params.storePath,
-          sessionKey: params.sessionKey,
-          readConsistency: "latest",
-        });
+    const initialEntry = await readSessionEntryReadOnlyInWorker({
+      storePath: params.storePath,
+      sessionKey: params.sessionKey,
+      readConsistency: "latest",
+    });
     const lifecycleAbortController = new AbortController();
     const admission = await beginSessionWorkAdmission({
       scope: params.storePath,
@@ -204,6 +207,7 @@ export function createRuntimeAgent(): PluginRuntime["agent"] {
     },
     resolveAgentTimeoutMs,
     resolveCliBackendDispatchEligibility: resolveEmbeddedCliBackendDispatchEligibility,
+    resolveCliBackendDispatchEligibilityAsync: resolveEmbeddedCliBackendDispatchEligibilityAsync,
     ensureAgentWorkspace: ensurePluginAgentWorkspace,
   } satisfies Omit<
     PluginRuntime["agent"],
@@ -241,6 +245,7 @@ export function createRuntimeAgent(): PluginRuntime["agent"] {
     getSessionEntryAsync,
     getSessionEntryByIdAsync,
     listSessionEntries,
+    listSessionEntriesAsync,
     createSessionEntryListReader: async (
       params: Parameters<RuntimeSession["createSessionEntryListReader"]>[0],
     ) =>

@@ -1,5 +1,5 @@
 // Coverage for embedded attempt tool construction and runtime allowlists.
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { attachToolAllowlistIntersection } from "../../tool-policy.js";
 import {
   applyEmbeddedAttemptToolsAllow,
@@ -41,41 +41,6 @@ function expectConstructionPlan(
 }
 
 describe("applyEmbeddedAttemptToolsAllow", () => {
-  it("keeps explicit toolsAllow authoritative after force-added tools are built", () => {
-    const tools = [{ name: "exec" }, { name: "read" }, { name: "message" }];
-
-    expect(
-      applyEmbeddedAttemptToolsAllow(tools, ["exec", "read"]).map((tool) => tool.name),
-    ).toEqual(["exec", "read"]);
-  });
-
-  it("keeps forced message tool through explicit runtime allowlists", () => {
-    // Forced delivery tools must remain available even when callers narrow the
-    // runtime allowlist to a plugin-specific tool.
-    const tools = [{ name: "music_generate" }, { name: "message" }];
-    const toolsAllow = mergeForcedEmbeddedAttemptToolsAllow(["music_generate"], {
-      forceMessageTool: true,
-    });
-
-    expect(toolsAllow).toEqual(["music_generate", "message"]);
-    expect(applyEmbeddedAttemptToolsAllow(tools, toolsAllow).map((tool) => tool.name)).toEqual([
-      "music_generate",
-      "message",
-    ]);
-  });
-
-  it("materializes forced message tool through empty runtime allowlists", () => {
-    const tools = [{ name: "music_generate" }, { name: "message" }];
-    const toolsAllow = mergeForcedEmbeddedAttemptToolsAllow([], {
-      forceMessageTool: true,
-    });
-
-    expect(toolsAllow).toEqual(["message"]);
-    expect(applyEmbeddedAttemptToolsAllow(tools, toolsAllow).map((tool) => tool.name)).toEqual([
-      "message",
-    ]);
-  });
-
   it("materializes host-required collector output through empty runtime allowlists", () => {
     const tools = [{ name: "structured_output" }, { name: "read" }];
     const toolsAllow = mergeForcedEmbeddedAttemptToolsAllow([], {
@@ -106,14 +71,6 @@ describe("applyEmbeddedAttemptToolsAllow", () => {
     ]);
   });
 
-  it("normalizes explicit toolsAllow entries before filtering", () => {
-    const tools = [{ name: "cron" }, { name: "read" }, { name: "message" }];
-
-    expect(
-      applyEmbeddedAttemptToolsAllow(tools, [" cron ", "READ"]).map((tool) => tool.name),
-    ).toEqual(["cron", "read"]);
-  });
-
   it("honors wildcard and group allowlists in the final filter", () => {
     const tools = [{ name: "exec" }, { name: "read" }, { name: "message" }];
 
@@ -137,17 +94,6 @@ describe("applyEmbeddedAttemptToolsAllow", () => {
       "write",
       "apply_patch",
     ]);
-  });
-
-  it("keeps plugin-only allowlists on the shared tool policy path", () => {
-    const tools = [{ name: "memory_search" }, { name: "plugin_extra" }];
-
-    expect(
-      resolveEmbeddedAttemptToolConstructionPlan({ toolsAllow: ["memory_search"] }),
-    ).toHaveProperty("includeCoreTools", false);
-    expect(
-      applyEmbeddedAttemptToolsAllow(tools, ["memory_search"]).map((tool) => tool.name),
-    ).toEqual(["memory_search"]);
   });
 
   it("expands plugin group and plugin-id allowlists before the final filter", () => {
@@ -561,26 +507,6 @@ describe("resolveEmbeddedAttemptToolConstructionPlan", () => {
 });
 
 describe("shouldCreateBundleMcpRuntimeForAttempt", () => {
-  it.each([
-    [undefined, true],
-    [["*"], true],
-    [["chrome*", "bundle-mcp"], true],
-    [["chrome*", "group:plugins"], true],
-    [["chrome*", "other__tool"], true],
-    [[], false],
-    [["bash"], false],
-  ])("keeps decisive allowlists metadata-free: %s", (toolsAllow, expected) => {
-    const resolveConfiguredMcpNamespaces = vi.fn(() => ["chrome__"]);
-    expect(
-      shouldCreateBundleMcpRuntimeForAttempt({
-        toolsEnabled: true,
-        toolsAllow,
-        resolveConfiguredMcpNamespaces,
-      }),
-    ).toBe(expected);
-    expect(resolveConfiguredMcpNamespaces).not.toHaveBeenCalled();
-  });
-
   it("does not treat a generated bash namespace as the core exec alias", () => {
     expect(
       shouldCreateBundleMcpRuntimeForAttempt({

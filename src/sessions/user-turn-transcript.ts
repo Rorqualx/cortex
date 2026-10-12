@@ -677,7 +677,7 @@ export function createUserTurnTranscriptRecorder(
     },
     getPersistedMessage: () =>
       admittedMessage ?? runtimePersistedMessage ?? persistedResult?.message,
-    captureModelPromptProjection: async (text, assertCurrent, options) => {
+    captureModelPromptProjection: async (text, assertCurrent) => {
       assertCurrent();
       await waitForRuntimePersistence();
       assertCurrent();
@@ -695,7 +695,6 @@ export function createUserTurnTranscriptRecorder(
         admission,
         message: admittedMessage,
         text,
-        requestLocal: options?.requestLocal,
         // SAFETY: This is the host config already consumed by persistUserTurnTranscript.
         config: resolvedPersistenceTarget?.config as SessionTranscriptTurnPersistOptions["config"],
         assertCurrent,

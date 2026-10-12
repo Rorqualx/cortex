@@ -18,7 +18,6 @@ import {
   emitReasoningEnd,
   extractAssistantStreamSnapshot,
   hasMessageToolOnlySourceDelivery,
-  isAssistantTextPhasePending,
   isResponsesApiAssistantMessage,
   isSubscribeTranscriptOnlyOpenClawAssistantMessage,
   openReasoningStream,
@@ -176,10 +175,6 @@ export function handleMessageUpdate(
     !deliveryPhase &&
     Boolean(streamItemId) &&
     isResponsesApiAssistantMessage(partialAssistant);
-  // These transports resolve commentary only at the tool boundary. Withhold
-  // early unphased deltas from durable block replies until that decision exists.
-  const isPhasePendingText =
-    !deliveryPhase && isAssistantTextPhasePending(partialAssistant, evtType);
   const hasResponsesContentIndex =
     streamContentIndex !== undefined && isResponsesApiAssistantMessage(partialAssistant);
   let streamItemChanged = false;

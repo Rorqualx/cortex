@@ -155,6 +155,9 @@ export function createPluginRuntimeMock(overrides: PluginRuntimeMockOverrides = 
       resolveCliBackendDispatchEligibility: vi.fn<
         PluginRuntime["agent"]["resolveCliBackendDispatchEligibility"]
       >(() => undefined),
+      resolveCliBackendDispatchEligibilityAsync: vi.fn<
+        PluginRuntime["agent"]["resolveCliBackendDispatchEligibilityAsync"]
+      >(async () => undefined),
       normalizeThinkingLevel:
         vi.fn<PluginRuntime["agent"]["normalizeThinkingLevel"]>(normalizeThinkLevel),
       resolveThinkingPolicy: vi.fn<PluginRuntime["agent"]["resolveThinkingPolicy"]>(() => ({
@@ -253,6 +256,9 @@ export function createPluginRuntimeMock(overrides: PluginRuntimeMockOverrides = 
         listSessionEntries: vi.fn<PluginRuntime["agent"]["session"]["listSessionEntries"]>(
           () => [],
         ),
+        listSessionEntriesAsync: vi
+          .fn<PluginRuntime["agent"]["session"]["listSessionEntriesAsync"]>()
+          .mockResolvedValue([]),
         createSessionEntryListReader: vi
           .fn<PluginRuntime["agent"]["session"]["createSessionEntryListReader"]>()
           .mockResolvedValue(async () => ({ entries: [], assertCurrent: () => {} })),

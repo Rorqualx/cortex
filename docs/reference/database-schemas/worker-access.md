@@ -26,6 +26,17 @@ paths are migration debt, not a pattern to extend. The
 [migration inventory](/reference/database-schemas/worker-access-inventory) separates
 candidate main-thread paths from SQL already executing in workers.
 
+Cold session creation uses the existing session-entry worker for requested-key
+and parent lookups. Personal default selection reads profile links and its selected
+credential through the existing shared-state and auth-store readers; credential
+authority still applies at the creation effect. Default cron loads resolve their
+saved partition in the same worker operation that loads the jobs. A queued load
+uses the committed partition when that operation starts, without host recapture.
+Memory initialization and status consume source invalidation and vector completeness
+from the index-facts postimage. The publication worker owns vector extension loading
+and retirement, while the retrieval worker owns read-only capability probing.
+These paths add no schema, retention, or update contract.
+
 Managed outgoing media cleanup uses the same retained session reader as media
 serving. Durable session discovery and entry reads execute in the existing
 read workers; bound incognito reads use their actor. Cleanup distinguishes an
@@ -219,6 +230,36 @@ once while retaining the final caller authorization check. These changes preserv
 schemas, stored bytes, permissions, and update behavior. Released synchronous SDK
 approval and placement contracts retain their native effect guards.
 
+Session maintenance retains its acknowledged active-entry count and conservative
+age deadline on the Gateway. Entry write receipts adjust these scheduling facts;
+removals and unknown outcomes invalidate them. Ordinary activity does not dispatch
+a maintenance read before expiry or capacity pressure. Due work takes its existing
+worker snapshot, and its acknowledgment supplies the next deadline without a
+second verification request. Archive file publication records its metadata through
+the canonical agent worker, including after native deletion preparation. Native
+inline maintenance and archive persistence still share the released opaque SDK
+deletion transaction; moving those calls requires that transaction owner's cutover.
+This changes no schemas, retention, stored bytes, or update behavior.
+
+## Session target discovery
+
+Gateway combined listings, search preparation, cron owner discovery, delivery
+context recovery, and ordered runtime candidate selection await the existing
+session history/discovery worker. Target selection returns logical and physical
+store facts together; durable reads do not run SQLite on the Gateway thread.
+Combined topology and row reads share the federation policy used by the native
+maintenance entrypoint. Bound incognito rows remain with their process-held actor;
+unbound incognito stores retain their existing process-local native owner.
+
+Ordinary discovery keeps one captured roster and listing through completion.
+Later registry, path, or row changes are observed on the next owner preparation;
+there is no post-read registry retry or repeated listing-identity capture.
+Write receipts invalidate reusable target facts. Current authorization at
+search disclosure, project removal, and other real effects remains required.
+The released synchronous transcript-hit SDK and native mutation callbacks retain
+their existing kernels until those owning contracts are migrated; this is not a
+claim that all shared discovery kernels are worker-only.
+
 ## Config CLI ownership
 
 ### Non-session bookkeeping
@@ -349,6 +390,18 @@ notification failure cannot undo a committed write or suppress later notificatio
 Failed fact installation retires the affected scope before notification. If its
 owner cannot fence that failure, the batch suppresses public notification and
 reports the failure without replaying the mutation.
+
+Worker backends can use `runSqliteSingleStatementSync` from
+`openclaw/plugin-sdk/sqlite-worker-runtime` for one complete synchronous statement.
+It uses SQLite autocommit while retaining the post-commit publication scope;
+inside an existing transaction it retains the savepoint and outer publication
+owner. Prepare inputs before calling and do no fallible work after the native
+statement in its callback. The native write observer advances the managed write
+token on settlement, without an extra SQL query. Memory source refresh, index
+metadata, and worker-owned heartbeat outcome writes use this path; compound
+writes retain their transactions. Heartbeat claims remain one conditional update,
+so competing runs cannot claim the same outcome.
+Schemas, stored bytes, retention, permissions, and update behavior are unchanged.
 
 Private receipt envelopes identify the operation, physical source and connection
 incarnation, domain, and exact affected keys. Each key contains a postimage,
@@ -620,9 +673,11 @@ a receipt for one key does not certify those sibling guards.
 
 Reads inside an active session writer borrow that writer's execution instead of
 reentering FIFO admission or consuming a potentially unsettled cached postimage.
-Transcript callbacks retain their existing append and preparation queues, and
-the writer settles accepted reads before releasing its reservation. The plain
-reader keeps its projection and error contracts on the supplied database handle.
+Transcript callbacks retain their existing append and preparation queues. Source
+authority and message preparation borrow an append's nested read queue so their
+reads cannot wait behind the append itself. The writer settles accepted reads
+before releasing its reservation. The plain reader keeps its projection and
+error contracts on the supplied database handle.
 Each database retains at most 128 keys and 8 MiB of serialized fact data, including
 saved prompt snapshots; the process retains at most 32 such databases. Least
 recently used entries are evicted when either bound is reached. Eviction, worker
@@ -761,9 +816,13 @@ facts from the actor's replica. Message payload hydration, admitted-user role
 validation, and cold or off-path history retain bounded reads; transcript metadata
 does not stand in for message contents.
 
-Host admission retains the snapshot already detached by the worker message port
-for private receipt comparison. Mutable policy callbacks receive their own copy;
-transaction and commit grants still recheck live authority in their original order.
+Host admission carries the session entry and physical/version identity rather
+than transcript indexes, retry keys, or context membership. Mutable policy callbacks
+receive their own copy; full snapshots stay in read results and committed receipts.
+An append shares the actor's transaction admission and final commit grant. Explicit
+fresh-message and pending-input checks retain their effect boundaries; the final
+grant rechecks live authority and the append's current custody facts before COMMIT.
+FIFO, refusal, timeout, stored data, and update behavior are unchanged.
 
 A cold actor read hydrates its entry, participants, membership, pending-input
 custody, and transcript metadata in one autocommit statement. A cold phase
@@ -1004,6 +1063,15 @@ migrations are complete. Outside writers must use the Gateway or hold exclusive
 ownership while it is stopped. Schemas, stored bytes, retention, and update
 behavior are unchanged; published updaters need no migration for these
 process-local facts.
+
+Transcript projection readers carry generation, raw sequence, mutation time, and
+cold-state facts through their existing synchronous read snapshot. Bounded context
+consumers reuse those facts for watermark and hot-state reads; managed native writes,
+rollback, and the end of the snapshot retire them. Activity recap selection, ancestry,
+and byte-bounded pages share that same snapshot rather than reopening it for each
+step. The SQL projections that exclude large payloads remain in the database.
+These facts do not replace live permission or replay-admission checks. No schema,
+retention, stored bytes, or update behavior changes.
 
 ### Approval, placement, and workspace receipts
 
@@ -4372,8 +4440,10 @@ read worker outside agent writer admission. The retained provider capture checks
 live ownership and publication changes through commit, then releases its custody
 after settlement. Cold protection never reloads the subagent registry on the
 Gateway main thread; no-op planning still avoids that preparation entirely.
-A publication during preparation revokes the capture instead of starting another
-read; the automatic maintenance owner retains its existing bounded retry policy.
+Committed registry publications update the retained capture before the final host
+maintenance grant, without another candidate read or worker-side registry digest.
+Protection published after that grant is ordered after the admitted maintenance
+operation; outside writers must hold exclusive ownership while the Gateway is stopped.
 Slow native transaction diagnostics identify the executing worker; metadata
 requests do not log caller-side elapsed time as reclamation execution time.
 Commit receipts publish archived-entry facts before releasing
@@ -5035,7 +5105,8 @@ and lifecycle authority; the worker compares the durable descendant rows after
 that grant and before committing. Registry preparation preserves unpublished
 intent and current live objects without treating a stale resident snapshot as
 fresh durable state. Reaper maintenance uses the existing compact subagent
-projection, with a fresh protection check at the worker commit boundary.
+projection and owner-published changes at its final host grant. It does not repeat
+the registry scan inside the session worker.
 The batch keeps one synchronous transaction and the existing archive,
 publication, rollback, and uncertain-outcome owners. Native harness mutation
 objects remain with their process-held owner. No cross-database atomicity,
