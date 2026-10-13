@@ -212,6 +212,23 @@ describe("OpenClaw provider index", () => {
       status: "deprecated",
       replacedBy: "deepseek-flash",
     });
+    // 2026-10-13: active entries surface the reasoning_effort capability
+    // (deepseek thinkingFormat dialect) in the pre-install preview catalog,
+    // matching the plugin manifest compat tier.
+    const deepSeekFlash = index.providers.deepseek?.previewCatalog?.models.find(
+      (model) => model.id === "deepseek-flash",
+    );
+    expect(deepSeekFlash?.compat).toMatchObject({
+      thinkingFormat: "deepseek",
+      supportsReasoningEffort: true,
+    });
+    const deepSeekV4Pro = index.providers.deepseek?.previewCatalog?.models.find(
+      (model) => model.id === "deepseek-v4-pro",
+    );
+    expect(deepSeekV4Pro?.compat).toMatchObject({
+      thinkingFormat: "deepseek",
+      supportsReasoningEffort: true,
+    });
     // Older deprecations forward-map straight to the consolidation survivor,
     // never onto another deprecated model.
     const chat = index.providers.deepseek?.previewCatalog?.models.find(

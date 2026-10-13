@@ -74,6 +74,14 @@ export const OPENCLAW_PROVIDER_INDEX = {
             input: ["text", "image"],
             reasoning: true,
             contextWindow: 1000000,
+            // 2026-10-13: surface reasoning_effort as a DeepSeek capability
+            // pre-install (aligns with the plugin manifest compat tier). The
+            // deepseek thinkingFormat dialect emits `thinking: { type }` plus
+            // top-level `reasoning_effort` (extra-params.ts DeepSeek V4 wrapper).
+            compat: {
+              thinkingFormat: "deepseek",
+              supportsReasoningEffort: true,
+            },
           },
           {
             id: "deepseek-v4-flash",
@@ -105,6 +113,10 @@ export const OPENCLAW_PROVIDER_INDEX = {
             input: ["text"],
             reasoning: true,
             contextWindow: 1000000,
+            compat: {
+              thinkingFormat: "deepseek",
+              supportsReasoningEffort: true,
+            },
           },
           {
             id: "deepseek-chat",
