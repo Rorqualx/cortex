@@ -752,7 +752,7 @@ function* createOpenClawToolsSteps(
       imageTool,
       pdfTool,
     ]),
-  ];
+  ].filter((tool): tool is AnyAgentTool => tool !== null && tool !== undefined);
   options?.recordToolPrepStage?.("openclaw-tools:core-tool-list");
   let allTools = tools;
   if (!options?.disablePluginTools) {
