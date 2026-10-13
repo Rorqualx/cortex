@@ -37,6 +37,27 @@ describe("installForgeRecoveryHook", () => {
     } as unknown as SkillSnapshot;
   }
 
+  /** Like snapshotWith, but stamps a forge-lifecycle marker into the frontmatter. */
+  async function snapshotWithLifecycle(
+    name: string,
+    body: string,
+    lifecycle: "trial" | "active" | "stable" | "retired",
+  ): Promise<SkillSnapshot> {
+    const skillDir = path.join(dir, name);
+    await fsp.mkdir(skillDir, { recursive: true });
+    const filePath = path.join(skillDir, "SKILL.md");
+    await fsp.writeFile(
+      filePath,
+      `---\nname: ${name}\ndescription: d\nforge-lifecycle: ${lifecycle}\n---\n\n${body}\n`,
+      "utf8",
+    );
+    return {
+      prompt: "",
+      skills: [],
+      resolvedSkills: [{ name, filePath, baseDir: skillDir, source: "openclaw-skill-forge" }],
+    } as unknown as SkillSnapshot;
+  }
+
   beforeEach(async () => {
     dir = await fsp.mkdtemp(path.join(os.tmpdir(), "forge-hook-"));
   });
@@ -58,6 +79,52 @@ describe("installForgeRecoveryHook", () => {
     expect(text).toContain("Run it twice.");
     // Original error content is preserved before the injected reminder.
     expect(text).toContain("boom");
+    expect(recordUsage).toHaveBeenCalledExactlyOnceWith("forge-recover-exec-via-exec");
+  });
+
+  it("does NOT auto-invoke a trial skill (2026-10-13 lifecycle gate)", async () => {
+    const skills = await snapshotWithLifecycle(
+      "forge-recover-exec-via-exec",
+      "Unproven recovery.",
+      "trial",
+    );
+    const recordUsage = vi.fn();
+    const { agent, getHook } = fakeAgent();
+    installForgeRecoveryHook({ agent, skillsSnapshot: skills, recordUsage });
+
+    const result = await getHook()!(errorContext("exec"));
+    expect(result).toBeUndefined();
+    expect(recordUsage).not.toHaveBeenCalled();
+  });
+
+  it("does NOT auto-invoke a retired-lifecycle skill even if still resolved", async () => {
+    const skills = await snapshotWithLifecycle(
+      "forge-recover-exec-via-exec",
+      "Stale recovery.",
+      "retired",
+    );
+    const recordUsage = vi.fn();
+    const { agent, getHook } = fakeAgent();
+    installForgeRecoveryHook({ agent, skillsSnapshot: skills, recordUsage });
+
+    const result = await getHook()!(errorContext("exec"));
+    expect(result).toBeUndefined();
+    expect(recordUsage).not.toHaveBeenCalled();
+  });
+
+  it("still auto-invokes stable-lifecycle skills", async () => {
+    const skills = await snapshotWithLifecycle(
+      "forge-recover-exec-via-exec",
+      "Proven recovery.",
+      "stable",
+    );
+    const recordUsage = vi.fn();
+    const { agent, getHook } = fakeAgent();
+    installForgeRecoveryHook({ agent, skillsSnapshot: skills, recordUsage });
+
+    const result = await getHook()!(errorContext("exec"));
+    const text = result?.content?.map((c) => (c.type === "text" ? c.text : "")).join("") ?? "";
+    expect(text).toContain("forge-recover-exec-via-exec");
     expect(recordUsage).toHaveBeenCalledExactlyOnceWith("forge-recover-exec-via-exec");
   });
 

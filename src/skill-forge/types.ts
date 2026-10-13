@@ -35,3 +35,12 @@ export type CaptureSkipped = {
 };
 
 export type CaptureResult = CaptureOk | CaptureSkipped;
+
+/**
+ * Lifecycle of a promoted skill (2026-10-13, Finding 6 — pre-retire fitness
+ * gate). Promoted skills land as "trial" and become auto-invokable only at
+ * "active"; "stable" marks long-run fitness; "retired" mirrors demotion.
+ * Absent markers backfill to "active" so pre-existing promoted skills keep
+ * firing.
+ */
+export type SkillLifecycle = "trial" | "active" | "stable" | "retired";

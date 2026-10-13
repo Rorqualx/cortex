@@ -8,6 +8,10 @@
  */
 import fsp from "node:fs/promises";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import {
+  isAutoInvocableLifecycle,
+  readSkillLifecycleFromContent,
+} from "../../../skill-forge/lifecycle.js";
 import { recordSkillUsage } from "../../../skill-forge/telemetry.js";
 import type { SkillSnapshot } from "../../../skills/types.js";
 import type { AfterToolCallContext, AfterToolCallResult, Agent } from "../../runtime/index.js";
@@ -166,7 +170,14 @@ export function installForgeRecoveryHook(params: {
     fired.add(skill.name);
     let body: string;
     try {
-      body = stripFrontmatter(await fsp.readFile(skill.filePath, "utf8"));
+      const content = await fsp.readFile(skill.filePath, "utf8");
+      // 2026-10-13 lifecycle gate: trial (unproven) and retired skills are
+      // resolved but never auto-invoked; an absent marker backfills to
+      // "active" so pre-existing promoted skills keep firing.
+      if (!isAutoInvocableLifecycle(readSkillLifecycleFromContent(content))) {
+        return hookResult;
+      }
+      body = stripFrontmatter(content);
     } catch {
       return hookResult;
     }

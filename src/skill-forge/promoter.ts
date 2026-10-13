@@ -1,12 +1,20 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { evaluateGate, type GateVerdict } from "./gate.js";
+import { stampSkillLifecycleInFrontmatter } from "./lifecycle.js";
 import {
   resolveSkillForgePromotedSkillDir,
   resolveSkillForgeRetiredSkillDir,
   resolveSkillForgeStagedSkillDir,
 } from "./paths.js";
-import { listTelemetryEntries, recordSkillDemotion, recordSkillPromotion } from "./telemetry.js";
+import {
+  listTelemetryEntries,
+  readTelemetry,
+  recordSkillDemotion,
+  recordSkillLifecycle,
+  recordSkillPromotion,
+} from "./telemetry.js";
+import type { SkillLifecycle } from "./types.js";
 
 export type PromotionResult =
   | {
@@ -16,6 +24,18 @@ export type PromotionResult =
       verdict: GateVerdict;
     }
   | { status: "rejected"; name: string; verdict: GateVerdict };
+
+/** Stamp the lifecycle marker into a skill directory's SKILL.md (best-effort). */
+async function stampLifecycleInSkillMd(dir: string, lifecycle: SkillLifecycle): Promise<void> {
+  const skillMdPath = path.join(dir, "SKILL.md");
+  try {
+    const content = await fsp.readFile(skillMdPath, "utf8");
+    await fsp.writeFile(skillMdPath, stampSkillLifecycleInFrontmatter(content, lifecycle), "utf8");
+  } catch {
+    // A dir without SKILL.md cannot carry the marker; telemetry still records
+    // the lifecycle.
+  }
+}
 
 export async function promoteStagedSkill(params: {
   name: string;
@@ -54,6 +74,10 @@ export async function promoteStagedSkill(params: {
   const promotedDir = resolveSkillForgePromotedSkillDir({ name: params.name, env });
   await fsp.mkdir(path.dirname(promotedDir), { recursive: true });
   await fsp.rename(stagedDir, promotedDir);
+  // 2026-10-13 fitness gate: promoted skills land in "trial" — resolved in the
+  // library but not auto-invokable until fitness is proven (first successful
+  // task flips trial→active via recordSkillUsageOutcome).
+  await stampLifecycleInSkillMd(promotedDir, "trial");
   await recordSkillPromotion({
     name: params.name,
     now: params.now,
@@ -75,8 +99,62 @@ export async function demoteSkill(params: {
   await fsp.mkdir(path.dirname(retiredDir), { recursive: true });
   await fsp.rename(promotedDir, retiredDir);
   await fsp.writeFile(path.join(retiredDir, "retirement-reason.txt"), `${params.reason}\n`, "utf8");
+  await stampLifecycleInSkillMd(retiredDir, "retired");
   await recordSkillDemotion({ name: params.name, reason: params.reason, now: params.now, env });
   return { retiredDir };
+}
+
+/** Allowed forward lifecycle transitions for a promoted skill. */
+const LIFECYCLE_ADVANCEMENTS: Partial<Record<SkillLifecycle, SkillLifecycle>> = {
+  trial: "active",
+  active: "stable",
+};
+
+export type LifecycleAdvancementResult =
+  | {
+      status: "advanced";
+      name: string;
+      from: SkillLifecycle;
+      to: SkillLifecycle;
+      promotedDir: string;
+    }
+  | { status: "noop"; name: string; lifecycle: SkillLifecycle }
+  | { status: "rejected"; name: string; reason: string };
+
+/**
+ * Advance a promoted skill one lifecycle step forward (trial→active,
+ * active→stable). Updates the telemetry entry and mirrors the marker into the
+ * promoted SKILL.md frontmatter, which the recovery auto-invoke gate reads.
+ * Legacy entries without a lifecycle backfill to "active" (see
+ * parseSkillLifecycle), so pre-existing promoted skills advance toward
+ * "stable" rather than being re-gated as trial.
+ */
+export async function advanceSkillLifecycle(params: {
+  name: string;
+  env?: NodeJS.ProcessEnv;
+}): Promise<LifecycleAdvancementResult> {
+  const env = params.env ?? process.env;
+  const entry = await readTelemetry({ name: params.name, env });
+  if (!entry || entry.status !== "promoted") {
+    return {
+      status: "rejected",
+      name: params.name,
+      reason: "no promoted skill telemetry entry",
+    };
+  }
+  const current: SkillLifecycle = entry.lifecycle ?? "active";
+  const next = LIFECYCLE_ADVANCEMENTS[current];
+  if (!next) {
+    return { status: "noop", name: params.name, lifecycle: current };
+  }
+  await recordSkillLifecycle({ name: params.name, lifecycle: next, env });
+  return {
+    status: "advanced",
+    name: params.name,
+    from: current,
+    to: next,
+    promotedDir: resolveSkillForgePromotedSkillDir({ name: params.name, env }),
+  };
 }
 
 export type DecayPolicy = {

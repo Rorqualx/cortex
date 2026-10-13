@@ -9,11 +9,17 @@ import {
 } from "./paths.js";
 import {
   DEFAULT_DECAY_POLICY,
+  advanceSkillLifecycle,
   demoteSkill,
   promoteStagedSkill,
   runDecaySweep,
 } from "./promoter.js";
-import { readTelemetry, recordSkillPromotion, recordSkillUsage } from "./telemetry.js";
+import {
+  readTelemetry,
+  recordSkillPromotion,
+  recordSkillUsage,
+  recordSkillUsageOutcome,
+} from "./telemetry.js";
 
 const VALID_BODY = `
 # Test Skill
@@ -198,5 +204,100 @@ describe("runDecaySweep", () => {
       env: env(),
     });
     expect(demoted).toEqual([]);
+  });
+});
+
+describe("skill lifecycle (2026-10-13 fitness gate)", () => {
+  let stateDir: string;
+  const env = (): NodeJS.ProcessEnv => ({
+    OPENCLAW_STATE_DIR: stateDir,
+    OPENCLAW_TEST_FAST: "1",
+  });
+
+  beforeEach(async () => {
+    stateDir = await fsp.mkdtemp(path.join(os.tmpdir(), "forge-lifecycle-"));
+  });
+
+  afterEach(async () => {
+    await fsp.rm(stateDir, { recursive: true, force: true });
+  });
+
+  it("promotions land as trial in telemetry and SKILL.md frontmatter", async () => {
+    await writeStagedSkill(stateDir, "trial-skill", validSkill("trial-skill"));
+    const result = await promoteStagedSkill({ name: "trial-skill", env: env() });
+    expect(result.status).toBe("promoted");
+
+    const entry = await readTelemetry({ name: "trial-skill", env: env() });
+    expect(entry?.lifecycle).toBe("trial");
+
+    const promotedSkillMd = path.join(
+      resolveSkillForgePromotedSkillDir({ name: "trial-skill", env: env() }),
+      "SKILL.md",
+    );
+    const content = await fsp.readFile(promotedSkillMd, "utf8");
+    expect(content).toContain("forge-lifecycle: trial");
+  });
+
+  it("first successful task outcome flips trial to active (telemetry + SKILL.md)", async () => {
+    await writeStagedSkill(stateDir, "flip-skill", validSkill("flip-skill"));
+    await promoteStagedSkill({ name: "flip-skill", env: env() });
+    await recordSkillUsage({ name: "flip-skill", poolSize: 1, env: env() });
+
+    const stamped = await recordSkillUsageOutcome({
+      name: "flip-skill",
+      taskSucceeded: true,
+      env: env(),
+    });
+    expect(stamped?.lifecycle).toBe("active");
+
+    const entry = await readTelemetry({ name: "flip-skill", env: env() });
+    expect(entry?.lifecycle).toBe("active");
+
+    const promotedSkillMd = path.join(
+      resolveSkillForgePromotedSkillDir({ name: "flip-skill", env: env() }),
+      "SKILL.md",
+    );
+    const content = await fsp.readFile(promotedSkillMd, "utf8");
+    expect(content).toContain("forge-lifecycle: active");
+  });
+
+  it("advanceSkillLifecycle walks trial→active→stable and no-ops at stable", async () => {
+    await writeStagedSkill(stateDir, "walk-skill", validSkill("walk-skill"));
+    await promoteStagedSkill({ name: "walk-skill", env: env() });
+
+    const first = await advanceSkillLifecycle({ name: "walk-skill", env: env() });
+    expect(first).toMatchObject({ status: "advanced", from: "trial", to: "active" });
+    const second = await advanceSkillLifecycle({ name: "walk-skill", env: env() });
+    expect(second).toMatchObject({ status: "advanced", from: "active", to: "stable" });
+    const third = await advanceSkillLifecycle({ name: "walk-skill", env: env() });
+    expect(third).toMatchObject({ status: "noop", lifecycle: "stable" });
+
+    const content = await fsp.readFile(
+      path.join(resolveSkillForgePromotedSkillDir({ name: "walk-skill", env: env() }), "SKILL.md"),
+      "utf8",
+    );
+    expect(content).toContain("forge-lifecycle: stable");
+  });
+
+  it("advanceSkillLifecycle rejects skills with no promoted telemetry entry", async () => {
+    const result = await advanceSkillLifecycle({ name: "ghost-skill", env: env() });
+    expect(result).toMatchObject({ status: "rejected" });
+  });
+
+  it("demotion stamps retired in telemetry and the retired SKILL.md", async () => {
+    const promotedDir = resolveSkillForgePromotedSkillDir({ name: "rip2", env: env() });
+    await fsp.mkdir(promotedDir, { recursive: true });
+    await fsp.writeFile(path.join(promotedDir, "SKILL.md"), validSkill("rip2"), "utf8");
+    await recordSkillPromotion({ name: "rip2", env: env() });
+
+    const { retiredDir } = await demoteSkill({
+      name: "rip2",
+      reason: "no longer relevant",
+      env: env(),
+    });
+    const entry = await readTelemetry({ name: "rip2", env: env() });
+    expect(entry?.lifecycle).toBe("retired");
+    const content = await fsp.readFile(path.join(retiredDir, "SKILL.md"), "utf8");
+    expect(content).toContain("forge-lifecycle: retired");
   });
 });

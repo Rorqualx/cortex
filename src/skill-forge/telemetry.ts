@@ -1,6 +1,8 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { resolveSkillForgeTelemetryDir } from "./paths.js";
+import { stampSkillLifecycleInFrontmatter } from "./lifecycle.js";
+import { resolveSkillForgePromotedSkillDir, resolveSkillForgeTelemetryDir } from "./paths.js";
+import type { SkillLifecycle } from "./types.js";
 
 export type SkillStatus = "staged" | "promoted" | "retired";
 
@@ -29,6 +31,9 @@ export const USAGE_LOG_MAX_RECORDS = 200;
 export type SkillTelemetryEntry = {
   name: string;
   status: SkillStatus;
+  /** Lifecycle of the promoted skill (2026-10-13). Absent on legacy entries
+   * means "active" — see parseSkillLifecycle for the backfill rule. */
+  lifecycle?: SkillLifecycle;
   createdAt: string;
   promotedAt?: string;
   retiredAt?: string;
@@ -107,12 +112,17 @@ export async function recordSkillPromotion(params: {
     ? {
         ...existing,
         status: "promoted",
+        // 2026-10-13 fitness gate: promotions land in "trial"; the first
+        // verified successful task (recordSkillUsageOutcome) flips them to
+        // "active" so the auto-invoke gate re-admits them.
+        lifecycle: "trial",
         promotedAt: now,
         successScore: params.successScore ?? existing.successScore,
       }
     : {
         name: params.name,
         status: "promoted",
+        lifecycle: "trial",
         createdAt: now,
         promotedAt: now,
         usageCount: 0,
@@ -134,12 +144,14 @@ export async function recordSkillDemotion(params: {
     ? {
         ...existing,
         status: "retired",
+        lifecycle: "retired",
         retiredAt: now,
         retiredReason: params.reason,
       }
     : {
         name: params.name,
         status: "retired",
+        lifecycle: "retired",
         createdAt: now,
         retiredAt: now,
         retiredReason: params.reason,
@@ -147,6 +159,58 @@ export async function recordSkillDemotion(params: {
       };
   await writeTelemetry({ entry, env: params.env });
   return entry;
+}
+
+/**
+ * Record a forward lifecycle transition (trial→active, active→stable) on the
+ * telemetry entry and, while the skill is promoted, mirror it into the
+ * promoted SKILL.md frontmatter (the runtime auto-invoke gate reads the file).
+ */
+export async function recordSkillLifecycle(params: {
+  name: string;
+  lifecycle: Exclude<SkillLifecycle, "retired">;
+  env?: NodeJS.ProcessEnv;
+}): Promise<SkillTelemetryEntry | null> {
+  const existing = await readTelemetry({ name: params.name, env: params.env });
+  if (!existing) {
+    return null;
+  }
+  const entry: SkillTelemetryEntry = { ...existing, lifecycle: params.lifecycle };
+  await writeTelemetry({ entry, env: params.env });
+  if (existing.status === "promoted") {
+    await stampPromotedSkillLifecycle({
+      name: params.name,
+      lifecycle: params.lifecycle,
+      env: params.env,
+    });
+  }
+  return entry;
+}
+
+/** Best-effort mirror of the lifecycle into the promoted SKILL.md frontmatter. */
+async function stampPromotedSkillLifecycle(params: {
+  name: string;
+  lifecycle: SkillLifecycle;
+  env?: NodeJS.ProcessEnv;
+}): Promise<void> {
+  try {
+    const skillMdPath = path.join(
+      resolveSkillForgePromotedSkillDir({
+        name: params.name,
+        env: params.env ?? process.env,
+      }),
+      "SKILL.md",
+    );
+    const content = await fsp.readFile(skillMdPath, "utf8");
+    await fsp.writeFile(
+      skillMdPath,
+      stampSkillLifecycleInFrontmatter(content, params.lifecycle),
+      "utf8",
+    );
+  } catch {
+    // Promoted dir may be gone (retired/moved externally); telemetry carries
+    // the lifecycle either way.
+  }
 }
 
 function appendUsageRecord(
@@ -233,7 +297,7 @@ export async function recordSkillUsageOutcome(params: {
       continue;
     }
     usageLog[i] = { ...record, ...missing } as SkillUsageRecord;
-    const entry: SkillTelemetryEntry = {
+    const stamped: SkillTelemetryEntry = {
       ...existing,
       usageLog,
       ...(wanted.taskSucceeded === undefined ? {} : { lastTaskSucceeded: wanted.taskSucceeded }),
@@ -241,7 +305,21 @@ export async function recordSkillUsageOutcome(params: {
         ? {}
         : { lastInvocationOutcome: wanted.invocationOutcome }),
     };
+    // 2026-10-13 fitness gate: the first verified successful task after
+    // promotion proves a trial skill in production — flip it to active so the
+    // auto-invoke gate re-admits it (telemetry + SKILL.md frontmatter).
+    const entry: SkillTelemetryEntry =
+      wanted.taskSucceeded === true && stamped.lifecycle === "trial"
+        ? { ...stamped, lifecycle: "active" }
+        : stamped;
     await writeTelemetry({ entry, env: params.env });
+    if (entry.lifecycle === "active" && stamped.lifecycle === "trial") {
+      await stampPromotedSkillLifecycle({
+        name: params.name,
+        lifecycle: "active",
+        env: params.env,
+      });
+    }
     return entry;
   }
   return null;
