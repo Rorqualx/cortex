@@ -1,5 +1,11 @@
 import type { Candidate } from "./detector.js";
 import {
+  JUDGE_ANCHORS,
+  evaluateJudgeAnchorCompliance,
+  type JudgeAnchorCompliance,
+  type JudgeAnchorResultInput,
+} from "./judge-anchors.js";
+import {
   JUDGE_PROMPT_REVISION,
   SKILL_FORGE_JUDGE_AUDIT_SPEC_CORE,
   type JudgeSpec,
@@ -9,6 +15,7 @@ import {
   type LlmJudgeVerdict,
   SKILL_FORGE_LLM_JUDGE_SYSTEM,
   judgeSkillCandidateWithLlm,
+  judgeSkillCandidateWithStepRubric,
 } from "./replay-gate.js";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -42,6 +49,11 @@ export type JudgeAuditReport = {
   warnings: string[];
   /** Estimand & interface pins (ARCH-2): what this audit measured and how. */
   judgeSpec: JudgeSpec;
+  /** Anchored reference set (QW-D 2026-10-13): frozen human-verified session
+   * outcomes whose verdicts any judge-prompt or promotion-gate change must
+   * reproduce. Present only on report paths that ran the anchor lanes. */
+  anchorVersion?: string;
+  anchorCompliance?: JudgeAnchorCompliance;
 };
 
 // ── Default threshold (paper suggests ~15%) ────────────────────────────────
@@ -459,12 +471,55 @@ export async function runJudgeAudit(opts: JudgeAuditRunOptions = {}): Promise<Ju
     verdicts.push({ testCase, result });
   }
 
-  return computeAuditReport({
+  const report = computeAuditReport({
     testCases,
     verdicts,
     threshold: opts.threshold,
     judgeModel: opts.judgeModel,
   });
+
+  // QW-D anchored reference set (2026-10-13): run the frozen anchors through
+  // their judge lanes and gate `passed` on reproducing the frozen verdicts.
+  // A judge or promotion-gate change that drifts any anchor fails the audit
+  // even when the synthetic false-pass rate looks healthy — the always-pass
+  // verifier collapse mode this prevents.
+  const anchorResults: JudgeAnchorResultInput[] = [];
+  for (const anchor of JUDGE_ANCHORS) {
+    const result =
+      anchor.lane === "step-rubric"
+        ? await judgeSkillCandidateWithStepRubric({
+            candidate: anchor.candidate,
+            draftedBody: anchor.draftedBody,
+            agentId: opts.agentId,
+          })
+        : await judgeSkillCandidateWithLlm({
+            candidate: anchor.candidate,
+            draftedBody: anchor.draftedBody,
+            agentId: opts.agentId,
+          });
+    anchorResults.push({
+      anchorId: anchor.id,
+      ran: result.status === "ran",
+      ...(result.status === "ran" ? { verdict: result.verdict } : {}),
+      ...(result.status === "ran" && result.consistency !== undefined
+        ? { consistency: result.consistency }
+        : {}),
+    });
+  }
+  const anchorCompliance = evaluateJudgeAnchorCompliance(anchorResults);
+  if (!anchorCompliance.passed) {
+    report.warnings.push(
+      `ANCHOR SET ${anchorCompliance.anchorVersion}: ${anchorCompliance.failures.length}/${anchorCompliance.checked} drifted — judge/prompt/gate change must reproduce the frozen verdicts (${anchorCompliance.failures
+        .map((failure) => `${failure.anchorId}:${failure.field}`)
+        .join(", ")})`,
+    );
+  }
+  return {
+    ...report,
+    anchorVersion: anchorCompliance.anchorVersion,
+    anchorCompliance,
+    passed: report.passed && anchorCompliance.passed,
+  };
 }
 
 // ── Re-exports for convenience ─────────────────────────────────────────────
