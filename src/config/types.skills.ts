@@ -75,6 +75,8 @@ export type SkillsForgeConfig = {
   /** Autonomous Skill Workshop learning. */
   autonomous?: {
     mode?: SkillsWorkshopAutonomousMode;
+    /** Post background review notices to supported channels. Default: false. */
+    channelNotices?: boolean;
   };
   /** Maximum Workshop skill file size in bytes. */
   maxSkillBytes?: number;

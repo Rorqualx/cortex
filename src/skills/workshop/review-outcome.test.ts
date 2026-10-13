@@ -257,7 +257,7 @@ describe("postWorkshopChangeNotice", () => {
     });
     const sessionKey = "agent:main:discord:channel:123:thread:456";
     await post([change({})], sessionKey, {
-      skills: { workshop: { autonomous: { channelNotices: true } } },
+      skills: { forge: { autonomous: { channelNotices: true } } },
     });
     expect(mocks.sendDurableMessageBatchCore).toHaveBeenCalledWith(
       expect.objectContaining({ channel: "discord", to: "channel:123", threadId: "456" }),
@@ -274,7 +274,7 @@ describe("postWorkshopChangeNotice", () => {
     });
     const sessionKey = "agent:main:slack:channel:c0123abc:thread:1234567890.123456";
     await post([change({})], sessionKey, {
-      skills: { workshop: { autonomous: { channelNotices: true } } },
+      skills: { forge: { autonomous: { channelNotices: true } } },
     });
     expect(mocks.sendDurableMessageBatchCore).not.toHaveBeenCalled();
     expect(mocks.appendAssistantMessageToSessionTranscript).toHaveBeenCalledWith(
@@ -341,7 +341,7 @@ describe("postWorkshopChangeNotice", () => {
     });
     mocks.sendDurableMessageBatchCore.mockRejectedValueOnce(new Error("delivery failed"));
     await post([change({})], undefined, {
-      skills: { workshop: { autonomous: { channelNotices: true } } },
+      skills: { forge: { autonomous: { channelNotices: true } } },
     });
     expect(mocks.sendDurableMessageBatchCore).toHaveBeenCalledOnce();
     expect(mocks.enqueueSystemEvent).toHaveBeenCalledOnce();
