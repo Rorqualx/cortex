@@ -304,6 +304,7 @@ exports[`config tier coverage > keeps the curated common leaf set reviewable 1`]
   "skills.entries.*.enabled",
   "skills.entries.*.env.*",
   "skills.forge.approvalPolicy",
+  "skills.forge.autonomous.channelNotices",
   "skills.forge.autonomous.mode",
   "skills.install.allowUploadedArchives",
   "skills.install.nodeManager",

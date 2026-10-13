@@ -291,6 +291,34 @@ describe("resolveCronFallbacksOverride", () => {
     ]);
   });
 
+  it("inherits default fallbacks for cron runs when the agent model is a string", () => {
+    expect(
+      resolveCronFallbacksOverride({
+        cfg: {
+          agents: {
+            defaults: {
+              model: {
+                primary: "deepseek/deepseek-v4-pro",
+                fallbacks: ["deepseek/deepseek-v4-flash", "moonshot/kimi-k2.6"],
+              },
+            },
+            entries: {
+              main: {
+                model: "deepseek/deepseek-v4-pro",
+              },
+            },
+          },
+        },
+        agentId: "main",
+        inheritDefaultFallbacksForAgentStringModel: true,
+        job: makeJob({
+          kind: "agentTurn",
+          message: "summarize",
+        }),
+      }),
+    ).toEqual(["deepseek/deepseek-v4-flash", "moonshot/kimi-k2.6"]);
+  });
+
   it("extends cron preflight into default fallbacks when payload fallbacks are empty", () => {
     expect(
       resolveCronPreflightCandidates({

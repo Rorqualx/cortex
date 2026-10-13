@@ -45,10 +45,7 @@ import {
   createPlacementStandingGrantRuntime,
   type PlacementStandingGrantRuntime,
 } from "./operator-approval-placement-grants.js";
-import {
-  closeOrphanedOperatorApprovals,
-  pruneTerminalOperatorApprovals,
-} from "./operator-approval-store.js";
+import { recoverOperatorApprovalsOnStartup } from "./operator-approval-store.js";
 import { QuestionManager } from "./question-manager.js";
 import { publishAppliedApprovalResolution } from "./server-methods/approval-publication.js";
 import {
@@ -107,12 +104,10 @@ export function createGatewayAuxHandlers(
   const placementStandingGrants = createPlacementStandingGrantRuntime({
     runtimeEpoch: approvalPersistence.runtimeEpoch,
   });
-  const approvalStartupNowMs = Date.now();
-  closeOrphanedOperatorApprovals({
+  const ready = recoverOperatorApprovalsOnStartup({
     runtimeEpoch: approvalPersistence.runtimeEpoch,
-    nowMs: approvalStartupNowMs,
+    nowMs: Date.now(),
   });
-  pruneTerminalOperatorApprovals({ nowMs: approvalStartupNowMs });
   const presentationWork = new AsyncWorkScope();
   const trackPresentationWork = (run: () => Promise<void>): Promise<void> =>
     presentationWork.track(() => runWithRetainedGatewayRootWork(run));
@@ -451,6 +446,8 @@ export function createGatewayAuxHandlers(
           manager.retire();
         }
         questionManager.close();
+        // A failed startup still has observers and managers to retire.
+        await Promise.allSettled([ready]);
         await questionManager.drain();
         await Promise.all(approvalManagers.map((manager) => manager.drain()));
         await presentationWork.drain();
@@ -462,13 +459,16 @@ export function createGatewayAuxHandlers(
     return stopPromise;
   };
 
-  // Startup terminalized prior-runtime approvals above; retain their browser
-  // publication until its real send/storage work finishes, including failure logging.
-  void trackPresentationWork(() =>
-    approvalWebPushDelivery.recoverTerminalDeliveries().catch((error: unknown) => {
+  // The handler startup boundary awaits durable recovery before accepting requests.
+  // Browser delivery remains background work retained through Gateway close.
+  void trackPresentationWork(async () => {
+    try {
+      await ready;
+      await approvalWebPushDelivery.recoverTerminalDeliveries();
+    } catch (error: unknown) {
       params.log.error?.(`approval Web Push restart recovery failed: ${String(error)}`);
-    }),
-  );
+    }
+  });
 
   const bindLazyHandlers = (load: Parameters<typeof createLazyHandler>[1]) => (method: string) =>
     createLazyHandler(method, load);
@@ -479,6 +479,7 @@ export function createGatewayAuxHandlers(
   const secretsHandler = bindLazyHandlers(loadSecretsHandlers);
 
   return {
+    ready,
     execApprovalManager,
     cancelRunBoundApprovals,
     forwardPluginApprovalRequest: execApprovalForwarder.handlePluginApprovalRequested,

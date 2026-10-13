@@ -556,6 +556,9 @@ export function buildAgentSystemPrompt(params: {
     acpSpawnRuntimeEnabled,
   });
   const toolSchemaDirectoryPrompt = params.toolSchemaDirectoryPrompt?.trim();
+  const stableToolSchemaDirectoryPrompt = params.codeModeActive
+    ? undefined
+    : toolSchemaDirectoryPrompt;
   const renderOpenClawToolWorkflowHints =
     isOpenClawMainPromptSurface(promptSurface) && params.codeModeActive !== true;
 
@@ -730,7 +733,7 @@ export function buildAgentSystemPrompt(params: {
     promptMode,
     promptSurface,
     toolLines,
-    toolSchemaDirectoryPrompt,
+    toolSchemaDirectoryPrompt: stableToolSchemaDirectoryPrompt,
     capabilityToolNames: [...availableTools].toSorted(),
     renderOpenClawToolWorkflowHints,
     hasGateway,
@@ -770,7 +773,7 @@ export function buildAgentSystemPrompt(params: {
       ...buildSystemPromptToolingSection({
         includeToolGuidance,
         toolLines,
-        toolSchemaDirectoryPrompt,
+        toolSchemaDirectoryPrompt: stableToolSchemaDirectoryPrompt,
         promptSurface,
         execToolName,
         processToolName,
@@ -992,6 +995,8 @@ export function buildAgentSystemPrompt(params: {
   // Channel/session-specific guidance lives below the cache boundary so large
   // stable workspace context can remain a byte-identical prefix across turns.
   lines.push(
+    params.codeModeActive &&
+      toolSchemaDirectoryPrompt && ["## Code Mode Tools", toolSchemaDirectoryPrompt, ""],
     ...normalizeStringEntries(params.projectMemoryBootstrap),
     ...(acpHarnessSpawnAllowed && threadBoundAcpSpawnEnabled
       ? [

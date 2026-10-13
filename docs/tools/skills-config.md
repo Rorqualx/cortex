@@ -369,10 +369,17 @@ rejects it and `openclaw doctor --fix` moves its settings to `skills.forge`.
 <ParamField path="skills.forge.autonomous.mode" type='"off" | "auto"' default='"auto"'>
   `auto` lets agents save and update Workshop skills: a background review runs
   after substantial work, and learned skills unused for 30 days are archived.
-  Review changes are announced in the conversation, and every change can be
-  undone. `off` disables the background review and unused-skill cleanup.
+  Review changes appear as a **Learned** row in the Control UI chat, and every
+  change can be undone. `off` disables the background review and unused-skill cleanup.
   User-prompted skill creation, `/learn`, and manual learning sessions work in
   both modes.
+</ParamField>
+
+<ParamField path="skills.workshop.autonomous.channelNotices" type="boolean" default="false">
+  When `true`, background review notices are posted to channel conversations
+  (except Slack) with an **Undo** button; the Control UI shows that message as
+  plain text. When `false`, they appear only as the **Learned** row in the
+  Control UI chat. Saying "undo" works either way.
 </ParamField>
 
 See [Self-learning](/tools/self-learning) for eligibility, privacy, cost,

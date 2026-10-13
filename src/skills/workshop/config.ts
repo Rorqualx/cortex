@@ -6,6 +6,7 @@ import type { SkillsWorkshopAutonomousMode } from "../../config/types.skills.js"
 type SkillWorkshopConfig = {
   autonomous: {
     mode: SkillsWorkshopAutonomousMode;
+    channelNotices: boolean;
   };
   maxSkillBytes: number;
 };
@@ -15,10 +16,14 @@ export function resolveSkillWorkshopConfig(config?: OpenClawConfig): SkillWorksh
   // skills.forge by the doctor migration; strict validation rejects it, so reading it here
   // would silently return defaults instead of the operator's settings.
   const raw = asNullableRecord(config?.skills?.forge) ?? {};
-  const mode = asNullableRecord(raw.autonomous)?.mode;
+  const autonomous = asNullableRecord(raw.autonomous);
+  const mode = autonomous?.mode;
   const maxSkillBytes = raw.maxSkillBytes;
   return {
-    autonomous: { mode: mode === "off" || mode === "auto" ? mode : "auto" },
+    autonomous: {
+      mode: mode === "off" || mode === "auto" ? mode : "auto",
+      channelNotices: autonomous?.channelNotices === true,
+    },
     maxSkillBytes:
       typeof maxSkillBytes === "number" && Number.isFinite(maxSkillBytes)
         ? Math.min(Math.max(Math.trunc(maxSkillBytes), 1024), 200_000)

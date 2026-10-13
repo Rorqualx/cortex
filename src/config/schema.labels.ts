@@ -319,6 +319,7 @@ export const FIELD_LABELS: Record<string, string> = {
   "skills.load.allowSymlinkTargets": "Allowed Skill Symlink Targets",
   "skills.load.watch": "Watch Skills",
   "skills.forge.autonomous.mode": "Skill Forge Autonomous Mode",
+  "skills.forge.autonomous.channelNotices": "Skill Forge Channel Notices",
   "agents.defaults.skills": "Skills",
   "agents.defaults.subagents.delegationMode": "Sub-agent Delegation Mode",
   "agents.entries.*.subagents.delegationMode": "Sub-agent Delegation Mode",
