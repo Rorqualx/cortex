@@ -39,7 +39,6 @@ import { prepareOpenClawTools } from "./openclaw-tools.preparation.js";
 import {
   applyNodesToolWorkspaceGuard,
   collectPresentOpenClawTools,
-  shouldIncludeAskUserToolForOpenClawTools,
   shouldIncludePrimarySessionToolForOpenClawTools,
   shouldIncludeProgressCardToolForOpenClawTools,
 } from "./openclaw-tools.registration.js";
@@ -90,6 +89,7 @@ import { createNodesTool } from "./tools/nodes-tool.js";
 import { createPdfTool } from "./tools/pdf-tool.js";
 import { createAvailablePortalTools } from "./tools/portal-tool.js";
 import { createProgressCardTool } from "./tools/progress-card-tool.js";
+import { createChannelQuestionPromptDelivery } from "./tools/question-prompt-send.js";
 import { createScreenTool } from "./tools/screen-tool.js";
 import { createSecretsTool } from "./tools/secrets-tool.js";
 import { createSessionStatusTool } from "./tools/session-status-tool.js";
@@ -471,11 +471,6 @@ function* createOpenClawToolsSteps(
         agentId: sessionAgentId,
       })
     : null;
-  const includeAskUserTool = shouldIncludeAskUserToolForOpenClawTools({
-    config: resolvedConfig,
-    agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
-    pluginToolDenylist: options?.pluginToolDenylist,
-  });
   const includeTranscriptsTool = resolveTranscriptsConfig(resolvedConfig?.transcripts).enabled;
   const tools: AnyAgentTool[] = [
     ...createInstalledSkillTools(options?.installedSkills ?? []),
@@ -607,29 +602,29 @@ function* createOpenClawToolsSteps(
         ]),
     ...(progressCardTool ? [progressCardTool] : []),
     ...swarmToolGroups.structuredOutput,
-    ...(includeAskUserTool
-      ? [
-          createAskUserTool({
+    ...(
+      [
+        ["ask_user", createAskUserTool],
+        ["secrets", createSecretsTool],
+      ] as const
+    ).map(([name, createTool]) =>
+      shouldIncludePrimarySessionToolForOpenClawTools(name, {
+        ...options,
+        agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+      })
+        ? createTool({
+            ...options,
+            questionPrompt:
+              options?.questionPrompt ??
+              createChannelQuestionPromptDelivery({
+                cfg: resolvedConfig ?? getRuntimeConfig(),
+                ...deliveryContext,
+              }),
             agentId: sessionAgentId,
             sessionKey: options?.runSessionKey ?? options?.agentSessionKey,
-            runId: options?.runId,
-            ...(options?.questionPrompt ? { questionPrompt: options.questionPrompt } : {}),
-          }),
-        ]
-      : []),
-    ...(shouldIncludePrimarySessionToolForOpenClawTools("secrets", {
-      config: resolvedConfig,
-      agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
-      pluginToolDenylist: options?.pluginToolDenylist,
-    })
-      ? [
-          createSecretsTool({
-            config: resolvedConfig,
-            agentId: sessionAgentId,
-            sessionKey: options?.runSessionKey ?? options?.agentSessionKey,
-          }),
-        ]
-      : []),
+          })
+        : null,
+    ),
     createSessionsListTool({
       agentSessionKey: options?.agentSessionKey,
       sandboxed: options?.sandboxed,

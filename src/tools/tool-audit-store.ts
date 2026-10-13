@@ -12,7 +12,7 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { sanitizeToolArgs } from "../agents/embedded-agent-tool-results.js";
+import { redactSecrets, redactToolPayloadText } from "../logging/redact.js";
 import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import { OPENCLAW_SQLITE_BUSY_TIMEOUT_MS } from "../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqliteDir } from "../state/openclaw-state-db.paths.js";
@@ -120,15 +120,16 @@ export function localAuditDay(now: number = Date.now()): string {
 
 /**
  * Build a redacted, length-capped summary of tool args.
- * Uses the existing sanitizeToolArgs (which calls redactStringsDeep → redactToolPayloadText)
- * to strip secrets, API keys, and credentials before storing.
+ * Uses redactSecrets (key-aware deep payload redaction) to strip secrets,
+ * API keys, and credentials before storing. sanitizeToolArgs was removed
+ * upstream on 2026-10-11; this is its maintained equivalent.
  */
 export function buildArgsSummary(args: unknown): string {
   if (args == null) {
     return "";
   }
   try {
-    const sanitized = sanitizeToolArgs(args);
+    const sanitized = redactSecrets(args);
     const json = JSON.stringify(sanitized);
     if (json.length <= MAX_ARGS_SUMMARY_LENGTH) {
       return json;
@@ -143,7 +144,7 @@ export function buildArgsSummary(args: unknown): string {
 
 /** Redact and cap a tool error message before it is persisted. */
 export function buildErrorSummary(message: string): string {
-  const redacted = sanitizeToolArgs(message);
+  const redacted = redactToolPayloadText(message);
   const text = typeof redacted === "string" ? redacted : String(redacted);
   return text.length <= MAX_ARGS_SUMMARY_LENGTH
     ? text

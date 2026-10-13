@@ -12,6 +12,16 @@ export type ChatSessionEmbeddedAbortOutcome = {
   aborted: boolean;
 };
 
+export type ChatAbortLifecycle = {
+  onAuthorizedBeforeEmbeddedAbort?: () => boolean;
+  onAuthorizedAfterQueuedAbort?: (embedded: ChatSessionEmbeddedAbortOutcome) => boolean;
+  onDescendantsCancelled?: (
+    result: NonNullable<Awaited<ReturnType<typeof abortControlledSubagents>>>,
+  ) => void;
+  excludeRunIds?: ReadonlySet<string>;
+  cascadeDescendants?: true;
+};
+
 export type ChatSessionAbortParams = {
   context: GatewayRequestContext;
   ops: ChatAbortOps;

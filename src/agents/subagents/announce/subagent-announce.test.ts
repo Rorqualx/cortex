@@ -24,11 +24,6 @@ const agentSpy = vi.fn(
 const sessionsDeleteSpy = vi.fn((_req: AgentCallRequest) => undefined);
 const callGatewayMock = vi.fn(async (_request: unknown) => ({}));
 const loadSessionStoreMock = vi.fn((_storePath: string) => ({}));
-const resolveAgentIdFromSessionKeyMock = vi.fn<
-  typeof import("./subagent-announce.runtime.js").resolveAgentIdFromSessionKey
->((sessionKey, configuredDefaultAgentId) => {
-  return sessionKey?.match(/^agent:([^:]+)/)?.[1] ?? configuredDefaultAgentId ?? "main";
-});
 const resolveStorePathMock = vi.fn((_store: unknown, _options: unknown) => "/tmp/sessions.json");
 const resolveMainSessionKeyMock = vi.fn((_cfg: unknown) => "agent:main:main");
 const isEmbeddedAgentRunActiveMock = vi.fn((_sessionId: string) => false);
@@ -62,7 +57,8 @@ const { subagentRegistryRuntimeMock } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("./subagent-announce.runtime.js", () => ({
+vi.mock("./subagent-announce.runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./subagent-announce.runtime.js")>()),
   callSubagentLifecycleGateway: (request: unknown) => callGatewayMock(request),
   dispatchGatewayMethodInProcess: (
     method: string,
@@ -75,8 +71,6 @@ vi.mock("./subagent-announce.runtime.js", () => ({
   readSessionMessagesAsync: vi.fn(async () => []),
   readSubagentSessionEntry: (storePath: string, sessionKey: string) =>
     (loadSessionStoreMock(storePath) as Record<string, unknown>)[sessionKey],
-  resolveAgentIdFromSessionKey: (sessionKey: string) =>
-    resolveAgentIdFromSessionKeyMock(sessionKey),
   resolveMainSessionKey: (cfg: unknown) => resolveMainSessionKeyMock(cfg),
   resolveSessionStorePathCore: (store: unknown, options: unknown) =>
     resolveStorePathMock(store, options),
@@ -84,21 +78,20 @@ vi.mock("./subagent-announce.runtime.js", () => ({
     waitForEmbeddedAgentRunEndMock(sessionId, timeoutMs),
 }));
 
-vi.mock("./subagent-announce-delivery.runtime.js", () =>
-  createSubagentAnnounceDeliveryRuntimeMock({
+vi.mock("./subagent-announce-delivery.runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./subagent-announce-delivery.runtime.js")>()),
+  ...(await createSubagentAnnounceDeliveryRuntimeMock({
     callGateway: (request: unknown) => callGatewayMock(request),
     getRuntimeConfig: () => mockConfig,
     loadSessionStore: (storePath: string) => loadSessionStoreMock(storePath),
-    resolveAgentIdFromSessionKey: (sessionKey: string) =>
-      resolveAgentIdFromSessionKeyMock(sessionKey),
     resolveMainSessionKey: (cfg: unknown) => resolveMainSessionKeyMock(cfg),
     resolveSessionStorePathCore: (store: unknown, options: unknown) =>
       resolveStorePathMock(store, options),
     isEmbeddedAgentRunActive: (sessionId: string) => isEmbeddedAgentRunActiveMock(sessionId),
     queueEmbeddedAgentMessageWithOutcome: (sessionId: string, text: string, options?: unknown) =>
       queueEmbeddedAgentMessageWithOutcomeMock(sessionId, text, options),
-  }),
-);
+  })),
+}));
 
 vi.mock("./subagent-announce-delivery.js", () => ({
   deliverSubagentAnnouncement: async (params: {
@@ -218,7 +211,6 @@ describe("subagent announce seam flow", () => {
       return {};
     });
     loadSessionStoreMock.mockReset().mockImplementation(() => ({}));
-    resolveAgentIdFromSessionKeyMock.mockReset().mockImplementation(() => "main");
     resolveStorePathMock.mockReset().mockImplementation(() => "/tmp/sessions.json");
     resolveMainSessionKeyMock.mockReset().mockImplementation(() => "agent:main:main");
     isEmbeddedAgentRunActiveMock.mockReset().mockReturnValue(false);
@@ -263,7 +255,6 @@ describe("subagent announce seam flow", () => {
           >
         )[sessionKey],
       readSessionMessagesAsync: async () => [],
-      resolveAgentIdFromSessionKey: resolveAgentIdFromSessionKeyMock,
       resolveSessionStorePathCore: resolveStorePathMock,
     });
   });
@@ -285,7 +276,11 @@ describe("subagent announce seam flow", () => {
         startedAt: 10,
         endedAt: 20,
         childRunId: "run-direct-skip-whitespace",
-        childAgentId: "research",
+        childAgentId: "main",
+        childSessionIdentity: {
+          sessionId: "child-session-id",
+          lifecycleRevision: "child-lifecycle-revision",
+        },
         cleanup: "delete",
         roundOneReply: "  child result  ",
         ...(terminal
@@ -304,6 +299,7 @@ describe("subagent announce seam flow", () => {
         method: "sessions.delete",
         params: {
           key: "agent:main:subagent:test",
+          agentId: "main",
           deleteTranscript: true,
           emitLifecycleHooks: false,
           expectedSessionId: "child-session-id",
@@ -319,6 +315,10 @@ describe("subagent announce seam flow", () => {
   it("skips delete cleanup when the lifecycle owner invalidates the attempt", async () => {
     const didAnnounce = await runAnnounceFlow({
       childRunId: "run-invalidated-delete",
+      childSessionIdentity: {
+        sessionId: "child-session-id",
+        lifecycleRevision: "child-lifecycle-revision",
+      },
       cleanup: "delete",
       roundOneReply: "child result",
       onBeforeDeleteChildSession: () => false,
@@ -350,6 +350,10 @@ describe("subagent announce seam flow", () => {
         await runAnnounceFlow({
           childSessionKey: "global",
           childAgentId: "research",
+          childSessionIdentity: {
+            sessionId: "research-child",
+            lifecycleRevision: "research-revision",
+          },
           cleanup: "delete",
           terminalReply: { disposition: "visible", text: "Research result" },
         }),
@@ -458,6 +462,10 @@ describe("subagent announce seam flow", () => {
       startedAt: 10,
       endedAt: 20,
       childRunId: "run-session-delete-cleanup",
+      childSessionIdentity: {
+        sessionId: "child-session-id",
+        lifecycleRevision: "child-lifecycle-revision",
+      },
       task: "thread-bound cleanup",
       cleanup: "delete",
       roundOneReply: "completed",
@@ -471,6 +479,7 @@ describe("subagent announce seam flow", () => {
       method: "sessions.delete",
       params: {
         key: "agent:main:subagent:test",
+        agentId: "main",
         deleteTranscript: true,
         emitLifecycleHooks: true,
         expectedSessionId: "child-session-id",

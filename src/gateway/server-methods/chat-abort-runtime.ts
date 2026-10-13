@@ -15,7 +15,6 @@ import {
 import { createAgentRunDirectAbortError } from "../../agents/run-termination.js";
 import { killSubagentRunAdmin } from "../../agents/subagents/registry/subagent-control-kill.js";
 import { ensureSubagentControllerOwnsRun } from "../../agents/subagents/registry/subagent-control-scope.js";
-import type { SubagentRequestSessionOrigin } from "../../agents/subagents/registry/subagent-exec-request-ownership.js";
 import {
   getCurrentSubagentRunOwner,
   subagentRuns,
@@ -40,6 +39,8 @@ import { resolveSessionStoreKey } from "../session-utils.js";
 import type { WorkerInferenceCancellation } from "../worker-environments/inference-control-internal.js";
 import {
   canRequesterAbortChatRun,
+  captureSessionAbortRequestFilter,
+  captureSessionAbortRequestOrigin,
   resolveAuthorizedPreRegisteredRunsForSessionKeys,
   resolveAuthorizedRunsForSessionKeys,
   resolveAuthorizedQueuedTurnsForSession,
@@ -308,11 +309,7 @@ function prepareChatSessionAbort(
     requester: params.requester,
     excludeRunIds: params.excludeRunIds,
   };
-  const acceptsRequest: SubagentRequestSessionOrigin["acceptsRequest"] = (identity) =>
-    canRequesterAbortChatRun(identity, params.requester) &&
-    (params.includeProtectedRuns === true ||
-      (identity.controlUiVisible !== false &&
-        !(params.preserveSideRuns && identity.turnKind === "btw")));
+  const acceptsRequest = captureSessionAbortRequestFilter(params);
   const commands = captureExecRequestCancellation(
     {
       sessionKey: params.sessionKey,
@@ -363,22 +360,7 @@ function prepareChatSessionAbort(
     stopReason: params.stopReason,
     assertCurrent: params.assertCurrent,
   });
-  const sessionOrigin: SubagentRequestSessionOrigin | undefined =
-    session?.entry &&
-    (params.requiredSessionId === undefined ||
-      session.entry.sessionId === params.requiredSessionId) &&
-    (params.sessionId === undefined || session.entry.sessionId === params.sessionId)
-      ? {
-          target: {
-            agentId: session.agentId,
-            storePath: session.storePath,
-            sessionKey: session.canonicalKey,
-            sessionId: session.entry.sessionId,
-            lifecycleRevision: session.entry.lifecycleRevision ?? null,
-          },
-          acceptsRequest,
-        }
-      : undefined;
+  const sessionOrigin = captureSessionAbortRequestOrigin(params, acceptsRequest);
   const queuedPlan = resolveAuthorizedQueuedTurnsForSession({
     ...ownerScope,
     context: params.context,
@@ -704,6 +686,9 @@ export async function abortChatRunsForSessionKeyWithPartials(
         sessionKey: params.sessionKey,
         agentId: params.agentId,
         sessionId: params.sessionId,
+        lifecycleRevision: params.session?.ok
+          ? params.session.value.entry?.lifecycleRevision
+          : undefined,
         execCancellation: plan.commands,
         sessionOrigin: plan.sessionOrigin,
         assertCurrent: params.assertCurrent,
