@@ -105,10 +105,11 @@ export async function demoteSkill(params: {
 }
 
 /** Allowed forward lifecycle transitions for a promoted skill. */
-const LIFECYCLE_ADVANCEMENTS: Partial<Record<SkillLifecycle, SkillLifecycle>> = {
-  trial: "active",
-  active: "stable",
-};
+const LIFECYCLE_ADVANCEMENTS: Partial<Record<SkillLifecycle, Exclude<SkillLifecycle, "retired">>> =
+  {
+    trial: "active",
+    active: "stable",
+  };
 
 export type LifecycleAdvancementResult =
   | {

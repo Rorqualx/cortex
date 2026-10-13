@@ -995,8 +995,9 @@ export function buildAgentSystemPrompt(params: {
   // Channel/session-specific guidance lives below the cache boundary so large
   // stable workspace context can remain a byte-identical prefix across turns.
   lines.push(
-    params.codeModeActive &&
-      toolSchemaDirectoryPrompt && ["## Code Mode Tools", toolSchemaDirectoryPrompt, ""],
+    ...(params.codeModeActive && toolSchemaDirectoryPrompt
+      ? ["## Code Mode Tools", toolSchemaDirectoryPrompt, ""]
+      : []),
     ...normalizeStringEntries(params.projectMemoryBootstrap),
     ...(acpHarnessSpawnAllowed && threadBoundAcpSpawnEnabled
       ? [
