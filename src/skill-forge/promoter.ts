@@ -8,6 +8,11 @@ import {
   resolveSkillForgeStagedSkillDir,
 } from "./paths.js";
 import {
+  judgeSkillSecurity,
+  writeSecurityJudgeSidecar,
+  type SecurityJudgeOutcome,
+} from "./security-judge.js";
+import {
   listTelemetryEntries,
   readTelemetry,
   recordSkillDemotion,
@@ -22,6 +27,12 @@ export type PromotionResult =
       name: string;
       promotedDir: string;
       verdict: GateVerdict;
+      /**
+       * Prompted-judge malicious-skill screen (advisory-first, 2026-10-14
+       * QW3). Present only when the judge actually ran; skipped/failed runs
+       * are logged but omitted. Never blocks promotion in advisory mode.
+       */
+      securityJudge?: SecurityJudgeOutcome;
     }
   | { status: "rejected"; name: string; verdict: GateVerdict };
 
@@ -84,7 +95,45 @@ export async function promoteStagedSkill(params: {
     successScore: params.successScore,
     env,
   });
-  return { status: "promoted", name: params.name, promotedDir, verdict };
+  // Advisory security-judge screen (2026-10-14 QW3): run an LLM judge over
+  // the promoted SKILL.md and record the verdict as a sidecar. Advisory for
+  // one cycle — never blocks promotion. Trial lifecycle already keeps the
+  // skill out of the auto-invoke set, so a suspicious verdict has a grace
+  // period before activation could make it auto-invokable.
+  let securityJudge: SecurityJudgeOutcome | undefined;
+  try {
+    const outcome = await judgeSkillSecurity({
+      skillDir: promotedDir,
+      name: params.name,
+    });
+    if (outcome.status === "ok") {
+      await writeSecurityJudgeSidecar(promotedDir, outcome);
+      if (outcome.verdict === "suspicious") {
+        // Log-only enforcement for the advisory cycle.
+        console.warn(
+          `[skill-forge] security judge: suspicious verdict for '${params.name}' — ${outcome.rationale ?? "no rationale"} (${outcome.provider}/${outcome.modelId}); advisory mode, promotion proceeds`,
+        );
+      }
+      securityJudge = outcome;
+    } else {
+      console.warn(
+        `[skill-forge] security judge ${outcome.status} for '${params.name}': ${outcome.reason}`,
+      );
+    }
+  } catch (error) {
+    // Belt-and-braces: judgeSkillSecurity never throws, but a throw here
+    // must not retro-fail a completed promotion.
+    console.warn(
+      `[skill-forge] security judge threw for '${params.name}': ${error instanceof Error ? error.message : "unknown"}`,
+    );
+  }
+  return {
+    status: "promoted",
+    name: params.name,
+    promotedDir,
+    verdict,
+    ...(securityJudge ? { securityJudge } : {}),
+  };
 }
 
 export async function demoteSkill(params: {
