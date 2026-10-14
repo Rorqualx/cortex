@@ -232,6 +232,17 @@ describe("runProviderModelDiscovery", () => {
       const u = String(url);
       if (u.endsWith("/chat/completions")) {
         const body = JSON.parse(String((init as { body?: string }).body ?? "{}"));
+        // Empty-thinking audit probes (QW1 2026-10-14) are answered separately
+        // and do not count as served-id probes in the `requested` ledger.
+        if (body.reasoning_effort === "none") {
+          return new Response(
+            JSON.stringify({
+              model: body.model,
+              usage: { completion_tokens_details: { reasoning_tokens: 0 } },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
         requested.push(String(body.model));
         return new Response(JSON.stringify({ model: body.model }), {
           status: 200,
@@ -271,5 +282,57 @@ describe("runProviderModelDiscovery", () => {
     );
     expect(after?.status).toBe("active");
     expect(listDiscoveredModels(db, { provider: "deepseek", status: "deprecated" })).toEqual([]);
+  });
+
+  it("stamps the advisory noThinkCompliant bit on upserted probe rows (QW1 2026-10-14)", async () => {
+    // Empty-thinking audit: served ids the probe persists (unlisted) get a
+    // second tiny completion with thinking disabled. Zero reasoning tokens →
+    // noThinkCompliant:true; non-zero → false; advisory metadata only.
+    const { db } = await openTempDb();
+    const fetchFn = vi.fn(async (url: unknown, init?: unknown) => {
+      const u = String(url);
+      if (u.endsWith("/chat/completions")) {
+        const body = JSON.parse(String((init as { body?: string }).body ?? "{}"));
+        if (body.reasoning_effort === "none") {
+          const reasoningTokens = body.model === "glm-heavy" ? 24 : 0;
+          return new Response(
+            JSON.stringify({
+              model: body.model,
+              usage: { completion_tokens_details: { reasoning_tokens: reasoningTokens } },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({ model: body.model }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return modelsResponse(["unrelated-model"]);
+    });
+    const report = await runProviderModelDiscovery({
+      provider: "zai",
+      cfg: cfgWith({
+        zai: {
+          baseUrl: "https://api.z.ai/api/paas/v4",
+          models: [{ id: "glm-lite" }, { id: "glm-heavy" }],
+        },
+      }),
+      nowMs: 1000,
+      db,
+      probeServed: true,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      resolveEndpoint: () => ({ baseUrl: "https://api.z.ai/api/paas/v4", apiKey: "test" }),
+    });
+    expect(report).toMatchObject({ provider: "zai", ok: true });
+    expect(report.probedAdded).toEqual(["glm-lite", "glm-heavy"]);
+    const rawRows = db
+      .prepare("SELECT model_id, raw_json FROM model_catalog_discovered WHERE provider = ?")
+      .all("zai") as Array<{ model_id: string; raw_json: string }>;
+    const rawById = new Map(
+      rawRows.map((row) => [row.model_id, JSON.parse(row.raw_json) as Record<string, unknown>]),
+    );
+    expect(rawById.get("glm-lite")?.noThinkCompliant).toBe(true);
+    expect(rawById.get("glm-heavy")?.noThinkCompliant).toBe(false);
   });
 });

@@ -15,7 +15,11 @@ import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js"
 import { upsertProbedServedModels } from "./discovered-store.js";
 import { fetchAnthropicMessagesModels, fetchOpenAiCompatibleModels } from "./model-discovery.js";
 import { type ReconcileResult, reconcileProviderModels } from "./reconcile.js";
-import { probeProtocolForApi, probeServedModels } from "./served-model-probe.js";
+import {
+  probeNoThinkCompliance,
+  probeProtocolForApi,
+  probeServedModels,
+} from "./served-model-probe.js";
 
 /** Resolved network target for a provider's /models endpoint, with wire protocol. */
 export type DiscoveryEndpoint = { baseUrl: string; apiKey: string; api?: string };
@@ -148,6 +152,8 @@ export async function runProviderModelDiscovery(params: {
   const servedCasing = new Map<string, string>();
   // served (lowercased) -> requested ids that were silently served as it (upgrades).
   const upgradeFromByServed = new Map<string, Set<string>>();
+  // served (lowercased) -> empty-thinking compliance bit (QW1 advisory), for upserts.
+  const noThinkByServed = new Map<string, boolean>();
   if (params.probeServed) {
     const observations = await probeServedModels({
       baseUrl: endpoint.baseUrl,
@@ -178,6 +184,26 @@ export async function runProviderModelDiscovery(params: {
         upgradeFromByServed.set(key, from);
       }
     }
+    // Empty-thinking audit (2026-10-14 QW1): for served ids that will be
+    // persisted (unlisted or upgrade-linked), check whether the model serves
+    // a completion with thinking disabled and zero reasoning tokens. Advisory
+    // metadata only — recorded as a `noThinkCompliant` bit in the raw payload;
+    // routing gates on it come later. Sequential to stay gentle on rate limits.
+    for (const [key, id] of servedCasing.entries()) {
+      if (liveSet.has(key) && !upgradeFromByServed.has(key)) {
+        continue; // only rows we are about to upsert
+      }
+      const compliant = await probeNoThinkCompliance({
+        baseUrl: endpoint.baseUrl,
+        apiKey: endpoint.apiKey,
+        modelId: id,
+        protocol: probeProtocolForApi(endpoint.api),
+        ...(params.fetchFn ? { fetchFn: params.fetchFn } : {}),
+      });
+      if (compliant !== null) {
+        noThinkByServed.set(key, compliant);
+      }
+    }
   }
 
   const apply = (db: DatabaseSync): ReconcileResult => {
@@ -192,7 +218,12 @@ export async function runProviderModelDiscovery(params: {
         const upgradedFrom = [...(upgradeFromByServed.get(key) ?? [])];
         return {
           modelId: id,
-          raw: { id, via: "probe", ...(upgradedFrom.length > 0 ? { upgradedFrom } : {}) },
+          raw: {
+            id,
+            via: "probe",
+            ...(upgradedFrom.length > 0 ? { upgradedFrom } : {}),
+            ...(noThinkByServed.has(key) ? { noThinkCompliant: noThinkByServed.get(key) } : {}),
+          },
         };
       });
     if (upserts.length > 0) {
