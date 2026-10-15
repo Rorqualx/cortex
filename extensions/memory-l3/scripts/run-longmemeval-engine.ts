@@ -107,7 +107,21 @@ const SKILLFORGE = argVal("skillforge") ?? undefined;
 // that store and runs the cheap consolidate+retrieve+answer phase, turning the
 // ~30-LLM-call/question ingestion into a one-time cost across arms and seeds.
 const CACHE_DIR = argVal("cache") ?? undefined;
-const TOP_K = Number.parseInt(process.env.ZENBRAIN_TOPK ?? "20", 10);
+// Budget (topK) resolution: --topk=<n>|full CLI arg > ZENBRAIN_TOPK env > default 20.
+// "full" means no budget truncation — a sentinel above any realistic fact count,
+// so retrieveTopK returns everything the store can offer. Used by sweep-topk.mjs
+// to produce the accuracy-vs-budget curve (analysis 2026-10-15, finding 9).
+const TOP_K_ARG = argVal("topk");
+const FULL_TOP_K = 1_000_000;
+const TOP_K =
+  TOP_K_ARG === "full"
+    ? FULL_TOP_K
+    : Number.parseInt(TOP_K_ARG ?? process.env.ZENBRAIN_TOPK ?? "20", 10);
+if (!Number.isFinite(TOP_K) || TOP_K < 1) {
+  throw new Error(
+    `Invalid topK budget: ${TOP_K_ARG ?? process.env.ZENBRAIN_TOPK} (use --topk=<n> or --topk=full)`,
+  );
+}
 
 const ANSWER_SYSTEM_PROMPT = `You answer a question about a user using only the provided memory facts.
 Output exactly two lines:
@@ -704,7 +718,7 @@ async function main(): Promise<void> {
 
   const tag =
     (STRATIFIED ? `stratified${STRATIFIED}` : `${TYPE}-n${selected.length}`) +
-    `__${ablation.label}`;
+    `__${ablation.label}__k${TOP_K}`;
   const outDir = path.dirname(ORACLE_PATH);
   const hypoPath = path.join(outDir, `hypothesis-engine-${tag}.jsonl`);
   await writeFile(
