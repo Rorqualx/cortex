@@ -1,5 +1,10 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
+import {
+  scanSkillBundle,
+  writeCapabilityScanSidecar,
+  type CapabilityScanResult,
+} from "./capability-scan.js";
 import { evaluateGate, type GateVerdict } from "./gate.js";
 import { stampSkillLifecycleInFrontmatter } from "./lifecycle.js";
 import {
@@ -33,6 +38,13 @@ export type PromotionResult =
        * are logged but omitted. Never blocks promotion in advisory mode.
        */
       securityJudge?: SecurityJudgeOutcome;
+      /**
+       * Deterministic capability vector (display-only, 2026-10-15 QW2).
+       * Which capability classes (shell-exec / fs-read / fs-write /
+       * network-egress / credential-access) the bundle references; recorded
+       * as a sidecar. Informational only — never blocks promotion.
+       */
+      capabilityScan?: CapabilityScanResult;
     }
   | { status: "rejected"; name: string; verdict: GateVerdict };
 
@@ -127,12 +139,29 @@ export async function promoteStagedSkill(params: {
       `[skill-forge] security judge threw for '${params.name}': ${error instanceof Error ? error.message : "unknown"}`,
     );
   }
+  // Deterministic capability vector (2026-10-15 QW2): static scan of the
+  // promoted bundle recorded as a sidecar next to the judge verdict.
+  // Display-only — the vector informs, it never gates. (UI surfacing of the
+  // sidecar is the follow-up slice, mirroring the judge-verdict sidecar.)
+  let capabilityScan: CapabilityScanResult | undefined;
+  try {
+    const scan = await scanSkillBundle(promotedDir);
+    await writeCapabilityScanSidecar(promotedDir, scan);
+    capabilityScan = scan;
+  } catch (error) {
+    // Belt-and-braces: a scan failure must not retro-fail a completed
+    // promotion.
+    console.warn(
+      `[skill-forge] capability scan threw for '${params.name}': ${error instanceof Error ? error.message : "unknown"}`,
+    );
+  }
   return {
     status: "promoted",
     name: params.name,
     promotedDir,
     verdict,
     ...(securityJudge ? { securityJudge } : {}),
+    ...(capabilityScan ? { capabilityScan } : {}),
   };
 }
 
