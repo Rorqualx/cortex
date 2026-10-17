@@ -136,8 +136,14 @@ export async function createOpenClawToolsWithPreparation(
   options: OpenClawToolsOptions | undefined,
   shared: PreparedToolConstruction,
 ): Promise<AnyAgentTool[]> {
-  const { captured, delegated, webSearchConfigured, mediaTools, personalInstructionsEnabled } =
-    await prepareOpenClawTools(options, shared);
+  const {
+    captured,
+    delegated,
+    webSearchConfigured,
+    mediaTools,
+    progressCardAvailable,
+    personalInstructionsEnabled,
+  } = await prepareOpenClawTools(options, shared);
   shared.assertCurrent();
   captured.assertInvocationCurrent?.();
   const steps = createOpenClawToolsSteps(
@@ -145,6 +151,7 @@ export async function createOpenClawToolsWithPreparation(
     delegated,
     webSearchConfigured,
     mediaTools,
+    progressCardAvailable,
     personalInstructionsEnabled,
   );
   let next = steps.next();
@@ -181,6 +188,7 @@ export function createOpenClawTools(
     preparedDelegateTools,
     preparedWebSearchConfigured,
     undefined,
+    undefined,
     !isEmbeddedMode() && hasMultipleSessionSharingIdentitiesNative(),
   );
   let next = steps.next();
@@ -199,6 +207,7 @@ function* createOpenClawToolsSteps(
   preparedDelegateTools?: AnyAgentTool[],
   preparedWebSearchConfigured?: boolean,
   preparedMediaTools?: Readonly<ReturnType<typeof resolveOptionalMediaToolFactoryPlan>>,
+  preparedProgressCardAvailable?: boolean,
   personalInstructionsEnabled = false,
 ): Generator<
   | { message: Parameters<typeof createMessageTool>[0] }
@@ -468,12 +477,14 @@ function* createOpenClawToolsSteps(
     });
   const includeSubagentSpawnTool = !embedded || options?.allowGatewaySubagentBinding === true;
   const effectiveCallGateway = embedded ? createEmbeddedCallGateway() : callGateway;
-  const progressCardTool = shouldIncludeProgressCardToolForOpenClawTools({
-    config: resolvedConfig,
-    agentId: sessionAgentId,
-    agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
-    pluginToolDenylist: options?.pluginToolDenylist,
-  })
+  const progressCardTool =
+    preparedProgressCardAvailable ??
+    shouldIncludeProgressCardToolForOpenClawTools({
+      config: resolvedConfig,
+      agentId: sessionAgentId,
+      agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+      pluginToolDenylist: options?.pluginToolDenylist,
+    })
     ? createProgressCardTool({
         agentSessionKey: sessionKey,
         agentId: sessionAgentId,

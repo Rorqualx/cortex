@@ -19,7 +19,7 @@ import {
   emitReasoningEnd,
   extractAssistantStreamSnapshot,
   extractStandaloneMessageToolText,
-  hasMessageToolOnlySourceDelivery,
+  shouldSuppressSourceReplyOutput,
   isOpenAiCompletionsAssistantMessage,
   isSubscribeTranscriptOnlyOpenClawAssistantMessage,
   replaceBlockReplyBuffer,
@@ -62,8 +62,14 @@ export function handleMessageEnd(
 ): void | Promise<void> {
   const msg = evt.message;
   if (msg.role === "user" && ctx.state.lastAssistant) {
-    // Fork: no answer segments are recorded (the frozen subscriber does not expose
-    // them), but a completed answer must never be kept across a new user input.
+    ctx.state.answerSegments.push({
+      textEnd: ctx.state.assistantTexts.length,
+      messageEnd: ctx.state.assistantMessageIndex,
+      finalMessageStart: ctx.state.assistantMessageStartIndex,
+      lastAssistant: ctx.state.lastAssistant,
+      keptAnswer: ctx.state.keptAnswer,
+      sourceReplyDeliveryState: ctx.state.sourceReplyDeliveryState,
+    });
     ctx.state.inputAnswer = undefined;
     ctx.state.keptAnswer = undefined;
     ctx.state.sourceReplyDeliveryState = "missing";
@@ -86,11 +92,11 @@ export function handleMessageEnd(
   const assistantPhase = resolveAssistantMessagePhase(assistantMessage);
   const suppressVisibleAssistantOutput = assistantPhase === "commentary";
   const suppressDeterministicApprovalOutput = shouldSuppressDeterministicApprovalOutput(ctx.state);
-  const suppressMessageToolOnlySourceReplyOutput = hasMessageToolOnlySourceDelivery(ctx);
+  const suppressSourceReplyOutput = shouldSuppressSourceReplyOutput(ctx);
   const canEmitReply = () =>
     !ctx.params.silentExpected &&
     !suppressDeterministicApprovalOutput &&
-    !suppressMessageToolOnlySourceReplyOutput;
+    !suppressSourceReplyOutput;
   const appendRawMessage = (getText: () => string) =>
     appendRawStream(
       () => ({
@@ -104,7 +110,7 @@ export function handleMessageEnd(
       ctx.params.sessionKey,
     );
   // Provider completion can omit thinking_end; close the visible lane before final output.
-  if (!suppressMessageToolOnlySourceReplyOutput) {
+  if (!suppressSourceReplyOutput) {
     emitReasoningEnd(ctx);
   }
   ctx.noteLastAssistant(assistantMessage);

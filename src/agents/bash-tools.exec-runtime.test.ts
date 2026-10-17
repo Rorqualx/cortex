@@ -1080,7 +1080,7 @@ describe("exec notifyOnExit suppression", () => {
     expect(message).toContain("Exec failed");
     expect(message).toContain("external side effects may already have completed");
     expect(message).toContain("Verify the resulting state before retrying");
-    expect(message).toContain("Do not automatically rerun non-idempotent commands");
+    expect(message).toContain("Do not automatically rerun commands unless repeating them is safe");
     expect(options.sessionKey).toBe("agent:main:main");
     expect(requestHeartbeatMock).toHaveBeenCalledTimes(1);
     const heartbeat = requireHeartbeatCall();

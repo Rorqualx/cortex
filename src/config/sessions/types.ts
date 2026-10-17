@@ -582,6 +582,8 @@ type SessionEntryCore = SessionRestartRecoveryState &
     queueDrop?: "old" | "new" | "summarize";
     inputTokens?: number;
     outputTokens?: number;
+    /** Completeness of the latest run's token and cost accounting. */
+    usageReport?: { state: "available" | "unavailable" };
     totalTokens?: number;
     pendingFinalDelivery?: PendingFinalDeliveryState;
     /** Owed user-visible notice that a final's delivery outcome stayed unknown (settled unknown custody). */

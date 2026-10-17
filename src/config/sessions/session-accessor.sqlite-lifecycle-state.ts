@@ -8,6 +8,7 @@ import {
   sqliteStringSet,
 } from "../../infra/kysely-sync.js";
 import {
+  retireSqliteDatabaseWriteScopes,
   sqliteSessionIdWriteScope,
   withSqliteDatabaseWriteScope,
 } from "../../infra/sqlite-database-admission.js";
@@ -53,10 +54,7 @@ import {
 } from "./session-accessor.sqlite-references.js";
 import { getSessionKysely, withSqliteSessionDatabase } from "./session-accessor.sqlite-scope.js";
 import { parseSessionEntryJson as parseSessionEntryRow } from "./session-accessor.sqlite-status.js";
-import {
-  assertSessionTranscriptHot,
-  readSessionColdTranscript,
-} from "./session-cold-storage-state.js";
+import { readSessionColdTranscript } from "./session-cold-storage-state.js";
 import { deleteSessionTranscriptIndexInTransaction } from "./session-transcript-index.js";
 import { normalizeStoreSessionKey } from "./store-entry.js";
 import type { SessionEntry } from "./types.js";
@@ -297,6 +295,9 @@ export function readSessionGenerationIdsForKeys(
   options: { exactStoredKeys?: boolean } = {},
 ): string[] {
   const sessionKeys = [...keys].map((key) => (options.exactStoredKeys ? key : key.trim()));
+  if (sessionKeys.length === 0) {
+    return [];
+  }
   const db = getSessionKysely(database.db);
   return executeSqliteQuerySync(
     database.db,
@@ -616,7 +617,6 @@ export function collectProjectedReferencedSessionIds(params: {
 export { collectSessionStateIdsForEntry };
 
 function deleteSqliteSessionStateRows(database: OpenClawAgentDatabase, sessionId: string): void {
-  assertSessionTranscriptHot(database.db, sessionId);
   const db = getSessionKysely(database.db);
   // The window row cascades canonical transcript tables, but FTS is virtual;
   // clear its projection before dropping the owner row.
@@ -627,6 +627,7 @@ function deleteSqliteSessionStateRows(database: OpenClawAgentDatabase, sessionId
       db.deleteFrom("session_windows").where("session_id", "=", sessionId),
     ),
   );
+  retireSqliteDatabaseWriteScopes(database.db, [sqliteSessionIdWriteScope(sessionId)]);
 }
 
 export function deletePlannedLifecycleArtifactEntries(

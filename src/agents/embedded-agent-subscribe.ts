@@ -1211,6 +1211,7 @@ export function subscribeEmbeddedAgentSession(input: SubscribeEmbeddedAgentSessi
       state.acceptedSessionSpawns.length > 0 ||
       state.visibleBlockReplyCount > 0;
     assistantTexts.length = 0;
+    state.answerSegments.length = 0;
     state.inputAnswer = undefined;
     state.keptAnswer = undefined;
     toolMetas.length = 0;
@@ -1422,6 +1423,7 @@ export function subscribeEmbeddedAgentSession(input: SubscribeEmbeddedAgentSessi
 
   return {
     assistantTexts,
+    answerSegments: state.answerSegments,
     getCurrentAttemptAssistant: () =>
       currentAttemptAssistant ? structuredClone(currentAttemptAssistant) : undefined,
     getKeptAnswer: () => state.keptAnswer,

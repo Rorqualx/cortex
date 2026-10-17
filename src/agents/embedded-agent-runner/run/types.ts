@@ -29,6 +29,7 @@ import type { PreparedModelRuntimeSnapshot } from "../../prepared-model-runtime.
 import type { ReplyDeliveryState } from "../../reply-completion.js";
 import type { AgentRuntimeModelAttempt, AgentRuntimePlan } from "../../runtime-plan/types.js";
 import type { AgentMessage } from "../../runtime/index.js";
+import type { resolveSandboxRuntimeStatus } from "../../sandbox/runtime-status.js";
 import type { SandboxContext } from "../../sandbox/types.js";
 import type { AuthStorage, ModelRegistry } from "../../sessions/index.js";
 import type { ToolEffectReceipt } from "../../tool-effect-receipt.js";
@@ -148,10 +149,12 @@ export type EmbeddedRunAttemptTrajectoryRecorder = {
 };
 
 export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
+  modelCallSequence?: { value: number };
+  /** Recomputed by the host for this attempt; never inherited from the requesting turn. */
+  githubPublicationAvailable?: boolean;
   disableToolSearch?: true;
   sessionReadScopeKey?: string;
   /** Recomputed by the host for this attempt; never inherited from the requesting turn. */
-  githubPublicationAvailable?: boolean;
   admittedRunContext: NonNullable<RunEmbeddedAgentParams["admittedRunContext"]>;
   /**
    * Run-owned start timestamp captured by the embedded-run orchestrator before
@@ -294,6 +297,10 @@ export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
 
 export type EmbeddedRunAttemptResult = {
   terminal: AgentRunAttemptTerminal;
+  /** Prepared policy that explains unavailable tools without another session read. */
+  sandboxRuntime?: ReturnType<typeof resolveSandboxRuntimeStatus>;
+  /** True when the runtime made the authoritative final-assistant transcript decision. */
+  assistantTranscriptOwned?: boolean;
   /** Exact idempotency key for the runtime-owned final-assistant transcript row. */
   assistantTranscriptIdempotencyKey?: string;
   /** Host-private terminal identity used to close the accepted transcript turn. */
@@ -399,7 +406,6 @@ export type EmbeddedRunAttemptResult = {
    * (plugin harnesses like codex app-server that persist their own transcript).
    * Consumed by the caller to skip a redundant core-side transcript write.
    */
-  assistantTranscriptOwned?: boolean;
   toolMetas: Array<{
     toolName: string;
     toolCallId?: string;

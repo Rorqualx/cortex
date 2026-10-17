@@ -29,7 +29,7 @@ import {
 } from "./embedded-agent-helpers.js";
 import { runBestEffortCallback } from "./embedded-agent-subscribe.callback.js";
 import {
-  hasMessageToolOnlySourceDelivery,
+  shouldSuppressSourceReplyOutput,
   shouldSuppressDeterministicApprovalOutput,
 } from "./embedded-agent-subscribe.handlers.messages.stream.js";
 import type {
@@ -392,7 +392,7 @@ export function createStreamRendering({
       }
       state.toolExecutionSinceLastBlockReply = false;
     };
-    if (hasMessageToolOnlySourceDelivery({ params, state })) {
+    if (shouldSuppressSourceReplyOutput({ params, state })) {
       markBlockReplyTextHandled();
       return;
     }
@@ -714,11 +714,11 @@ export function createStreamRendering({
       source,
     );
 
-    // A message-tool-only reply suppresses later reasoning from channel rendering,
+    // A completed source reply suppresses later reasoning from channel rendering,
     // including reasoning attached to tool calls. The archive above still receives it.
     if (
       state.streamReasoning &&
-      !hasMessageToolOnlySourceDelivery({ params, state }) &&
+      !shouldSuppressSourceReplyOutput({ params, state }) &&
       params.onReasoningStream
     ) {
       runBestEffortCallback({

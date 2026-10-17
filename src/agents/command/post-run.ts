@@ -1,5 +1,5 @@
 import { coerceErrorMessage } from "@openclaw/normalization-core/error-coercion";
-import { getReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
+import { getReplyPayloadMetadata, type ReplyPayload } from "../../auto-reply/reply-payload.js";
 import { recordAgentRunTerminalOutcome } from "../../channels/turn/agent-run-terminal-outcome.js";
 import type { CliDeps } from "../../cli/deps.types.js";
 import type { RestartRecoveryTerminalDeliveryEvidenceResult } from "../../config/sessions/restart-recovery-types.js";
@@ -67,41 +67,6 @@ import type { AgentCommandOpts } from "./types.js";
 type EmbeddedAgentAttempt = Awaited<ReturnType<typeof runEmbeddedAgentAttempt>>;
 
 const log = createSubsystemLogger("agents/agent-command");
-
-export function createCompactionSessionIdReporter(
-  sessionId: string,
-  onSessionIdChanged: AgentCommandOpts["onSessionIdChanged"],
-) {
-  let notifiedSessionId = sessionId;
-  let pendingCompactionSessionId: string | undefined;
-  const notifySessionIdChanged = (nextSessionId: string) => {
-    notifiedSessionId = nextSessionId;
-    pendingCompactionSessionId = undefined;
-    onSessionIdChanged?.(nextSessionId);
-  };
-  return {
-    onSessionIdChanged: notifySessionIdChanged,
-    onCompactionCommitted: (nextSessionId: string | undefined) => {
-      if (nextSessionId !== undefined) {
-        pendingCompactionSessionId = nextSessionId;
-      }
-    },
-    reportCommitted: () => {
-      // Compaction can commit before abort or maintenance fails. The command's
-      // finally reports it outside commit bookkeeping so cleanup targets its row.
-      if (
-        pendingCompactionSessionId !== undefined &&
-        pendingCompactionSessionId !== notifiedSessionId
-      ) {
-        try {
-          notifySessionIdChanged(pendingCompactionSessionId);
-        } catch (error) {
-          log.warn(`failed to report settled session identity: ${coerceErrorMessage(error)}`);
-        }
-      }
-    },
-  };
-}
 
 export async function finalizeEmbeddedAgentCommand(params: {
   prepared: PreparedAgentCommandExecution;
@@ -191,6 +156,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
     },
   };
   let deliveryResult: AgentCommandDeliveryResult;
+  let terminalDeliveryEvidence: RestartRecoveryTerminalDeliveryEvidenceResult;
   let hasResultError: boolean;
   let terminalError: string | undefined;
   let maintenanceRequest: SessionMaintenanceRequest | undefined;
@@ -229,7 +195,8 @@ export async function finalizeEmbeddedAgentCommand(params: {
           : undefined;
       params.opts.onResultErrorPayload?.(message);
     }
-    params.onTerminalDeliveryEvidenceChanged(buildRestartRecoveryTerminalDeliveryEvidence(result));
+    terminalDeliveryEvidence = buildRestartRecoveryTerminalDeliveryEvidence(result);
+    params.onTerminalDeliveryEvidenceChanged(terminalDeliveryEvidence);
 
     const compactionFact = params.attempt.compactionAccounting;
     const effectiveSessionId =
@@ -588,7 +555,10 @@ export async function finalizeEmbeddedAgentCommand(params: {
       result,
       payloads,
       assertDeliveryCurrent: deliverySource,
-      onDeliveryResult: (delivered: AgentCommandDeliveryResult) => {
+      onDeliveryResult: (
+        delivered: AgentCommandDeliveryResult,
+        deliveryPayloads: ReplyPayload[],
+      ) => {
         const deliveryStatus = delivered.deliveryStatus;
         const terminalDelivery = normalizeAgentRunTerminalDeliverySnapshot(
           deliveryStatus && {
@@ -599,9 +569,11 @@ export async function finalizeEmbeddedAgentCommand(params: {
         if (terminalDelivery) {
           terminal.metadata.terminalDelivery = terminalDelivery;
         }
-        params.onTerminalDeliveryEvidenceChanged(
-          buildRestartRecoveryTerminalDeliveryEvidence(delivered),
-        );
+        terminalDeliveryEvidence = buildRestartRecoveryTerminalDeliveryEvidence({
+          ...delivered,
+          payloads: deliveryPayloads,
+        });
+        params.onTerminalDeliveryEvidenceChanged(terminalDeliveryEvidence);
       },
     };
     deliveryResult = await deliverAgentCommandResult(
@@ -670,9 +642,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
                   },
                   recordTerminalSource: true,
                   clearRecoveryState: clearsRecoveryCycle && entry.abortedLastRun !== true,
-                  terminalDeliveryEvidence: buildRestartRecoveryTerminalDeliveryEvidence(
-                    deliveryResult ?? result,
-                  ),
+                  terminalDeliveryEvidence,
                   terminalRunId: runId,
                 })
               : {}),

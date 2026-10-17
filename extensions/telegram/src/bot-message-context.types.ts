@@ -27,7 +27,7 @@ export type TelegramMediaRef = {
   // Album flushes process one captioned primary message while sibling messages
   // remain in the prompt cache; keep their ids so context can hydrate each one.
   sourceMessageId?: string;
-  unavailable?: { reason: "oversize"; limitMb: number } | { reason: "download-failed" };
+  unavailable?: { reason: "oversize"; limit: string } | { reason: "download-failed" };
 };
 
 export type TelegramChannelIngressResolver = (
