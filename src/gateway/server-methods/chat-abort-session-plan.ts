@@ -21,7 +21,16 @@ import {
   writePreRegisteredAgentAbort,
   writePreRegisteredChatAbort,
 } from "./chat-abort-authorization.js";
-import type { ChatSessionAbortParams, ChatSessionAbortResult } from "./chat-abort-runtime.types.js";
+import type {
+  ChatSessionAbortParams as UpstreamChatSessionAbortParams,
+  ChatSessionAbortResult,
+} from "./chat-abort-runtime.types.js";
+
+// Fork: lifecycle interruption callers (session-run-interruption.ts) can still exclude
+// specific runs from a session-wide abort; upstream dropped this field from the shared type.
+type ChatSessionAbortParams = UpstreamChatSessionAbortParams & {
+  excludeRunIds?: ReadonlySet<string>;
+};
 import {
   ABORTED_PARTIAL_PERSISTENCE_WARNING,
   abortedPartialPersistenceError,
@@ -45,6 +54,7 @@ export function prepareChatSessionAbort(
     agentId: params.agentId,
     defaultAgentId: params.defaultAgentId,
     requester: params.requester,
+    excludeRunIds: params.excludeRunIds,
   };
   const acceptsRequest: SubagentRequestSessionOrigin["acceptsRequest"] = (identity) =>
     canRequesterAbortChatRun(identity, params.requester) &&
@@ -128,6 +138,7 @@ export function prepareChatSessionAbort(
     sessionIds: [params.sessionId],
     preserveSideRuns: params.preserveSideRuns,
     includeProtectedRuns: params.includeProtectedRuns,
+    excludeRunIds: params.excludeRunIds,
   });
   const resolvePendingRuns = (keyPrefix: string) =>
     resolveAuthorizedPreRegisteredRunsForSessionKeys({
@@ -136,6 +147,7 @@ export function prepareChatSessionAbort(
       keyPrefix,
       preserveSideRuns: params.preserveSideRuns,
       includeProtectedRuns: params.includeProtectedRuns,
+      excludeRunIds: params.excludeRunIds,
     });
   const pendingAgent = resolvePendingRuns("agent:");
   const pendingChat = resolvePendingRuns(PENDING_CHAT_SEND_DEDUPE_PREFIX);
@@ -202,6 +214,11 @@ export function prepareChatSessionAbort(
       persistedSessionId &&
       params.sessionKey !== "global" &&
       !embeddedController &&
+      // Fork: a lifecycle caller's excluded run must survive the session-wide stop.
+      !(
+        params.excludeRunIds?.size &&
+        (!sessionEmbeddedRun || params.excludeRunIds.has(sessionEmbeddedRun.runId))
+      ) &&
       (sessionEmbeddedRun
         ? sessionEmbeddedRun.abort()
         : params.requiredSessionId === undefined && abortEmbeddedAgentRun(persistedSessionId)),

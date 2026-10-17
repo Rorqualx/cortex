@@ -2,10 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { formatSqliteSessionFileMarker } from "../config/sessions/legacy-sqlite-marker.js";
 import { loadTranscriptEvents } from "../config/sessions/session-accessor.js";
-import type {
-  UserTurnTranscriptPersistenceTarget,
-  UserTurnTranscriptTarget,
-} from "./user-turn-transcript.types.js";
+import type { UserTurnTranscriptPersistenceTarget } from "./user-turn-transcript.types.js";
 
 export { persistUserTurnTranscript } from "./user-turn-transcript.persistence.js";
 
@@ -56,7 +53,7 @@ export async function readTranscriptMessages(params: {
 
 /** Creates a store-backed transcript target for tests that do not own runtime session setup. */
 export function createTestUserTurnTranscriptTarget(
-  overrides: Partial<UserTurnTranscriptTarget> = {},
+  overrides: Partial<UserTurnTranscriptPersistenceTarget> = {},
 ): UserTurnTranscriptPersistenceTarget {
   return {
     agentId: "main",

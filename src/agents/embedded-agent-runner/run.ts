@@ -477,12 +477,12 @@ function buildTraceToolSummary(params: {
  * with no side effects.
  * See: https://github.com/openclaw/openclaw/issues/60552
  */
-function backfillSessionKey(params: {
+async function backfillSessionKey(params: {
   config: RunEmbeddedAgentParams["config"];
   sessionId: string;
   sessionKey?: string;
   agentId?: string;
-}): string | undefined {
+}): Promise<string | undefined> {
   const trimmed = normalizeOptionalString(params.sessionKey);
   if (trimmed) {
     return trimmed;
@@ -491,7 +491,7 @@ function backfillSessionKey(params: {
     return undefined;
   }
   try {
-    const resolved = normalizeOptionalString(params.agentId)
+    const resolved = await (normalizeOptionalString(params.agentId)
       ? resolveStoredSessionKeyForSessionId({
           cfg: params.config,
           sessionId: params.sessionId,
@@ -500,7 +500,7 @@ function backfillSessionKey(params: {
       : resolveSessionKeyForRequestCore({
           cfg: params.config,
           sessionId: params.sessionId,
-        });
+        }));
     return normalizeOptionalString(resolved.sessionKey);
   } catch (err) {
     log.warn(
@@ -531,7 +531,7 @@ export async function runEmbeddedAgent(
   let params = paramsInput;
   // Resolve sessionKey early so all downstream consumers (hooks, LCM, compaction)
   // receive a non-null key even when callers omit it. See #60552.
-  const effectiveSessionKey = backfillSessionKey({
+  const effectiveSessionKey = await backfillSessionKey({
     config: params.config,
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,

@@ -16,6 +16,7 @@ export function readSubscriptionCompletionEvidence(subscription: EmbeddedAttempt
     itemLifecycle: subscription.getItemLifecycle(),
     acceptedSessionSpawns: subscription.getAcceptedSessionSpawns(),
     lastToolError: subscription.getLastToolError(),
+    lastToolRecovery: subscription.getLastToolRecovery(),
     didSendViaMessagingTool: subscription.didSendViaMessagingTool(),
     didSendDeterministicApprovalPrompt: subscription.didSendDeterministicApprovalPrompt(),
     messagingToolSentTexts: subscription.getMessagingToolSentTexts(),

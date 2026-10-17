@@ -390,7 +390,7 @@ export function resolveStreamingReply(params: {
     const marker = params.previousText.lastIndexOf("[[");
     const tailStart = params.previousText.indexOf("]]", marker + 2) + 2;
     const tail = params.previousText.slice(tailStart);
-    const source = params.rawDirectiveSource ?? params.next;
+    const source = params.next;
     // Settled directives before any code opener cannot enter code on append.
     // New markers and reference definitions still require the complete Markdown context.
     if (

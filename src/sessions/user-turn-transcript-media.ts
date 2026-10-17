@@ -3,8 +3,8 @@ import { resolveSessionTranscriptRuntimeTarget } from "../config/sessions/sessio
 import { hasSqliteWorkerOutcomeUnknown } from "../infra/sqlite-worker-contract.js";
 import { persistUserTurnTranscript } from "./user-turn-transcript.persistence.js";
 import type {
+  UserTurnTranscriptPersistenceTarget,
   UserTurnTranscriptRecorder,
-  UserTurnTranscriptTarget,
 } from "./user-turn-transcript.types.js";
 
 const uncertainInputOwners = new WeakSet<UserTurnTranscriptRecorder>();
@@ -28,7 +28,7 @@ export function retainsUserTurnTranscriptMedia(recorder: UserTurnTranscriptRecor
 
 export async function stageUserTurnPendingInput(
   recorder: UserTurnTranscriptRecorder,
-  target: UserTurnTranscriptTarget,
+  target: UserTurnTranscriptPersistenceTarget,
   options: Parameters<typeof stageSessionPendingInput>[1],
 ): ReturnType<typeof stageSessionPendingInput> {
   const config = target.config;
