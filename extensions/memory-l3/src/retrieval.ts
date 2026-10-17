@@ -2320,18 +2320,39 @@ export function critiqueStaleFacts(results: RetrievedFact[]): RetrievedFact[] {
 }
 export function formatMemorySection(
   facts: ReadonlyArray<RetrievedFact>,
-  options?: { now?: number },
+  options?: { now?: number; evidenceFirst?: boolean },
 ): string {
   if (facts.length === 0) {
     return "";
   }
   const now = options?.now;
+  // MORSE-inspired evidence-first ordering (QW4 2026-10-15): guarantee the
+  // strongest-supported recalls lead the section regardless of caller order,
+  // so that under token truncation the best evidence survives. Ordering key:
+  // composite score, then validity, then reliability (evidence-quality
+  // signals); the original-index tiebreak keeps output deterministic.
+  // The provenance-quote budget below is consumed in this same order, so
+  // «…» quotes land on the strongest-evidence facts, not merely the first
+  // passed in. Opt out with `evidenceFirst: false` to preserve caller order.
+  const ordered =
+    options?.evidenceFirst === false
+      ? [...facts]
+      : facts
+          .map((r, index) => ({ r, index }))
+          .sort(
+            (a, b) =>
+              b.r.score - a.r.score ||
+              b.r.signals.validity - a.r.signals.validity ||
+              b.r.signals.reliability - a.r.signals.reliability ||
+              a.index - b.index,
+          )
+          .map((entry) => entry.r);
   // HERO-inspired provenance-on-recall: surface a one-line verbatim quote for
   // the strongest facts that carry one. Budget-capped (top N by rank order —
   // callers pass results already sorted by score) so quotes cannot flood the
   // context window. Quotes are whitespace-collapsed and truncated.
   let quoteBudget = PROVENANCE_QUOTE_TOP_N;
-  const lines = facts.map((r) => {
+  const lines = ordered.map((r) => {
     const marker = tierMarker(r.tier);
     const age = now !== undefined ? ` ${formatRelativeAge(now - r.fact.createdAt)}` : "";
     // Provenance: short source-session tag so the model can tell which

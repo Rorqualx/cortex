@@ -839,6 +839,164 @@ describe("retrieveTopK typed-fact tier", () => {
     expect(result).toContain("d = value\n");
     expect(result).not.toContain("«quote d»");
   });
+
+  it("orders facts strongest-evidence-first regardless of caller order (MORSE)", () => {
+    const mkOrdered = (id: string, score: number): RetrievedFact => ({
+      fact: {
+        id,
+        text: `${id} = value`,
+        importance: 0.9,
+        createdAt: NOW,
+        dedupKey: id,
+      },
+      score,
+      signals: {
+        lexical: 1,
+        bm25: 0,
+        importance: 0.9,
+        recency: 1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 1,
+        semanticEntropy: 1,
+        validity: 1,
+        entityScore: 0,
+        polarityMultiplier: 1,
+      },
+      chunkId: "chunk-1",
+      tier: "l2",
+    });
+    const result = formatMemorySection([
+      mkOrdered("low", 0.5),
+      mkOrdered("high", 0.9),
+      mkOrdered("mid", 0.7),
+    ]);
+    expect(result.indexOf("high = value")).toBeLessThan(result.indexOf("mid = value"));
+    expect(result.indexOf("mid = value")).toBeLessThan(result.indexOf("low = value"));
+  });
+
+  it("breaks score ties by validity then reliability; full ties keep caller order", () => {
+    const mkTie = (id: string, over: { validity: number; reliability: number }): RetrievedFact => ({
+      fact: {
+        id,
+        text: `${id} = value`,
+        importance: 0.9,
+        createdAt: NOW,
+        dedupKey: id,
+      },
+      score: 0.8,
+      signals: {
+        lexical: 1,
+        bm25: 0,
+        importance: 0.9,
+        recency: 1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: over.reliability,
+        semanticEntropy: 1,
+        validity: over.validity,
+        entityScore: 0,
+        polarityMultiplier: 1,
+      },
+      chunkId: "chunk-1",
+      tier: "l2",
+    });
+    // Same score: B wins on reliability (validity tied), A beats C on validity,
+    // C last despite being passed first.
+    const result = formatMemorySection([
+      mkTie("c", { validity: 0.5, reliability: 0.9 }),
+      mkTie("a", { validity: 0.9, reliability: 0.5 }),
+      mkTie("b", { validity: 0.9, reliability: 0.9 }),
+    ]);
+    expect(result.indexOf("b = value")).toBeLessThan(result.indexOf("a = value"));
+    expect(result.indexOf("a = value")).toBeLessThan(result.indexOf("c = value"));
+    // Full tie → stable: original caller order survives.
+    const tied = formatMemorySection([
+      mkTie("first", { validity: 0.9, reliability: 0.9 }),
+      mkTie("second", { validity: 0.9, reliability: 0.9 }),
+    ]);
+    expect(tied.indexOf("first = value")).toBeLessThan(tied.indexOf("second = value"));
+  });
+
+  it("evidenceFirst: false preserves caller order (legacy behavior)", () => {
+    const mkLegacy = (id: string, score: number): RetrievedFact => ({
+      fact: {
+        id,
+        text: `${id} = value`,
+        importance: 0.9,
+        createdAt: NOW,
+        dedupKey: id,
+      },
+      score,
+      signals: {
+        lexical: 1,
+        bm25: 0,
+        importance: 0.9,
+        recency: 1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 1,
+        semanticEntropy: 1,
+        validity: 1,
+        entityScore: 0,
+        polarityMultiplier: 1,
+      },
+      chunkId: "chunk-1",
+      tier: "l2",
+    });
+    const result = formatMemorySection([mkLegacy("low", 0.5), mkLegacy("high", 0.9)], {
+      evidenceFirst: false,
+    });
+    expect(result.indexOf("low = value")).toBeLessThan(result.indexOf("high = value"));
+  });
+
+  it("provenance-quote budget follows the evidence-first order, not caller order", () => {
+    const mkQuoted = (id: string, score: number): RetrievedFact => ({
+      fact: {
+        id,
+        text: `${id} = value`,
+        importance: 0.9,
+        createdAt: NOW,
+        dedupKey: id,
+        provenanceQuote: `quote ${id}`,
+      },
+      score,
+      signals: {
+        lexical: 1,
+        bm25: 0,
+        importance: 0.9,
+        recency: 1,
+        l3Boost: 0,
+        semantic: 0,
+        informationGain: 0,
+        goalRelevance: 0,
+        reliability: 1,
+        semanticEntropy: 1,
+        validity: 1,
+        entityScore: 0,
+        polarityMultiplier: 1,
+      },
+      chunkId: "chunk-1",
+      tier: "l2",
+    });
+    // Weakest passed first; budget (top 3) must attach quotes to the strongest.
+    const result = formatMemorySection([
+      mkQuoted("weakest", 0.1),
+      mkQuoted("s1", 0.9),
+      mkQuoted("s2", 0.8),
+      mkQuoted("s3", 0.7),
+    ]);
+    expect(result).toContain("s1 = value «quote s1»");
+    expect(result).toContain("s2 = value «quote s2»");
+    expect(result).toContain("s3 = value «quote s3»");
+    expect(result).not.toContain("«quote weakest»");
+  });
 });
 
 describe("retrieveTopK failure-fact significance", () => {
