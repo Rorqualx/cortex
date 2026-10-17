@@ -879,12 +879,11 @@ land_and_deploy() {
   # build crashed+respawned the gateway the successful land was recorded as a bogus
   # error receipt (timeout / "Gateway shutting down") — firing false failure alerts,
   # driving consecutive_errors up, and leaving running_at_ms stale when the crash
-  # killed the replaced process. macOS has no setsid; nohup+disown backgrounds the
-  # deploy, reparented to launchd on this tick's exit, so it survives both this exit
-  # and the gateway crash it triggers. main is already durable on origin; the deploy's
-  # own quiesce gate now sees this job finished and proceeds.
-  nohup bash "$MAIN/scripts/cron-deploy-build.sh" </dev/null >/tmp/um-deploy.log 2>&1 &
-  disown 2>/dev/null || true
+  # killed the replaced process. cron-deploy-build.sh detaches itself (setsid) and returns
+  # at once, so call it in the foreground: backgrounding it let this tick's process-group
+  # kill reach it before it detached (no deploy ran, 2026-10-02..15). main is already
+  # durable on origin; the deploy's own quiesce gate sees this job finished and proceeds.
+  bash "$MAIN/scripts/cron-deploy-build.sh" </dev/null >/tmp/um-deploy.log 2>&1
   ledger "DEPLOY-DISPATCHED main=$landed (detached; /tmp/um-deploy.log)"
   echo "UPSTREAM-MERGE LANDED ($label): main @ $landed, Linux proof PASS. Deploy dispatched (detached)."
   exit 0

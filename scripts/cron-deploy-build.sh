@@ -20,12 +20,13 @@
 # Exit 3 = deferred (other cron jobs still running past the wait window; gateway intact).
 set -uo pipefail
 
-# Every trigger (Midnight Deploy and schema self-heal cron command jobs, upstream-merge land)
-# backgrounds this script with nohup from a short-lived parent. Cron command jobs run in their
-# own process group and the Gateway kills that whole group once the command exits, so a plain
-# nohup child died milliseconds after "dispatched" and no deploy ran (silently, from 2026-09
-# until 2026-10-01). Re-exec into a fresh session via python double-fork+setsid (macOS has no
-# setsid(1)), keeping the caller's stdout/stderr log redirection. Opt out: DEPLOY_NO_DAEMON=1.
+# Triggers (Midnight Deploy and schema self-heal cron command jobs, upstream-merge land) run
+# from cron command jobs, whose whole process group the Gateway kills once the command exits.
+# So this script re-execs into a fresh session via python double-fork+setsid (macOS has no
+# setsid(1)), keeping the caller's stdout/stderr log redirection, and returns at once.
+# Callers MUST run it in the FOREGROUND: a `nohup ... &` caller exits first and the group kill
+# lands before the detach (no deploy ran, silently, 2026-09..10-01 and again 10-02..10-15).
+# Opt out: DEPLOY_NO_DAEMON=1.
 if [ "${DEPLOY_DAEMONIZED:-}" != 1 ] && [ "${DEPLOY_NO_DAEMON:-}" != 1 ]; then
   if DEPLOY_DAEMONIZED=1 python3 - "$0" "$@" <<'PY'; then
 import os, sys
@@ -90,7 +91,20 @@ if ! try_acquire_deploy_lock; then
   echo "DEPLOY-SKIP: another dist-mutating op (pid=${DEPLOY_LOCK_HOLDER:-?}, held ${DEPLOY_LOCK_AGE}s) is in progress; it ships current main. Skipping this trigger."
   exit 0
 fi
-trap 'release_deploy_lock' EXIT
+# Durable outcome record: callers' /tmp logs are overwritten every run and the cron receipt
+# only says "dispatched", so a deploy that never ran or always aborted stayed invisible for
+# weeks. One line per run here; cron-deploy-staleness.sh reads it to alert.
+DEPLOY_HISTORY_LOG="${DEPLOY_HISTORY_LOG:-$HOME/.openclaw/logs/deploy-history.log}"
+DEPLOY_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+record_deploy_outcome() {
+  local rc="$1" serving
+  serving="$(basename "$(dirname "$(deploy_serving_release "$ROOT")")" 2>/dev/null)"
+  mkdir -p "$(dirname "$DEPLOY_HISTORY_LOG")" 2>/dev/null || true
+  printf '%s rc=%s main=%s serving=%s job=%s\n' "$DEPLOY_STARTED_AT" "$rc" \
+    "$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null)" "${serving:-?}" "$DEPLOY_JOB_ID" \
+    >>"$DEPLOY_HISTORY_LOG" 2>/dev/null || true
+}
+trap 'rc=$?; record_deploy_outcome "$rc"; release_deploy_lock' EXIT
 
 if deploy_is_migrated "$ROOT"; then
   echo "==> Deploy mode: ATOMIC SWAP (serving $(basename "$(dirname "$(deploy_serving_release "$ROOT")")"))"

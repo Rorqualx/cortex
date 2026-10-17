@@ -61,9 +61,9 @@ if [ "$src_ver" -lt "$db_ver" ]; then
 fi
 
 echo "SELFHEAL-DEPLOY: state DB schema v$db_ver > deployed v$deployed_ver (source v$src_ver can satisfy it) — the live gateway cannot open the migrated DB; dispatching a deploy to bring the runtime to v$src_ver."
-# Detached (mirrors land_and_deploy): the deploy bounces the gateway, which would kill an
-# inline child. cron-deploy-build.sh's single-flight lock makes overlapping dispatches safe.
-nohup env DEPLOY_CRON_JOB_ID="${SELFHEAL_DEPLOY_JOB_ID:-}" bash "$ROOT/scripts/cron-deploy-build.sh" </dev/null >/tmp/schema-selfheal-deploy.log 2>&1 &
-disown 2>/dev/null || true
+# Foreground on purpose: cron-deploy-build.sh detaches itself (setsid) and returns at once.
+# Backgrounding it here let the cron's process-group kill reach it before it detached.
+# cron-deploy-build.sh's single-flight lock makes overlapping dispatches safe.
+env DEPLOY_CRON_JOB_ID="${SELFHEAL_DEPLOY_JOB_ID:-}" bash "$ROOT/scripts/cron-deploy-build.sh" </dev/null >/tmp/schema-selfheal-deploy.log 2>&1
 echo "SELFHEAL-DEPLOY: dispatched (detached; /tmp/schema-selfheal-deploy.log)."
 exit 0

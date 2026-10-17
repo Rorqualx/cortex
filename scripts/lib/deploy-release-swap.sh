@@ -44,23 +44,49 @@ deploy_dist_complete() { [ -f "$1/dist/index.js" ] && [ -f "$1/dist/control-ui/i
 # migration failure: a release cloned short of one file), so this never leaves a partial
 # release live: fast instant APFS clonefile (cp -cR) with a retry, then a `ditto` fallback
 # (bulletproof full copy), else fail leaving no dest. Returns 0 on a verified copy.
-clone_dist_to() {
-  local root="$1" dest="$2" want got attempt
-  want="$(find "$root/dist" -type f 2>/dev/null | wc -l | tr -d ' ')"
+clone_dist_to() { clone_tree_verified "$1/dist" "$2"; }
+
+# clone_tree_verified <src> <dest> — the verified copy behind clone_dist_to, for any tree.
+clone_tree_verified() {
+  local src="$1" dest="$2" want got attempt
+  want="$(find "$src" -type f 2>/dev/null | wc -l | tr -d ' ')"
   [ "${want:-0}" -gt 0 ] || return 1
   mkdir -p "$(dirname "$dest")" 2>/dev/null || true   # dest may be <base>/dist with <base> new
   for attempt in 1 2; do
     rm -rf "$dest" 2>/dev/null || true
-    cp -cR "$root/dist" "$dest" 2>/dev/null || true
+    cp -cR "$src" "$dest" 2>/dev/null || true
     got="$(find "$dest" -type f 2>/dev/null | wc -l | tr -d ' ')"
     [ "$got" = "$want" ] && return 0
   done
   rm -rf "$dest" 2>/dev/null || true
-  ditto "$root/dist" "$dest" 2>/dev/null || true
+  ditto "$src" "$dest" 2>/dev/null || true
   got="$(find "$dest" -type f 2>/dev/null | wc -l | tr -d ' ')"
   [ "$got" = "$want" ] && return 0
   rm -rf "$dest" 2>/dev/null || true
   return 1
+}
+
+# The release must own its runtime dependencies. The served dist resolves bare imports by
+# walking up from dist.releases/r-<id>/dist, so a release without its own node_modules
+# falls through to the live checkout's node_modules: a `pnpm install` on main then swaps
+# dependency versions under the running gateway, and deleting the checkout's node_modules
+# crash-loops it (2026-10-15: a disk cleanup removed it; ~24h outage). pnpm's node_modules
+# links workspace packages relatively (../packages/ai, ../extensions/<id>, ../ui, ...), so
+# the workspace dirs are cloned beside it to keep every link inside the release.
+# APFS clonefile makes this ~15s and nearly free on disk.
+DEPLOY_RELEASE_RUNTIME_DIRS="node_modules packages extensions ui examples tools"
+
+# pin_release_runtime <root> <base> — clone node_modules + linked workspace dirs into <base>.
+pin_release_runtime() {
+  local root="$1" base="$2" d
+  [ -d "$root/node_modules" ] || { echo "REFUSE-PROMOTE: $root/node_modules missing — run pnpm install first" >&2; return 1; }
+  for d in $DEPLOY_RELEASE_RUNTIME_DIRS; do
+    [ -d "$root/$d" ] || continue
+    clone_tree_verified "$root/$d" "$base/$d" || {
+      echo "REFUSE-PROMOTE: could not make a complete clone of $d into $base" >&2
+      return 1
+    }
+  done
 }
 
 # _deploy_repoint_current <root> <release> — atomically point dist.current at <release>
@@ -129,6 +155,10 @@ promote_release() {
   else
     rm -rf "$base" 2>/dev/null || true
     echo "REFUSE-PROMOTE: source workspace templates missing at $root/docs/reference/templates" >&2
+    return 1
+  fi
+  if ! pin_release_runtime "$root" "$base"; then
+    rm -rf "$base" 2>/dev/null || true
     return 1
   fi
   if ! _deploy_repoint_current "$root" "$rel"; then
