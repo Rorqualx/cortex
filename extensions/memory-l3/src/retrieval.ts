@@ -178,6 +178,7 @@ import type {
   L3EpochFrontmatter,
   LongTermFact,
   LongTermTypedFact,
+  MessageChunkFacets,
   MissingFact,
   RetrievalSignal,
   TypedFact,
@@ -626,8 +627,13 @@ export async function retrieveTopK(params: {
    */
   sharedAdmissibleAgentIds?: string[];
   /**
-   * Optional Hebbian config. Defaults to DEFAULT_HEBBIAN_CONFIG.
+   * Optional actor/channel facet filter for the message-level fallback
+   * tier (SQL-level pre-filter in `readMessageChunks`, mirroring the
+   * sharedAdmissibleAgentIds pattern). When provided, only raw-conversation
+   * chunks whose actor/channel is in the list participate in the fallback.
+   * NULL-facet rows are excluded by an active filter. Default: no filter.
    */
+  messageFacets?: MessageChunkFacets;
   hebbianConfig?: HebbianConfig;
   /**
    * Pre-computed query embedding. When provided, facts with stored
@@ -1311,7 +1317,7 @@ export async function retrieveTopK(params: {
     try {
       const msgChunkIds = await params.storage.listMessageChunkIds();
       for (const cid of msgChunkIds) {
-        const chunks = await params.storage.readMessageChunks(cid);
+        const chunks = await params.storage.readMessageChunks(cid, params.messageFacets);
         for (const chunk of chunks) {
           if (!chunk.embedding || chunk.embedding.length !== params.queryEmbedding.length) {
             continue;

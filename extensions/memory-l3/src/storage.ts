@@ -24,6 +24,7 @@ import {
   type LongTermFrontmatter,
   type LongTermTypedFrontmatter,
   type MessageChunk,
+  type MessageChunkFacets,
   type Entity,
   type TopicLink,
   type RetrievalSignal,
@@ -69,9 +70,14 @@ CREATE TABLE IF NOT EXISTS l3_message_chunks (
   end_msg_index INTEGER NOT NULL,
   text TEXT NOT NULL,
   embedding TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  actor TEXT,
+  channel TEXT
 );
 CREATE INDEX IF NOT EXISTS l3_message_chunks_chunk ON l3_message_chunks (chunk_id, seq);
+-- Facet indexes live in FACET_INDEXES_SQL: they can only be created after
+-- ensureMessageFacetColumns() has added the actor/channel columns to
+-- pre-facet databases (CREATE INDEX on a missing column would throw).
 CREATE TABLE IF NOT EXISTS l3_entities (
   id TEXT PRIMARY KEY,
   data TEXT NOT NULL
@@ -109,6 +115,30 @@ CREATE TABLE IF NOT EXISTS l3_metrics (
 );
 CREATE INDEX IF NOT EXISTS l3_metrics_created ON l3_metrics (created_at, session_id);
 `;
+
+const FACET_INDEXES_SQL = `
+CREATE INDEX IF NOT EXISTS l3_message_chunks_actor ON l3_message_chunks (actor);
+CREATE INDEX IF NOT EXISTS l3_message_chunks_channel ON l3_message_chunks (channel);
+`;
+
+/**
+ * Idempotent column migration for databases created before the actor/channel
+ * facets existed (EGCForest-style facets, 2026-10-17). SQLite has no
+ * ADD COLUMN IF NOT EXISTS, so guard with PRAGMA table_info. NULLable —
+ * legacy rows stay null (facet-free) until backfilled.
+ */
+function ensureMessageFacetColumns(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(l3_message_chunks)").all() as Array<{
+    name: string;
+  }>;
+  const names = new Set(columns.map((c) => c.name));
+  if (!names.has("actor")) {
+    db.exec("ALTER TABLE l3_message_chunks ADD COLUMN actor TEXT");
+  }
+  if (!names.has("channel")) {
+    db.exec("ALTER TABLE l3_message_chunks ADD COLUMN channel TEXT");
+  }
+}
 
 /**
  * SQLite-backed storage for one L3 root.
@@ -160,6 +190,8 @@ export class Storage {
     try {
       configureMemorySqliteWalMaintenance(db, { busyTimeoutMs: 5000, databasePath: dbPath });
       db.exec(SCHEMA_SQL);
+      ensureMessageFacetColumns(db);
+      db.exec(FACET_INDEXES_SQL);
     } catch (err) {
       try {
         closeMemorySqliteWalMaintenance(db);
@@ -386,8 +418,8 @@ export class Storage {
       db.prepare("DELETE FROM l3_message_chunks WHERE chunk_id = ?").run(parentChunkId);
       const insert = db.prepare(
         "INSERT OR REPLACE INTO l3_message_chunks " +
-          "(id, chunk_id, seq, start_msg_index, end_msg_index, text, embedding, created_at) " +
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "(id, chunk_id, seq, start_msg_index, end_msg_index, text, embedding, created_at, actor, channel) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       );
       for (const c of chunks) {
         insert.run(
@@ -399,19 +431,39 @@ export class Storage {
           c.text,
           JSON.stringify(c.embedding),
           c.createdAt,
+          c.actor ?? null,
+          c.channel ?? null,
         );
       }
     });
   }
 
-  /** Read message-level chunks for a given L2 chunk ID, ordered by sequence. */
-  async readMessageChunks(chunkId: string): Promise<MessageChunk[]> {
+  /** Read message-level chunks for a given L2 chunk ID, ordered by sequence.
+   *
+   * Optional facet filter (mirrors the sharedAdmissibleAgentIds SQL-level
+   * pre-filter pattern): when `facets.actors` / `facets.channels` is a
+   * non-empty list, only rows whose actor/channel is IN the list survive.
+   * NULL facet rows are excluded by an active filter (IN never matches NULL) —
+   * filtering by facet is an explicit "only these surfaces" request. */
+  async readMessageChunks(chunkId: string, facets?: MessageChunkFacets): Promise<MessageChunk[]> {
+    const clauses: string[] = ["chunk_id = ?"];
+    const binds: Array<string> = [chunkId];
+    const actors = (facets?.actors ?? []).filter((a) => typeof a === "string" && a.length > 0);
+    const channels = (facets?.channels ?? []).filter((c) => typeof c === "string" && c.length > 0);
+    if (actors.length > 0) {
+      clauses.push(`actor IN (${actors.map(() => "?").join(", ")})`);
+      binds.push(...actors);
+    }
+    if (channels.length > 0) {
+      clauses.push(`channel IN (${channels.map(() => "?").join(", ")})`);
+      binds.push(...channels);
+    }
     const rows = this.database()
       .prepare(
-        "SELECT id, chunk_id, seq, start_msg_index, end_msg_index, text, embedding, created_at " +
-          "FROM l3_message_chunks WHERE chunk_id = ? ORDER BY seq",
+        "SELECT id, chunk_id, seq, start_msg_index, end_msg_index, text, embedding, created_at, actor, channel " +
+          `FROM l3_message_chunks WHERE ${clauses.join(" AND ")} ORDER BY seq`,
       )
-      .all(chunkId) as Array<{
+      .all(...binds) as Array<{
       id: string;
       chunk_id: string;
       seq: number;
@@ -420,6 +472,8 @@ export class Storage {
       text: string;
       embedding: string;
       created_at: number;
+      actor: string | null;
+      channel: string | null;
     }>;
     return rows.map((row) => ({
       id: row.id,
@@ -430,6 +484,8 @@ export class Storage {
       embedding: parseEmbedding(row.embedding),
       createdAt: row.created_at,
       chunkId: row.chunk_id,
+      actor: row.actor,
+      channel: row.channel,
     }));
   }
 
@@ -439,6 +495,77 @@ export class Storage {
       .prepare("SELECT DISTINCT chunk_id FROM l3_message_chunks")
       .all() as Array<{ chunk_id: string }>;
     return rows.map((row) => row.chunk_id);
+  }
+
+  /**
+   * Backfill actor facets on legacy message-chunk rows from the L1 archive.
+   * The archive (`l1_archive/<chunkId>.jsonl`) holds the exact messages the
+   * chunk windows were built from (same order), so each row's actor can be
+   * recomputed from the roles in [startMsgIndex, endMsgIndex). NULL-safe by
+   * design: chunks whose archive is missing, unreadable, or role-less keep
+   * actor = null, and already-stamped rows are never touched. Idempotent —
+   * a second run finds no pending rows and returns 0.
+   *
+   * Returns the number of rows updated.
+   */
+  async backfillMessageChunkActors(): Promise<number> {
+    const db = this.database();
+    const pending = db
+      .prepare("SELECT DISTINCT chunk_id FROM l3_message_chunks WHERE actor IS NULL")
+      .all() as Array<{ chunk_id: string }>;
+    let updated = 0;
+    for (const { chunk_id: chunkId } of pending) {
+      const archivePath = path.join(this.root, L1_ARCHIVE_DIR, `${chunkId}.jsonl`);
+      let text: string;
+      try {
+        text = await fs.readFile(archivePath, "utf8");
+      } catch {
+        continue; // No archive for this chunk — actor stays null (NULL-safe).
+      }
+      const roles: Array<string | null> = [];
+      for (const line of text.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          continue;
+        }
+        try {
+          const parsed = JSON.parse(trimmed) as { role?: unknown };
+          roles.push(
+            typeof parsed.role === "string" && parsed.role.length > 0 ? parsed.role : null,
+          );
+        } catch {
+          roles.push(null);
+        }
+      }
+      const rows = db
+        .prepare(
+          "SELECT id, start_msg_index, end_msg_index FROM l3_message_chunks " +
+            "WHERE chunk_id = ? AND actor IS NULL",
+        )
+        .all(chunkId) as Array<{ id: string; start_msg_index: number; end_msg_index: number }>;
+      const update = db.prepare("UPDATE l3_message_chunks SET actor = ? WHERE id = ?");
+      for (const row of rows) {
+        let seen: string | null = null;
+        let mixed = false;
+        for (let i = row.start_msg_index; i < row.end_msg_index && i < roles.length; i++) {
+          const role = roles[i];
+          if (role === null) {
+            continue;
+          }
+          if (seen === null) {
+            seen = role;
+          } else if (seen !== role) {
+            mixed = true;
+          }
+        }
+        if (seen === null) {
+          continue;
+        }
+        update.run(mixed ? "mixed" : seen, row.id);
+        updated += 1;
+      }
+    }
+    return updated;
   }
 
   // -----------------------------------------------------------------

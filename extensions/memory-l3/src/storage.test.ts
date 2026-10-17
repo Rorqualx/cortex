@@ -9,6 +9,7 @@ import {
   type L3EpochFrontmatter,
   type LongTermFact,
   type LongTermFrontmatter,
+  type MessageChunk,
 } from "./types.js";
 
 let tmpRoot: string;
@@ -153,6 +154,146 @@ describe("Storage L1 archive", () => {
     }
     expect(JSON.parse(line0)).toEqual({ role: "user", content: "first" });
     expect(JSON.parse(line1)).toEqual({ role: "assistant", content: "second" });
+  });
+});
+
+describe("Storage message-chunk actor/channel facets (QW3 2026-10-15)", () => {
+  const baseChunk = (
+    id: string,
+    seq: number,
+    chunkId: string,
+    over?: { actor?: string | null; channel?: string | null },
+  ): MessageChunk => ({
+    id,
+    seq,
+    startMsgIndex: seq * 2,
+    endMsgIndex: seq * 2 + 2,
+    text: `text-${id}`,
+    embedding: [0.1, 0.2],
+    createdAt: 1_700_000_000_000,
+    chunkId,
+    actor: over?.actor ?? null,
+    channel: over?.channel ?? null,
+  });
+
+  it("round-trips actor and channel facets (null-safe)", async () => {
+    await storage.writeMessageChunks([
+      baseChunk("m0", 0, "chunk-facets", { actor: "user", channel: "telegram" }),
+      baseChunk("m1", 1, "chunk-facets", { actor: null, channel: null }),
+    ]);
+    const rows = await storage.readMessageChunks("chunk-facets");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.actor).toBe("user");
+    expect(rows[0]?.channel).toBe("telegram");
+    expect(rows[1]?.actor).toBeNull();
+    expect(rows[1]?.channel).toBeNull();
+  });
+
+  it("facet filters narrow reads, exclude NULL facet rows, and empty filters read all", async () => {
+    await storage.writeMessageChunks([
+      baseChunk("a0", 0, "chunk-facets", { actor: "user", channel: "telegram" }),
+      baseChunk("a1", 1, "chunk-facets", { actor: "assistant", channel: "telegram" }),
+      baseChunk("a2", 2, "chunk-facets", { actor: null, channel: null }),
+    ]);
+    const byActor = await storage.readMessageChunks("chunk-facets", { actors: ["user"] });
+    expect(byActor).toHaveLength(1);
+    expect(byActor[0]?.id).toBe("a0");
+    expect(
+      await storage.readMessageChunks("chunk-facets", { channels: ["telegram"] }),
+    ).toHaveLength(2);
+    expect(
+      await storage.readMessageChunks("chunk-facets", { actors: ["user"], channels: ["telegram"] }),
+    ).toHaveLength(1);
+    // Empty lists mean "no filter" — NULL-facet rows survive.
+    expect(await storage.readMessageChunks("chunk-facets", { actors: [] })).toHaveLength(3);
+    expect(await storage.readMessageChunks("chunk-facets", {})).toHaveLength(3);
+  });
+
+  it("migrates a pre-facet database by adding actor/channel columns (legacy rows read null)", async () => {
+    const { requireNodeSqlite } =
+      await import("openclaw/plugin-sdk/memory-core-host-engine-storage");
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(storage.root, { recursive: true });
+    const raw = new (requireNodeSqlite().DatabaseSync)(path.join(storage.root, "l3.sqlite"));
+    raw.exec(
+      "CREATE TABLE l3_message_chunks (" +
+        "id TEXT PRIMARY KEY, chunk_id TEXT NOT NULL, seq INTEGER NOT NULL, " +
+        "start_msg_index INTEGER NOT NULL, end_msg_index INTEGER NOT NULL, " +
+        "text TEXT NOT NULL, embedding TEXT NOT NULL, created_at INTEGER NOT NULL)",
+    );
+    raw
+      .prepare(
+        "INSERT INTO l3_message_chunks " +
+          "(id, chunk_id, seq, start_msg_index, end_msg_index, text, embedding, created_at) " +
+          "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run("legacy-1", "chunk-legacy", 0, 0, 2, "old text", "[0.1]", 1_700_000_000_000);
+    raw.close();
+
+    // Opening through Storage must add the facet columns and keep the row.
+    const rows = await storage.readMessageChunks("chunk-legacy");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.actor).toBeNull();
+    expect(rows[0]?.channel).toBeNull();
+
+    // New facet-bearing writes work against the migrated table.
+    await storage.writeMessageChunks([
+      baseChunk("m0", 0, "chunk-legacy", { actor: "user", channel: "cli" }),
+    ]);
+    const after = await storage.readMessageChunks("chunk-legacy");
+    expect(after).toHaveLength(1);
+    expect(after[0]?.actor).toBe("user");
+    expect(after[0]?.channel).toBe("cli");
+  });
+
+  it("backfills actor facets from the L1 archive (NULL-safe, idempotent, pre-stamped rows untouched)", async () => {
+    const archive = [
+      { role: "user", content: "q1" },
+      { role: "user", content: "q2" },
+      { role: "assistant", content: "a1" },
+      { role: "user", content: "q3" },
+      { role: "assistant", content: "a2" },
+    ];
+    for (const line of archive) {
+      await storage.appendL1Archive("chunk-bf", line);
+    }
+    const mk = (
+      id: string,
+      chunkId: string,
+      seq: number,
+      start: number,
+      end: number,
+      actor: string | null,
+    ): MessageChunk => ({
+      id,
+      seq,
+      startMsgIndex: start,
+      endMsgIndex: end,
+      text: `t-${id}`,
+      embedding: [0.1],
+      createdAt: 1,
+      chunkId,
+      actor,
+      channel: null,
+    });
+    await storage.writeMessageChunks([
+      mk("b0", "chunk-bf", 0, 0, 2, null),
+      mk("b1", "chunk-bf", 1, 2, 4, null),
+      mk("b2", "chunk-bf", 2, 4, 5, null),
+      // Pre-stamped row whose window would re-derive as "user" — must stay.
+      mk("b3", "chunk-bf", 3, 0, 1, "assistant"),
+    ]);
+    await storage.writeMessageChunks([mk("n0", "chunk-noarchive", 0, 0, 1, null)]);
+
+    const updated = await storage.backfillMessageChunkActors();
+    expect(updated).toBe(3);
+    const rows = await storage.readMessageChunks("chunk-bf");
+    expect(rows.map((r) => r.actor)).toEqual(["user", "mixed", "assistant", "assistant"]);
+    const orphan = await storage.readMessageChunks("chunk-noarchive");
+    expect(orphan[0]?.actor).toBeNull();
+
+    // Idempotent: nothing left to backfill.
+    expect(await storage.backfillMessageChunkActors()).toBe(0);
   });
 });
 

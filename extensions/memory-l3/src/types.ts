@@ -669,6 +669,30 @@ export type MessageChunk = {
   createdAt: number;
   /** Parent chunk ID this window belongs to. */
   chunkId: string;
+  /**
+   * Actor facet (EGCForest-style): dominant speaker of the window —
+   * "user", "assistant", "mixed" when several roles contribute, or
+   * null when the source messages carried no role metadata. NULL-safe:
+   * legacy rows and role-less transcripts stay null and simply never
+   * match an actor facet filter.
+   */
+  actor?: string | null;
+  /**
+   * Channel facet: origin surface of the conversation (e.g. "telegram",
+   * "discord", "cli"). Populated only when the ingest path knows it;
+   * null otherwise (NULL-safe backfill target).
+   */
+  channel?: string | null;
+};
+
+/**
+ * Optional facet filter over message-level chunks (mirrors the
+ * sharedAdmissibleAgentIds SQL-level pre-filter pattern). NULL rows are
+ * excluded whenever the corresponding facet list is present and non-empty.
+ */
+export type MessageChunkFacets = {
+  actors?: string[];
+  channels?: string[];
 };
 
 /**

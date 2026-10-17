@@ -46,7 +46,7 @@ import { cosineSimilarity } from "./scoring.js";
 import { selectSlidingWindow } from "./sliding-window.js";
 import { Storage } from "./storage.js";
 import { estimateTotalTokens } from "./token-estimate.js";
-import type { L3State } from "./types.js";
+import type { L3State, MessageChunkFacets } from "./types.js";
 
 const ASSEMBLE_TOP_K = 5;
 const ASSEMBLE_TOP_K_MIN = 3;
@@ -175,6 +175,14 @@ export type HierarchicalL3EngineOptions = {
    */
   sharedAdmissibleAgentIds?: string[];
   /**
+   * Actor/channel facet filter for the message-level fallback tier
+   * (SQL-level pre-filter, mirrors sharedAdmissibleAgentIds). When
+   * provided, only raw-conversation chunks whose actor/channel is in the
+   * list participate in retrieval fallback; NULL-facet rows are excluded
+   * by an active filter. Default: no filter.
+   */
+  messageFacets?: MessageChunkFacets;
+  /**
    * Embedding provider adapter id for the semantic channel (e.g. "openai",
    * "openai-compatible"). Falls back to the OPENCLAW_L3_EMBEDDING_PROVIDER
    * env var, then "openai". Decouples L3 from a single hardcoded provider
@@ -203,6 +211,7 @@ export class HierarchicalL3Engine implements ContextEngine {
   private readonly skillForgeDir: string | undefined;
   private readonly sharedMemoryDir: string | undefined;
   private readonly sharedAdmissibleAgentIds: string[] | undefined;
+  private readonly messageFacets: MessageChunkFacets | undefined;
   private readonly embeddingProviderIdOverride: string | undefined;
   private readonly embeddingProviderOverride: EmbeddingProvider | undefined;
   /** Lazily resolved embedding provider from core infrastructure. */
@@ -223,6 +232,7 @@ export class HierarchicalL3Engine implements ContextEngine {
     this.skillForgeDir = options?.skillForgeDir;
     this.sharedMemoryDir = options?.sharedMemoryDir;
     this.sharedAdmissibleAgentIds = options?.sharedAdmissibleAgentIds;
+    this.messageFacets = options?.messageFacets;
     this.embeddingProviderIdOverride = options?.embeddingProviderId;
   }
 
@@ -230,6 +240,17 @@ export class HierarchicalL3Engine implements ContextEngine {
     l3debug(`bootstrap(): root=${this.storage.root} agentDir=${this.agentDir ?? "(undefined)"}`);
     await this.storage.ensureLayout();
     this.state = await this.storage.readState();
+    // One-time NULL-safe actor backfill for pre-facet message chunks (no-op
+    // once every row is stamped or archive-less). Non-fatal: a missing or
+    // unreadable archive must never block engine startup.
+    try {
+      const backfilled = await this.storage.backfillMessageChunkActors();
+      if (backfilled > 0) {
+        l3debug(`bootstrap(): backfilled actor facet on ${backfilled} message chunks`);
+      }
+    } catch (err) {
+      l3debug(`bootstrap(): actor facet backfill skipped: ${(err as Error).message}`);
+    }
     if (this.state.agentId === null) {
       const derived = deriveAgentIdFromAgentDir(this.agentDir);
       if (derived) {
@@ -354,6 +375,7 @@ export class HierarchicalL3Engine implements ContextEngine {
       skillForgeDir: this.skillForgeDir,
       sharedMemoryDir: this.sharedMemoryDir,
       sharedAdmissibleAgentIds: this.sharedAdmissibleAgentIds,
+      messageFacets: this.messageFacets,
       queryEmbedding,
     });
     if (top.facts.length === 0) {

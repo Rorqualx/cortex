@@ -162,6 +162,32 @@ export function splitByBoundaries(
  * Returns chunks with pre-computed embeddings ready for storage and
  * retrieval.
  */
+/**
+ * Derive the actor facet for a message window: the common role when every
+ * message shares one, "mixed" when several roles contribute, and null when
+ * no message carries role metadata (legacy/role-less transcripts stay
+ * facet-free and never match an actor filter — NULL-safe by design).
+ */
+export function deriveWindowActor(messages: ReadonlyArray<AgentMessage>): string | null {
+  let seen: string | null = null;
+  let mixed = false;
+  for (const m of messages) {
+    const role = (m as { role?: unknown }).role;
+    if (typeof role !== "string" || role.length === 0) {
+      continue;
+    }
+    if (seen === null) {
+      seen = role;
+    } else if (seen !== role) {
+      mixed = true;
+    }
+  }
+  if (seen === null) {
+    return null;
+  }
+  return mixed ? "mixed" : seen;
+}
+
 export async function buildMessageChunks(params: {
   messages: ReadonlyArray<AgentMessage>;
   embeddingProvider: EmbeddingProvider;
@@ -169,6 +195,8 @@ export async function buildMessageChunks(params: {
   now?: number;
   windowSize?: number;
   overlap?: number;
+  /** Origin surface stamped on every produced chunk (null-safe). */
+  channel?: string | null;
 }): Promise<MessageChunk[]> {
   const windowSize = params.windowSize ?? MESSAGE_WINDOW_SIZE;
   const overlap = params.overlap ?? MESSAGE_WINDOW_OVERLAP;
@@ -179,7 +207,7 @@ export async function buildMessageChunks(params: {
     return [];
   }
 
-  const chunks: Array<{ start: number; end: number; text: string }> = [];
+  const chunks: Array<{ start: number; end: number; text: string; actor: string | null }> = [];
   for (let i = 0; i < params.messages.length; i += step) {
     const end = Math.min(i + windowSize, params.messages.length);
     const slice = params.messages.slice(i, end);
@@ -200,7 +228,7 @@ export async function buildMessageChunks(params: {
       .filter((s) => s.length > 0)
       .join("\n");
     if (text.length > 0) {
-      chunks.push({ start: i, end, text });
+      chunks.push({ start: i, end, text, actor: deriveWindowActor(slice) });
     }
   }
 
@@ -227,5 +255,7 @@ export async function buildMessageChunks(params: {
     embedding: embeddings[i] ?? [],
     createdAt: now,
     chunkId: params.chunkId,
+    actor: c.actor,
+    channel: params.channel ?? null,
   }));
 }
