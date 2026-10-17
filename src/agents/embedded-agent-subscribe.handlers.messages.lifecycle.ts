@@ -4,6 +4,7 @@ import { createInlineCodeState } from "../../packages/markdown-core/src/code-spa
 import { parseReplyDirectives } from "../auto-reply/reply/reply-directives.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
 import { applyAssistantDeliveryDirectives } from "../config/sessions/transcript-assistant-delivery.js";
+import type { AssistantMessage } from "../llm/types.js";
 import {
   parseAssistantTextSignature,
   resolveAssistantMessagePhase,
@@ -66,7 +67,7 @@ export function handleMessageEnd(
       textEnd: ctx.state.assistantTexts.length,
       messageEnd: ctx.state.assistantMessageIndex,
       finalMessageStart: ctx.state.assistantMessageStartIndex,
-      lastAssistant: ctx.state.lastAssistant,
+      lastAssistant: ctx.state.lastAssistant as AssistantMessage,
       keptAnswer: ctx.state.keptAnswer,
       sourceReplyDeliveryState: ctx.state.sourceReplyDeliveryState,
     });
