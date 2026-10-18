@@ -43,17 +43,6 @@ export function shouldAllowProviderOwnedThinkingReplay(params: {
   );
 }
 
-/**
- * Bedrock Converse still requires strict role alternation, so only the direct
- * Messages API keeps consecutive user turns separate under append-only replay.
- */
-export function shouldMergeConsecutiveUserTurns(
-  policy: Pick<TranscriptPolicy, "appendOnlyRuntimeContext">,
-  modelApi?: string | null,
-): boolean {
-  return !(policy.appendOnlyRuntimeContext && modelApi === "anthropic-messages");
-}
-
 const DEFAULT_TRANSCRIPT_POLICY: TranscriptPolicy = {
   sanitizeMode: "images-only",
   sanitizeToolCallIds: false,
