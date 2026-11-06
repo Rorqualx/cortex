@@ -6,10 +6,7 @@ import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
 import { chromium } from "playwright";
 import { defineConfig, defineProject } from "vitest/config";
-import {
-  jsdomOptimizedDeps,
-  resolveDefaultVitestPool,
-} from "../test/vitest/vitest.shared.config.ts";
+import { jsdomOptimizedDeps } from "../test/vitest/vitest.shared.config.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..");
@@ -73,7 +70,7 @@ const workspaceSourceAliases = [
 ];
 const sharedUiTestConfig = {
   isolate: false,
-  pool: resolveDefaultVitestPool(),
+  pool: "threads",
   // Real-Chromium layout tests exceed Vitest's 5s default on 4vcpu CI runners;
   // without this the checks-ui lane flakes on cold hover/interaction tests.
   testTimeout: 60_000,
