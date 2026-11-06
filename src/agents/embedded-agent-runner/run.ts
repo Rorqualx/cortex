@@ -1849,6 +1849,20 @@ export async function runEmbeddedAgent(
             storePath: params.sessionTarget?.storePath,
             toolsAllow: params.toolsAllow,
           });
+          // Attempt preparation selects the transcript-backed session manager from
+          // sessionTarget alone; a sessionFile marker without it yields an in-memory
+          // manager with no write admission, so appends return no transcript anchor and
+          // the user turn is never admitted. Resolve per attempt so compaction and
+          // session rotations (activeSessionId/activeSessionFile) stay in sync.
+          const attemptSessionTarget = await resolveAgentRunSessionTarget({
+            agentId: params.agentId,
+            config: params.config,
+            missingSessionKey: "create",
+            sessionId: activeSessionId,
+            sessionKey: resolvedSessionKey,
+            sessionFile: activeSessionFile,
+            sessionTarget: params.sessionTarget,
+          });
           const attemptParams: Parameters<typeof runEmbeddedAttemptWithBackend>[0] = {
             admittedRunContext,
             // Policy, authority and routing facts upstream threads through run-attempt-dispatch.
@@ -1909,6 +1923,7 @@ export async function runEmbeddedAgent(
             replyToMode: params.replyToMode,
             hasRepliedRef: params.hasRepliedRef,
             sessionFile: activeSessionFile,
+            sessionTarget: attemptSessionTarget,
             workspaceDir: resolvedWorkspace,
             cwd: params.cwd,
             agentDir,
