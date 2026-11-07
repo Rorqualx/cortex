@@ -73,16 +73,27 @@ CI=1 OPENCLAW_VITEST_MAX_WORKERS="${CRON_GATE_VITEST_WORKERS:-2}" \
 current="$(
   python3 - "$RESULTS" "$ROOT" <<'PY'
 import json, os, sys
-results, root = sys.argv[1], sys.argv[2].rstrip(os.sep) + os.sep
+# $ROOT comes from `pwd`, which reports the shell's LOGICAL cwd: on macOS's
+# case-insensitive filesystem that can differ in case from the canonical path
+# vitest reports (".../cline/..." vs the real ".../Cline/..."), and it may also
+# carry an unresolved symlink. A plain startswith then fails to strip the prefix,
+# every failing file is recorded absolute, and the comparison against a
+# repo-relative baseline reports all of them as new — a guaranteed TESTGATE-FAIL
+# that is pure path formatting, not a regression. Normalize both sides so the
+# baseline format is stable no matter which spelling of the repo path invoked us.
+results = sys.argv[1]
+root = os.path.realpath(sys.argv[2]).rstrip(os.sep) + os.sep
 data = json.load(open(results))
 fails = set()
 for t in data.get("testResults", []):
     if t.get("status") == "failed":
         name = t.get("name", "")
-        if name.startswith(root):
-            name = name[len(root):]
-        if name:
-            fails.add(name)
+        if not name:
+            continue
+        real = os.path.realpath(name)
+        if real.lower().startswith(root.lower()):
+            real = real[len(root):]
+        fails.add(real)
 print("\n".join(sorted(fails)))
 PY
 )"
