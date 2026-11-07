@@ -473,7 +473,10 @@ describe("consolidateLongTerm verification gate", () => {
   it("passes all candidates when verification is disabled (default)", async () => {
     await writeChunk(
       "chunk-000000-v",
-      [fact("fv1", "user likes rust", 0.9, NOW, "user:pref:rust")],
+      // QW-B (2026-11-07): neutral text — this test targets the verification
+      // gate default, not preference promotion; preference-like one-shots
+      // are now floor-blocked in passesPromotionThresholds.
+      [fact("fv1", "user works in rust", 0.9, NOW, "user:pref:rust")],
       NOW,
     );
     const result = await consolidateLongTerm({
@@ -548,7 +551,9 @@ describe("consolidateLongTerm QMD mirror", () => {
   it("writes <workspaceDir>/memory/.l3/<date>.md when workspaceDir is provided", async () => {
     await writeChunk(
       "chunk-x",
-      [fact("f1", "user prefers tabs over spaces", 0.9, NOW, "user_pref:tabs")],
+      // QW-B (2026-11-07): neutral text — this test targets the QMD mirror
+      // mechanics; preference-like one-shot fixtures are floor-blocked now.
+      [fact("f1", "user indents code with tabs over spaces", 0.9, NOW, "user_pref:tabs")],
       NOW,
     );
     const workspaceDir = path.join(tmpRoot, "workspace");
@@ -568,7 +573,7 @@ describe("consolidateLongTerm QMD mirror", () => {
     const body = await fs.readFile(mirrorPath, "utf8");
     expect(body).toContain("# Long-term memory (memory-l3 derived)");
     expect(body).toContain("## user_pref:tabs");
-    expect(body).toContain("user prefers tabs over spaces");
+    expect(body).toContain("user indents code with tabs over spaces");
     expect(body).toContain("recallCount=1");
     expect(body).toContain("importance=0.90");
   });

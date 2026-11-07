@@ -6,6 +6,7 @@ import {
   aggregateCandidates,
   type ConsolidationConfig,
   DEFAULT_CONSOLIDATION_CONFIG,
+  isPreferenceLikeFact,
   joinRetrievalUseCounts,
   passesPromotionThresholds,
   runVerificationGate,
@@ -269,6 +270,77 @@ describe("passesPromotionThresholds", () => {
         baseCfg,
       ),
     ).toBe(true);
+  });
+
+  describe("preference evidence floor (QW-B, 2026-11-07)", () => {
+    const preferenceCandidate = {
+      dedupKey: "user_pref:standups",
+      text: "user prefers morning standups",
+      importance: 0.9,
+      recallCount: 1,
+      firstSeenAt: NOW,
+      lastConfirmedAt: NOW,
+      sourceChunkIds: ["chunk-1"],
+      certainty: "confirmed" as const,
+    };
+
+    it("blocks a single-episode preference at high importance (one chunk is not evidence)", () => {
+      expect(passesPromotionThresholds(preferenceCandidate, baseCfg)).toBe(false);
+    });
+
+    it("blocks a preference repeated within one chunk (same-episode sightings are not independent)", () => {
+      expect(
+        passesPromotionThresholds(
+          {
+            ...preferenceCandidate,
+            recallCount: 2,
+            firstSeenAt: NOW - 5 * MS_PER_DAY,
+            lastConfirmedAt: NOW,
+          },
+          baseCfg,
+        ),
+      ).toBe(false);
+    });
+
+    it("promotes a preference once two distinct chunks confirm it and the bar clears", () => {
+      expect(
+        passesPromotionThresholds(
+          {
+            ...preferenceCandidate,
+            recallCount: 2,
+            firstSeenAt: NOW - 5 * MS_PER_DAY,
+            lastConfirmedAt: NOW,
+            sourceChunkIds: ["chunk-a", "chunk-b"],
+          },
+          baseCfg,
+        ),
+      ).toBe(true);
+    });
+
+    it("exempts explicit corrections — a user-directed supersession is strong evidence", () => {
+      expect(
+        passesPromotionThresholds({ ...preferenceCandidate, modality: "correction" }, baseCfg),
+      ).toBe(true);
+    });
+
+    it("does not floor-block high-stakes user traits (allergy promotes on one shot)", () => {
+      expect(
+        passesPromotionThresholds(
+          {
+            ...preferenceCandidate,
+            text: "user has a severe peanut allergy",
+          },
+          baseCfg,
+        ),
+      ).toBe(true);
+    });
+
+    it("isPreferenceLikeFact: knowledge text and high-stakes text are not preference-like", () => {
+      expect(isPreferenceLikeFact("pi-hole lives at 192.168.50.128")).toBe(false);
+      expect(isPreferenceLikeFact("user has a penicillin allergy")).toBe(false);
+      expect(isPreferenceLikeFact("user's favorite sushi spot is Sushi Den")).toBe(true);
+      expect(isPreferenceLikeFact("user dislikes early flights")).toBe(true);
+    });
   });
 
   it("retrieval-use credit lets an otherwise-barred single-recall fact promote", () => {

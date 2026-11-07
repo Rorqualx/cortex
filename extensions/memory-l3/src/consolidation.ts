@@ -42,6 +42,16 @@ export type ConsolidationConfig = {
   /** Dayspan bar for tentative-only candidates. */
   tentativeMinDayspanMs: number;
   /**
+   * QW-B (2026-11-07, Memory Trap residual): minimum distinct source chunks
+   * for preference-type facts to promote, regardless of importance or
+   * recallCount. Guards against a single low-stakes episode ("user likes X")
+   * hardening into a durable user trait — via the high-importance shortcut
+   * OR via same-chunk repeat sightings (recallCount can reach 2 from one
+   * chunk). Explicit corrections and high-stakes traits (allergies, medical)
+   * are exempt. Set 0 to disable. Default 2.
+   */
+  preferenceEvidenceFloor?: number;
+  /**
    * Optional TRUSTMEM 3-axis verification gate. When enabled, each candidate
    * that passes promotion thresholds is additionally verified by an LLM for
    * coverage, preservation, and faithfulness before L3 write.
@@ -56,6 +66,7 @@ export const DEFAULT_CONSOLIDATION_CONFIG: ConsolidationConfig = {
   highImportancePassthrough: 0.85,
   tentativeMinRecallCount: 3,
   tentativeMinDayspanMs: 5 * MS_PER_DAY,
+  preferenceEvidenceFloor: 2,
 };
 
 /**
@@ -194,6 +205,26 @@ function mergeFact(
 }
 
 /**
+ * QW-B (2026-11-07): conservative classifier for preference/user-trait
+ * prose facts. Matches explicit preference phrasings ONLY — knowledge facts
+ * ("the pi-hole lives at 192.168.50.128") never match. Deliberately
+ * excludes high-stakes user traits (allergies, medical, safety) so those
+ * one-shot promote normally — over-suppression there is worse than a stale
+ * preference. Runs in linear time; exported for testing.
+ */
+const PREFERENCE_LIKE_RE =
+  /\b(prefer(?:s|ence|red|ring)?|lik(?:es|ed|ing)|dislik(?:es|ed|ing)|lov(?:es|ed|ing)|hat(?:es|ed|ing)|favourite|favorite|favourites?|favorites?|enjoy(?:s|ed|ing)|can'?t stand|avoid(?:s|ed|ing)?)\b/i;
+const PREFERENCE_HIGH_STAKES_RE =
+  /\b(allerg\w*|medic\w*|medication|health|doctor|emergency|safety|epipen)\b/i;
+
+export function isPreferenceLikeFact(text: string): boolean {
+  if (PREFERENCE_HIGH_STAKES_RE.test(text)) {
+    return false;
+  }
+  return PREFERENCE_LIKE_RE.test(text);
+}
+
+/**
  * Predicate: should this candidate promote into the long-term tier? Returns
  * true when the candidate either (a) meets the high-importance shortcut or
  * (b) clears the recall + dayspan + importance bar.
@@ -203,6 +234,21 @@ export function passesPromotionThresholds(
   config: ConsolidationConfig = DEFAULT_CONSOLIDATION_CONFIG,
 ): boolean {
   const tentative = candidate.certainty === "tentative";
+  // QW-B (2026-11-07): evidence floor for preference-type facts — a single
+  // distinct source chunk is not independent-enough evidence to harden a
+  // preference into a durable user trait, no matter how the extractor rated
+  // its importance or how often it repeated within one episode. Checked
+  // BEFORE the high-importance shortcut on purpose. Corrections are exempt
+  // (user-directed supersession is strong evidence by construction).
+  const preferenceFloor = config.preferenceEvidenceFloor ?? 2;
+  if (
+    preferenceFloor > 0 &&
+    candidate.modality !== "correction" &&
+    candidate.sourceChunkIds.length < preferenceFloor &&
+    isPreferenceLikeFact(candidate.text)
+  ) {
+    return false;
+  }
   if (!tentative && candidate.importance >= config.highImportancePassthrough) {
     return true;
   }
