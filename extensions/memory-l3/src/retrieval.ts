@@ -374,7 +374,63 @@ export type RetrievalResult = {
   reformulated?: boolean;
   /** QW-C: evidence-conditioned drill rounds executed (0–1); absent = none. */
   drillDepth?: number;
+  /** QW-A (2026-11-07, AttentionIndex): facts dropped by the causal-prefix
+   * guard (commit timestamp in the future of `now` beyond tolerance);
+   * absent = none dropped. */
+  causalDropped?: number;
 };
+
+// ---------------------------------------------------------------------------
+// QW-A (2026-11-07, AttentionIndex-inspired): causal-prefix guard
+// ---------------------------------------------------------------------------
+
+/**
+ * Tolerance for the retrieval-time future-bleed guard. A consolidated store
+ * must never surface knowledge committed "in the future" of the current
+ * turn — clock skew between agents, misdated transcript imports, or
+ * corrupted rows. Small positive skew is tolerated so cross-agent shared
+ * stores on imperfectly-synced clocks don't lose admissible facts.
+ */
+const CAUSAL_PREFIX_TOLERANCE_MS = 5 * 60_000;
+
+/**
+ * True when a fact's commit timestamp is admissible for a retrieval whose
+ * turn started at `now` (i.e., it is not from the future). Absent timestamps
+ * pass — absence is not future-bleed.
+ */
+function isCausallyAdmissible(createdAt: number | undefined, now: number): boolean {
+  return createdAt === undefined || createdAt <= now + CAUSAL_PREFIX_TOLERANCE_MS;
+}
+
+/**
+ * In-place causal-prefix filter with a fail-open valve: if EVERY candidate
+ * is future-dated (e.g., the local clock was corrected backwards after a
+ * long drift), keep them all rather than bricking retrieval — the invariant
+ * protects against *partial* future-bleed, it is not a suicide pact.
+ * Returns the number of dropped candidates (0 when nothing was dropped or
+ * the fail-open valve fired).
+ */
+function applyCausalPrefixGuard<T>(
+  candidates: T[],
+  createdAtOf: (candidate: T) => number | undefined,
+  now: number,
+): number {
+  let futureCount = 0;
+  for (const candidate of candidates) {
+    if (!isCausallyAdmissible(createdAtOf(candidate), now)) {
+      futureCount++;
+    }
+  }
+  if (futureCount === 0 || futureCount === candidates.length) {
+    return 0; // nothing to drop, or fail-open (all-future store/clock)
+  }
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    if (!isCausallyAdmissible(createdAtOf(candidates[i]!), now)) {
+      candidates.splice(i, 1);
+    }
+  }
+  return futureCount;
+}
 
 // ---------------------------------------------------------------------------
 // QW-1: Query Reformulation (MemCon-inspired)
@@ -844,6 +900,14 @@ export async function retrieveTopK(params: {
     });
   }
 
+  // QW-A (2026-11-07, AttentionIndex): causal-prefix guard on the collected
+  // candidate set. Facts whose commit timestamp sits in the future of `now`
+  // (beyond tolerance) are removed BEFORE scoring so they can never rank,
+  // be recorded as retrieval signals, re-enter via reformulation/drill
+  // rounds, or resurface through Hebbian pattern completion (which pulls
+  // neighbors from this same `items` array).
+  let causalDroppedTotal = applyCausalPrefixGuard(items, (i) => i.fact.createdAt, now);
+
   // Pre-load retrieval signals for stale-utility demotion (RMM-inspired).
   // Reused later for post-retrieval signal recording to avoid a second read.
   let preloadedSignals: RetrievalSignal[] = [];
@@ -1209,6 +1273,13 @@ export async function retrieveTopK(params: {
   // Record which facts were retrieved so consolidation can adjust
   // importance based on retrieval frequency. Non-fatal — signal
   // recording failure must not block retrieval.
+  // QW-A (2026-11-07): causal-prefix guard, second choke point. The
+  // memory-core / procedural / shared tiers bypass `items` and push
+  // directly into `scored`; filter here so every tier converges through the
+  // same admissibility check before ranking, signal recording, and Hebbian
+  // boosting.
+  causalDroppedTotal += applyCausalPrefixGuard(scored, (r) => r.fact.createdAt, now);
+
   scored.sort((a, b) => b.score - a.score);
   const topForSignals = scored.slice(0, topK);
   try {
@@ -1326,6 +1397,13 @@ export async function retrieveTopK(params: {
           if (sim < 0.3) {
             continue;
           } // Minimum relevance threshold
+          // QW-A (2026-11-07): causal-prefix guard on the fallback tier —
+          // message chunks with a future `created_at` (misdated imports,
+          // clock-skewed writers) are never admissible evidence.
+          if (!isCausallyAdmissible(chunk.createdAt, now)) {
+            causalDroppedTotal++;
+            continue;
+          }
           result.push({
             fact: {
               id: chunk.id,
@@ -1690,6 +1768,7 @@ export async function retrieveTopK(params: {
     missingInfo,
     reformulated,
     ...(drillDepth > 0 ? { drillDepth } : {}),
+    ...(causalDroppedTotal > 0 ? { causalDropped: causalDroppedTotal } : {}),
   };
 }
 

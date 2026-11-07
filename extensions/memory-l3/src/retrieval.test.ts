@@ -76,6 +76,86 @@ describe("retrieveTopK", () => {
     expect(facts).toEqual([]);
   });
 
+  describe("causal-prefix guard (QW-A, 2026-11-07)", () => {
+    it("drops facts committed in the future of now and reports causalDropped", async () => {
+      await writeChunk("chunk-1", [
+        {
+          id: "f-present",
+          text: "standup schedule is 9am",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:present",
+        },
+        {
+          id: "f-future",
+          text: "standup schedule changes to 10am next quarter",
+          importance: 0.9,
+          dedupKey: "k:future",
+          // Simulated future-bleed: misdated import / clock-skewed writer.
+          createdAt: NOW + 24 * 60 * 60 * 1000,
+        },
+      ]);
+      const result = await retrieveTopK({
+        query: "standup schedule",
+        storage,
+        topK: 5,
+        now: NOW,
+      });
+      expect(result.facts.map((f) => f.fact.id)).toEqual(["f-present"]);
+      expect(result.causalDropped).toBe(1);
+    });
+
+    it("keeps facts committed within the causal tolerance window (small clock skew)", async () => {
+      await writeChunk("chunk-1", [
+        {
+          id: "f-skew",
+          text: "standup schedule is 9am",
+          importance: 0.5,
+          // 4 minutes ahead — inside the 5-minute tolerance.
+          createdAt: NOW + 4 * 60_000,
+          dedupKey: "k:skew",
+        },
+      ]);
+      const result = await retrieveTopK({
+        query: "standup schedule",
+        storage,
+        topK: 5,
+        now: NOW,
+      });
+      expect(result.facts.map((f) => f.fact.id)).toEqual(["f-skew"]);
+      expect(result.causalDropped).toBeUndefined();
+    });
+
+    it("fails open when every candidate is future-dated (clock corrected backwards)", async () => {
+      await writeChunk("chunk-1", [
+        {
+          id: "f-fut-1",
+          text: "standup schedule is 9am",
+          importance: 0.5,
+          createdAt: NOW + 24 * 60 * 60 * 1000,
+          dedupKey: "k:fut1",
+        },
+        {
+          id: "f-fut-2",
+          text: "standup schedule includes retro",
+          importance: 0.5,
+          createdAt: NOW + 48 * 60 * 60 * 1000,
+          dedupKey: "k:fut2",
+        },
+      ]);
+      const result = await retrieveTopK({
+        query: "standup schedule",
+        storage,
+        topK: 5,
+        now: NOW,
+      });
+      // Fail-open: an all-future store (e.g. local clock stepped backwards
+      // after a long drift) must not brick retrieval entirely.
+      expect(result.facts.length).toBe(2);
+      expect(result.causalDropped).toBeUndefined();
+    });
+  });
+
   it("ranks lexically matching facts above non-matching", async () => {
     await writeChunk("chunk-1", [
       {
