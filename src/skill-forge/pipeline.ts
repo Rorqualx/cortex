@@ -14,6 +14,7 @@ import {
 } from "./embedding-clusterer.js";
 import { tryResolveSkillForgeEmbeddingProvider } from "./embedding-provider.js";
 import { nameCollisionCheck } from "./gate.js";
+import { runHindsightAnalyst, type HindsightLaneResult } from "./hindsight.js";
 import { resolveSkillForgeSessionsDir } from "./paths.js";
 import { promoteStagedSkill, type PromotionResult } from "./promoter.js";
 import {
@@ -46,6 +47,10 @@ export type PipelineRunInput = {
   resolveEmbeddingProvider?: typeof tryResolveSkillForgeEmbeddingProvider;
   /** Opt-in: generate crossover candidates from high-success pairs (Frontis-MA1 Crossover operator). Default false. */
   enableCrossover?: boolean;
+  /** Opt-in: run the SEED hindsight analyst lane over completed captures (LLM; needs a configured completion model). Default false. */
+  useHindsight?: boolean;
+  /** Injectable hindsight analyst (tests); defaults to the real LLM-backed lane. */
+  runHindsight?: typeof runHindsightAnalyst;
   /** Injectable outcome judge (tests); defaults to the runtime-config-backed judge. */
   judgeSkill?: typeof judgeSkillCandidateWithLlm;
   /** Injectable step-rubric judge for borderline candidates (tests); defaults to the runtime judge. */
@@ -113,6 +118,8 @@ export type PipelineRunResult = {
   llmReplay?: LlmReplayLaneResult;
   /** Crossover candidates generated from high-success pairs (Frontis-MA1). */
   crossover: { generated: number; candidateIds: string[] };
+  /** Hindsight analyst lane outcome (disabled unless useHindsight). */
+  hindsight: HindsightLaneResult;
 };
 
 /** Maps CLI-level useLlm/agentId options onto the distiller's injectable seam. */
@@ -212,6 +219,28 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
     };
   }
 
+  // Hindsight analyst lane (SEED on-policy extraction): opt-in. Runs the LLM
+  // session analyst over completed captures and merges hypothesized-skill
+  // candidates into the batch by candidateId, exactly mirroring the embedding
+  // lane's merge idiom. Inert (disabled) unless requested; per-capture
+  // failures are fail-open and reported on the lane result.
+  let hindsight: HindsightLaneResult = { status: "disabled" };
+  if (input.useHindsight) {
+    const runHindsight = input.runHindsight ?? runHindsightAnalyst;
+    hindsight = await runHindsight({
+      captureDirs,
+      ...(input.agentId ? { agentId: input.agentId } : {}),
+      ...(input.env ? { env: input.env } : {}),
+    });
+    if (hindsight.status === "ran") {
+      for (const candidate of hindsight.candidates) {
+        if (!candidates.some((existing) => existing.candidateId === candidate.candidateId)) {
+          candidates.push(candidate);
+        }
+      }
+    }
+  }
+
   const candidateFiles = await writeCandidatesToForge(candidates, env);
   const distillProse = input.distillProse ?? resolveDistillProseOverride(input);
   const drafted: DraftedSkill[] = [];
@@ -296,6 +325,7 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
     skipped,
     embedding,
     crossover: crossoverResult,
+    hindsight,
     ...(llmReplay ? { llmReplay } : {}),
   };
 }

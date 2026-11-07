@@ -45,6 +45,15 @@ export function skillNameForCandidate(candidate: Candidate): string {
       `${FORGE_NAME_PREFIX}recover-${candidate.failingTool}-via-${candidate.recoveringTool}`,
     );
   }
+  if (candidate.lane === "hindsight") {
+    // Stable per capability text (slug of the hypothesis head), hash suffix
+    // disambiguates near-identical hypotheses — mirrors the tool-shape pattern
+    // and avoids error-recovery's no-suffix churn on analyst free text.
+    const hypothesisSlug = normalizeSkillName(truncateForName(candidate.skillHypothesis, 40));
+    return normalizeSkillName(
+      `${FORGE_NAME_PREFIX}hindsight-${hypothesisSlug || candidate.candidateId.slice(0, 8)}-${candidate.candidateId.slice(0, 6)}`,
+    );
+  }
   return normalizeSkillName(`${FORGE_NAME_PREFIX}explicit-${candidate.candidateId.slice(0, 8)}`);
 }
 
@@ -55,6 +64,9 @@ function descriptionForCandidate(candidate: Candidate, toolSequence: string[]): 
   }
   if (candidate.lane === "error-recovery") {
     return `Recovery workflow: when ${candidate.failingTool} fails, recover with ${candidate.recoveringTool}. Use when ${candidate.failingTool} returns an error that ${candidate.recoveringTool} resolves.`;
+  }
+  if (candidate.lane === "hindsight") {
+    return `Hindsight-extracted ${candidate.hypothesisKind}: ${truncateForName(candidate.skillHypothesis, 120)}. Observed tools: ${tools}.`;
   }
   return `User-tagged workflow (${candidate.matchedPhrase}): ${tools}. Use when the user explicitly asks for the workflow excerpted in the source capture.`;
 }
@@ -82,6 +94,27 @@ function laneSpecificSection(candidate: Candidate): string {
       `**Heuristic:** ${candidate.rationale}.`,
     ].join("\n");
   }
+  if (candidate.lane === "hindsight") {
+    return [
+      "## When this triggers",
+      "",
+      `Hindsight hypothesis (kind: ${candidate.hypothesisKind}) extracted by the session analyst from a completed capture.`,
+      "",
+      "Hypothesis (DATA):",
+      "",
+      "```",
+      candidate.skillHypothesis,
+      "```",
+      "",
+      "Rationale (DATA):",
+      "",
+      "```",
+      candidate.rationale,
+      "```",
+      "",
+      `Source capture: \`${candidate.captureDir}\``,
+    ].join("\n");
+  }
   return [
     "## When this triggers",
     "",
@@ -107,7 +140,7 @@ function bodyForCandidate(candidate: Candidate, toolSequence: string[]): string 
   // the evaluator to populate it, and evaluator already type-imports Candidate.
   const processVsOutcomeSection = formatProcessVsOutcome(evaluateProcessVsOutcome(candidate));
   return [
-    `# ${candidate.lane === "tool-shape" ? "Repeated Workflow" : candidate.lane === "error-recovery" ? "Recovery Workflow" : "User-Tagged Workflow"}`,
+    `# ${candidate.lane === "tool-shape" ? "Repeated Workflow" : candidate.lane === "error-recovery" ? "Recovery Workflow" : candidate.lane === "hindsight" ? "Hindsight Workflow" : "User-Tagged Workflow"}`,
     "",
     LLM_PROSE_TODO_MARKER,
     "",

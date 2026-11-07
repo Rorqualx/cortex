@@ -98,6 +98,7 @@ describe("runForgePipeline", () => {
       skipped: [],
       embedding: { status: "disabled" },
       crossover: { generated: 0, candidateIds: [] },
+      hindsight: { status: "disabled" },
     });
   });
 

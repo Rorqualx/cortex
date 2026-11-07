@@ -58,6 +58,22 @@ export function evaluateProcessVsOutcome(candidate: Candidate): ProcessVsOutcome
       base.reusability = true;
       break;
 
+    case "hindsight": {
+      // SEED hindsight hypotheses (2026-11-07): analyst-synthesized from a
+      // completed capture. Process-vs-outcome rides the hypothesis kind and
+      // the captured tool sequence — workflows lean process-forward,
+      // decisive observations lean outcome, failure-avoidance is
+      // error-handling by definition. This explicit arm is load-bearing:
+      // the switch is NOT exhaustiveness-checked (probe A2), so a missing
+      // case would silently fall through to the 0.5 defaults.
+      base.processFocus = candidate.hypothesisKind === "workflow" ? 0.8 : 0.4;
+      base.sequentialSteps =
+        candidate.hypothesisKind === "workflow" && candidate.toolSequence.length > 1;
+      base.errorHandling = candidate.hypothesisKind === "failure-avoidance";
+      base.reusability = candidate.hypothesisKind !== "decisive-observation";
+      break;
+    }
+
     case "explicit": {
       // Explicit skills depend on the matched phrase - analyze the prompt excerpt
       const promptText = candidate.promptExcerpt.toLowerCase();

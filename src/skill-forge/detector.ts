@@ -63,7 +63,36 @@ export type ExplicitCandidate = {
   failureExcerpts?: string[];
 };
 
-export type Candidate = RepetitionCandidate | ErrorRecoveryCandidate | ExplicitCandidate;
+/**
+ * SEED-pattern hindsight lane (2026-11-07): an LLM session analyst reads a
+ * bounded digest of a COMPLETED capture and hypothesizes reusable skills
+ * (workflow / decisive-observation / proactive failure-avoidance). Produced
+ * by `runHindsightAnalyst` (see hindsight.ts) — never by the deterministic
+ * detector; merged into the candidate funnel by the pipeline when opted in.
+ */
+export type HindsightCandidate = {
+  lane: "hindsight";
+  /** shortHash(`hindsight:${captureDir}:${hypothesisIndex}`) — deterministic per capture+index. */
+  candidateId: string;
+  captureDir: string;
+  /** Ordered tool-call names from the source capture (gate/clusterer compat). */
+  toolSequence: string[];
+  /** 1-3 sentence natural-language skill hypothesis from the analyst LLM. */
+  skillHypothesis: string;
+  hypothesisKind: "workflow" | "decisive-observation" | "failure-avoidance";
+  /** WHY it worked/failed — the pivotal decision point, not just actions. */
+  rationale: string;
+  /** computeSuccessScore(events) of the source capture — same scale as other lanes. */
+  successScore: number;
+  /** Observed failure excerpts (contrastive hook, same as other lanes). */
+  failureExcerpts?: string[];
+};
+
+export type Candidate =
+  | RepetitionCandidate
+  | ErrorRecoveryCandidate
+  | ExplicitCandidate
+  | HindsightCandidate;
 
 function shortHash(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex").slice(0, 16);
@@ -259,7 +288,7 @@ const FRUSTRATION_MARKERS =
  * tool error by definition, so that lane always scores 0.5 — its skills keep
  * the stricter promotion gate.
  */
-function computeSuccessScore(events: TrajectoryEvent[]): number {
+export function computeSuccessScore(events: TrajectoryEvent[]): number {
   if (events.some(isToolErrorResult)) {
     return 0.5;
   }
