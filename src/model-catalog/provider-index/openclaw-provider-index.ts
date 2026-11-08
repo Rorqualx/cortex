@@ -69,6 +69,10 @@ export const OPENCLAW_PROVIDER_INDEX = {
             // Pins on the retired ids are repointed here by doctor --fix.
             // 2026-10-09: aligned with the plugin manifest — V4.1 Flash is the
             // current served generation and accepts image input.
+            // 2026-11-08: verified on api-docs.deepseek.com that both retired
+            // ids now silently serve the snapshot DeepSeek-V4.1-Flash-1017 at
+            // Flash pricing. Discovery stamps alias→snapshot upgrade links so
+            // doctor --fix can distinguish future silent re-points.
             id: "deepseek-flash",
             name: "DeepSeek V4.1 Flash",
             input: ["text", "image"],

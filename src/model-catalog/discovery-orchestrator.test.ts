@@ -219,6 +219,50 @@ describe("runProviderModelDiscovery", () => {
     ]);
   });
 
+  it("records the V4.1 snapshot re-point for the canonical deepseek-flash alias", async () => {
+    // Re-point check (analysis QW-1, 2026-11-08): DeepSeek retired
+    // deepseek-v4-flash and deepseek-v4-flash-vision-exp; both legacy names
+    // (and the canonical alias) now silently serve DeepSeek-V4.1-Flash-1017
+    // at Flash pricing (verified on the api-docs news page). A pin riding the
+    // canonical `deepseek-flash` alias must get the alias→snapshot upgrade
+    // link recorded — with no deprecation, so the pin keeps riding the alias
+    // until the provider truly drops it.
+    const { db } = await openTempDb();
+    const fetchFn = vi.fn(async (url: unknown) => {
+      const u = String(url);
+      if (u.endsWith("/chat/completions")) {
+        return new Response(JSON.stringify({ model: "DeepSeek-V4.1-Flash-1017" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      // /models lists the canonical alias (and the pro line), never the
+      // snapshot id.
+      return modelsResponse(["deepseek-flash", "deepseek-v4-pro"]);
+    });
+    const report = await runProviderModelDiscovery({
+      provider: "deepseek",
+      cfg: cfgWith({
+        deepseek: {
+          baseUrl: "https://api.deepseek.com",
+          models: [{ id: "deepseek-flash" }],
+        },
+      }),
+      nowMs: 1000,
+      db,
+      probeServed: true,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      resolveEndpoint: () => ({ baseUrl: "https://api.deepseek.com", apiKey: "***" }),
+    });
+    expect(report).toMatchObject({ ok: true, deprecated: [] });
+    // The unlisted snapshot lands as a probe-sourced active row.
+    expect(report.probedAdded).toEqual(["DeepSeek-V4.1-Flash-1017"]);
+    expect(listSilentUpgrades(db, "deepseek")).toEqual([
+      { provider: "deepseek", from: "deepseek-flash", to: "DeepSeek-V4.1-Flash-1017" },
+    ]);
+    expect(listDiscoveredModels(db, { provider: "deepseek", status: "deprecated" })).toEqual([]);
+  });
+
   it("picks up a served-but-unlisted config-declared model via the probe", async () => {
     // Verification (2026-08-24, analysis QW-1): deepseek-v4-flash-vision-exp is
     // served but absent from /models. It is declared in config, so the probe
