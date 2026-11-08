@@ -2,13 +2,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Storage } from "./storage.js";
+import { extractFactFacets, Storage } from "./storage.js";
 import {
   INITIAL_L3_STATE,
   type L2ChunkFrontmatter,
   type L3EpochFrontmatter,
   type LongTermFact,
   type LongTermFrontmatter,
+  type LongTermTypedFact,
+  type LongTermTypedFrontmatter,
   type MessageChunk,
 } from "./types.js";
 
@@ -391,6 +393,77 @@ describe("Storage long-term tier I/O", () => {
     const round = await storage.readLongTerm();
     expect(round.facts[0]?.archived).toBe(true);
     expect(round.facts[0]?.archivedAt).toBe(8500);
+  });
+});
+
+describe("Storage typed-fact facet index (QW-2 2026-11-08)", () => {
+  const datedFact: LongTermTypedFact = {
+    id: "ltt-facet-1",
+    slot: "trip:kyoto_hotel",
+    value: "Ryokan Yuzuya",
+    unit: null,
+    confidence: 0.9,
+    firstSeenAt: 1000,
+    lastConfirmedAt: 2000,
+    recallCount: 1,
+    sourceChunkIds: ["chunk-a"],
+    history: [],
+    validFrom: 2000,
+    validUntil: null,
+    supersededBy: null,
+    archived: false,
+    archivedAt: null,
+    eventTime: Date.UTC(2026, 4, 12, 9, 0, 0),
+    mentionTime: Date.UTC(2026, 4, 12, 10, 0, 0),
+    participants: ["Joe", "  Aiko Tanaka "],
+  };
+  const placeFact: LongTermTypedFact = {
+    id: "ltt-facet-2",
+    slot: "profile:home_city",
+    value: "Denver",
+    unit: null,
+    confidence: 0.9,
+    firstSeenAt: 1000,
+    lastConfirmedAt: 2000,
+    recallCount: 1,
+    sourceChunkIds: ["chunk-a"],
+    history: [],
+    validFrom: 2000,
+    validUntil: null,
+    supersededBy: null,
+    archived: false,
+    archivedAt: null,
+  };
+
+  it("extractFactFacets derives person/date/place axes from structured fields", () => {
+    expect(extractFactFacets(datedFact)).toEqual([
+      { kind: "person", value: "joe" },
+      { kind: "person", value: "aiko tanaka" },
+      { kind: "date", value: "2026-05-12" },
+    ]);
+    expect(extractFactFacets(placeFact)).toEqual([{ kind: "place", value: "denver" }]);
+  });
+
+  it("writeLongTermTyped syncs the facet index (full-replace, idempotent)", async () => {
+    await storage.ensureLayout();
+    const fm: LongTermTypedFrontmatter = {
+      version: 1,
+      agentId: "j-rorqual",
+      lastConsolidatedAt: 2000,
+      facts: [datedFact, placeFact],
+    };
+    await storage.writeLongTermTyped(fm, "");
+    expect(await storage.factIdsWithFacet("person", "Joe")).toEqual(new Set(["ltt-facet-1"]));
+    expect(await storage.factIdsWithFacet("date", "2026-05-12")).toEqual(new Set(["ltt-facet-1"]));
+    expect(await storage.factIdsWithFacet("place", "denver")).toEqual(new Set(["ltt-facet-2"]));
+    // Rewrite without the place fact: full-replace drops its facets.
+    await storage.writeLongTermTyped({ ...fm, facts: [datedFact] }, "");
+    expect(await storage.factIdsWithFacet("place", "denver")).toEqual(new Set());
+    expect(await storage.factIdsWithFacet("person", "aiko tanaka")).toEqual(
+      new Set(["ltt-facet-1"]),
+    );
+    // Unknown kinds stay empty rather than throwing.
+    expect(await storage.factIdsWithFacet("actor", "joe")).toEqual(new Set());
   });
 });
 

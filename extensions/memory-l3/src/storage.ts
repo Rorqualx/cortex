@@ -23,6 +23,7 @@ import {
   type L3State,
   type LongTermFrontmatter,
   type LongTermTypedFrontmatter,
+  type LongTermTypedFact,
   type MessageChunk,
   type MessageChunkFacets,
   type Entity,
@@ -82,6 +83,19 @@ CREATE TABLE IF NOT EXISTS l3_entities (
   id TEXT PRIMARY KEY,
   data TEXT NOT NULL
 );
+-- Typed-fact facet axes (QW-2 2026-11-08, Axis-LoRA): queryable person/date/
+-- place columns derived from the structured typed-fact fields at every
+-- writeLongTermTyped pass (full-replace, so the index is self-backfilling).
+-- Actor facets for message chunks live on l3_message_chunks (actor/channel
+-- columns); this table covers the typed-fact axes embedding models are
+-- near-blind to (date/place swaps).
+CREATE TABLE IF NOT EXISTS l3_fact_facets (
+  fact_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  PRIMARY KEY (fact_id, kind, value)
+);
+CREATE INDEX IF NOT EXISTS l3_fact_facets_kind_value ON l3_fact_facets (kind, value);
 CREATE TABLE IF NOT EXISTS l3_topic_links (
   source_chunk_id TEXT NOT NULL,
   target_chunk_id TEXT NOT NULL,
@@ -138,6 +152,73 @@ function ensureMessageFacetColumns(db: DatabaseSync): void {
   if (!names.has("channel")) {
     db.exec("ALTER TABLE l3_message_chunks ADD COLUMN channel TEXT");
   }
+}
+
+/** Facet axis kinds indexed for typed facts (QW-2 2026-11-08, Axis-LoRA). */
+export type FactFacetKind = "person" | "date" | "place";
+
+/**
+ * One queryable facet axis value on a typed fact. Values are normalized
+ * (trimmed, lowercased; dates as UTC YYYY-MM-DD) for exact-match filtering.
+ */
+export type FactFacet = { kind: FactFacetKind; value: string };
+
+/** Slot-pattern heuristic: slots naming a location carry a place facet. */
+const PLACE_SLOT_PATTERN = /locat|city|country|place|address|timezone/;
+
+/**
+ * Derive person/date/place facet axes from a typed fact's structured fields.
+ * Pure and total — missing fields simply yield no facets for that kind.
+ * Person facets come from `participants`, date facets from `eventTime` and
+ * `mentionTime` (UTC YYYY-MM-DD), place facets from location-like slot values.
+ * These axes exist because embedding models are near-blind to date/place
+ * swaps (Axis-LoRA); facets are a boost/filter signal, never the sole signal.
+ */
+export function extractFactFacets(fact: LongTermTypedFact): FactFacet[] {
+  const facets: FactFacet[] = [];
+  for (const participant of fact.participants ?? []) {
+    const value = participant.trim().toLowerCase();
+    if (value.length > 0) {
+      facets.push({ kind: "person", value });
+    }
+  }
+  const dates = new Set<string>();
+  for (const t of [fact.eventTime, fact.mentionTime]) {
+    if (typeof t === "number" && Number.isFinite(t) && t >= 0) {
+      dates.add(new Date(t).toISOString().slice(0, 10));
+    }
+  }
+  for (const value of dates) {
+    facets.push({ kind: "date", value });
+  }
+  if (PLACE_SLOT_PATTERN.test(fact.slot.toLowerCase())) {
+    const value = fact.value.trim().toLowerCase();
+    if (value.length > 0) {
+      facets.push({ kind: "place", value });
+    }
+  }
+  return facets;
+}
+
+/**
+ * Full-replace sync of the typed-fact facet index. The typed tier is
+ * rewritten wholesale on every writeLongTermTyped pass (the KV blob is the
+ * source of truth), so mirroring that semantic keeps the index consistent
+ * and self-backfilling: the first consolidation after this ships rebuilds
+ * facets for every existing fact — no separate migration pass needed.
+ */
+function syncFactFacets(db: DatabaseSync, facts: ReadonlyArray<LongTermTypedFact>): void {
+  runSqliteImmediateTransactionSync(db, () => {
+    db.exec("DELETE FROM l3_fact_facets");
+    const insert = db.prepare(
+      "INSERT OR REPLACE INTO l3_fact_facets (fact_id, kind, value) VALUES (?, ?, ?)",
+    );
+    for (const fact of facts) {
+      for (const facet of extractFactFacets(fact)) {
+        insert.run(fact.id, facet.kind, facet.value);
+      }
+    }
+  });
 }
 
 /**
@@ -382,9 +463,24 @@ export class Storage {
   /** Persist the typed long-term tier, then regenerate `<root>/longterm-typed.md`. */
   async writeLongTermTyped(frontmatter: LongTermTypedFrontmatter, body: string): Promise<string> {
     this.writeKv(KV_LONG_TERM_TYPED, JSON.stringify(frontmatter));
+    // QW-2 (2026-11-08): keep the facet index consistent with the rewritten
+    // tier (full-replace mirrors the KV write; idempotent).
+    syncFactFacets(this.database(), frontmatter.facts);
     const exportPath = path.join(this.root, LONG_TERM_TYPED_FILENAME);
     await this.exportFrontmatterDocument(exportPath, frontmatter, body);
     return exportPath;
+  }
+
+  /**
+   * Fact IDs carrying an exact facet axis value (normalized match). Kind is
+   * open (person/date/place today); unknown kinds return an empty set.
+   * Backs retrieval-side facet pre-filtering without loading every fact.
+   */
+  async factIdsWithFacet(kind: string, value: string): Promise<Set<string>> {
+    const rows = this.database()
+      .prepare("SELECT fact_id FROM l3_fact_facets WHERE kind = ? AND value = ?")
+      .all(kind, value.trim().toLowerCase()) as Array<{ fact_id: string }>;
+    return new Set(rows.map((row) => row.fact_id));
   }
 
   /** Read the G1 reflection insight tier. Returns INITIAL when absent. */

@@ -1278,6 +1278,59 @@ describe("retrieveTopK longterm-typed tier", () => {
     expect(hit!.fact.importance).toBeCloseTo(0.9 * Math.exp(-2), 4);
   });
 
+  it("facet-match boost lifts the date-matching typed fact (QW-2 2026-11-08)", async () => {
+    // Axis-LoRA: embeddings/BM25 are near-blind to date swaps, so a query
+    // naming an explicit date cannot rely on text overlap. Two equal-
+    // confidence facts; only one carries an eventTime on the queried date.
+    // The facet boost (additive 0.05, before demotion) must break the tie in
+    // favor of the dated fact even though neither fact text matches the query.
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "placeholder", importance: 0.1, createdAt: NOW, dedupKey: "k:placeholder" },
+    ]);
+    const base = {
+      unit: null as null,
+      confidence: 0.9,
+      firstSeenAt: NOW,
+      lastConfirmedAt: NOW,
+      recallCount: 1,
+      sourceChunkIds: ["chunk-a"],
+      history: [],
+      validFrom: NOW,
+      validUntil: null,
+      supersededBy: null,
+      archived: false,
+      archivedAt: null,
+      lastAccessedAt: NOW,
+    };
+    await storage.writeLongTermTyped(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            ...base,
+            id: "ltt-dated",
+            slot: "trip:kyoto_hotel",
+            value: "Ryokan Yuzuya",
+            eventTime: Date.UTC(2026, 4, 12, 9, 0, 0),
+          },
+          { ...base, id: "ltt-undated", slot: "trip:osaka_hotel", value: "Naniwa Grand" },
+        ],
+      },
+      "",
+    );
+    const { facts: result } = await retrieveTopK({
+      query: "hotel booking 2026-05-12",
+      storage,
+      topK: 10,
+      now: NOW,
+    });
+    const typedHits = result.filter((r) => r.tier === "longterm-typed");
+    expect(typedHits.length).toBeGreaterThanOrEqual(2);
+    expect(typedHits[0]?.fact.id).toBe("ltt-dated");
+  });
+
   it("updates lastAccessedAt on retrieved typed facts", async () => {
     // Need at least one L2 chunk or retrieveTopK returns empty
     await writeChunk("chunk-000000-x", [

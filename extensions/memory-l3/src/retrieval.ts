@@ -171,7 +171,7 @@ export const SUPERSEDED_REMISSION_PENALTY = 0.5;
 export function intentAdmitsSuperseded(intent: QueryIntent): boolean {
   return intent === "multihop";
 }
-import type { Storage } from "./storage.js";
+import { extractFactFacets, type FactFacet, type Storage } from "./storage.js";
 import type {
   Insight,
   L2Fact,
@@ -678,6 +678,10 @@ export async function retrieveTopK(params: {
   if (queryTokens.size === 0) {
     return { facts: [] };
   }
+  // QW-2 (2026-11-08, Axis-LoRA): query-side facet parse for typed-fact
+  // facet-match boosting. Dates are high-precision (regex); person/place
+  // match via query tokens. Boost only — never a filter.
+  const queryFacets = extractQueryFacets(params.query, queryTokens);
 
   const paths = await params.storage.listL2ChunkPaths();
   if (paths.length === 0) {
@@ -748,6 +752,8 @@ export async function retrieveTopK(params: {
     superseded?: boolean;
     /** QW3 (2026-10-09, MemoType): resolved typed-fact category for preset dispatch. */
     category?: string;
+    /** QW-2 (2026-11-08): person/date/place facet axes for facet-match boosting. */
+    facets?: FactFacet[];
   };
   const items: ScorableItem[] = [];
 
@@ -798,6 +804,7 @@ export async function retrieveTopK(params: {
       tierBoost: config.weightLongTermTierBoost,
       sourceTrust: ltt.sourceTrust,
       category: resolveTypedFactCategory(ltt.slot),
+      facets: extractFactFacets(ltt),
     });
   }
 
@@ -1045,7 +1052,12 @@ export async function retrieveTopK(params: {
     } else {
       baseScore = composite(signals, itemConfig);
     }
-    const rawScore = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
+    // QW-2 (2026-11-08, Axis-LoRA): additive facet-match boost on the composite.
+    // Applied before stale-utility demotion so a facet hit cannot resurrect a
+    // dead fact on its own.
+    const rawScore =
+      (signals.lexical > 0 ? baseScore + item.tierBoost : baseScore) +
+      (item.facets && facetMatchesQuery(item.facets, queryFacets) ? FACET_MATCH_BOOST : 0);
     // Stale-utility demotion: facts never retrieved across multiple epochs
     // get their composite score multiplied down to reflect low demonstrated
     // utility (RMM — arXiv:2607.19873). Load-bearing facts keep more of
@@ -1849,6 +1861,57 @@ function typedFactAsL2Fact(typed: TypedFact): L2Fact {
     // QW-2 (LAPSE): thread the validity window into the scoring pipeline.
     validity: typed.validity,
   };
+}
+
+/**
+ * QW-2 (2026-11-08, Axis-LoRA): facet-match boost weight. Additive on the
+ * composite, deliberately small (same scale as the TEMPS temporal-alignment
+ * 0.05) — facets correct embedding blindness to date/person/place swaps,
+ * they never dominate relevance.
+ */
+const FACET_MATCH_BOOST = 0.05;
+
+/** Query-side facet parse result for facet-match boosting. */
+type QueryFacets = {
+  /** Full YYYY-MM-DD dates and bare years found in the query text. */
+  dates: Set<string>;
+  /** Lowercased query tokens for person/place word matching. */
+  tokens: Set<string>;
+};
+
+function extractQueryFacets(query: string, queryTokens: Set<string>): QueryFacets {
+  const dates = new Set<string>();
+  for (const m of query.matchAll(/\b\d{4}-\d{2}-\d{2}\b/g)) {
+    dates.add(m[0]);
+  }
+  for (const m of query.matchAll(/\b(?:19|20)\d{2}\b/g)) {
+    dates.add(m[0]);
+  }
+  return { dates, tokens: queryTokens };
+}
+
+/**
+ * Whether any facet axis matches the query: date facets match a query date
+ * exactly or by year prefix; person/place facets match when every word of the
+ * normalized value appears as a query token (single-token names must appear
+ * verbatim, multi-word names require all words).
+ */
+function facetMatchesQuery(facets: readonly FactFacet[], q: QueryFacets): boolean {
+  for (const facet of facets) {
+    if (facet.kind === "date") {
+      for (const date of q.dates) {
+        if (facet.value.startsWith(date)) {
+          return true;
+        }
+      }
+    } else {
+      const words = facet.value.split(/\s+/).filter(Boolean);
+      if (words.length > 0 && words.every((w) => q.tokens.has(w))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function longTermTypedAsL2Fact(ltt: LongTermTypedFact, now: number): L2Fact {
