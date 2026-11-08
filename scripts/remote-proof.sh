@@ -18,6 +18,7 @@
 #
 # Env: REMOTE_HOST (joe@192.168.50.185) · REMOTE_NODE_BIN (/home/joe/node24x/bin)
 #      PROOF_DIR (~/openclaw-proof) · FORK_URL · PROOF_TIMEOUT (10800) · POLL (25)
+#      PROOF_STALL (1800, seconds of no remote log write before the run is aborted)
 
 set -uo pipefail
 
@@ -41,6 +42,15 @@ SSH_OPTS="${SSH_OPTS:--o BatchMode=yes -o ConnectTimeout=8}"
 # 2026-09-05); 5400s only ever fit the warm-cache re-prove and timed out the cold
 # run while it was still green. The remote job keeps running past this poll cap.
 PROOF_TIMEOUT="${PROOF_TIMEOUT:-10800}"
+# Second, independent deadline on SILENCE. A wedged step emits neither an EXIT=
+# marker nor any log write, so PROOF_TIMEOUT alone spends the whole window on it:
+# on 2026-11-07 the baseline build sat 1h45m in ui:build with an idle event loop
+# and the run reported a bare reason=timeout -- no phase, no process tree, no log
+# tails, nothing to diagnose from, and the next attempt then had to re-prove from
+# scratch. Every long phase writes continuously to one of PROGRESS_PATHS below
+# (install, build and test:fast stream their logs; each tsgo shard publishes a
+# cache file), so no write anywhere for this long is a wedge, not a slow step.
+PROOF_STALL="${PROOF_STALL:-1800}"
 POLL="${POLL:-25}"
 LANES="tsgo:core tsgo:extensions tsgo:core:test tsgo:extensions:test tsgo:test:src tsgo:test:ui tsgo:test:packages"
 
@@ -83,6 +93,11 @@ RLOG="/tmp/remote-proof-$STAMP.log"
 rsh "cat > /tmp/remote-proof-$STAMP.sh" <<EOF
 #!/usr/bin/env bash
 set -uo pipefail
+# setsid launches this script as its own session leader, so this pid is also the
+# session id of every descendant. Publish it in the log: the Mac-side stall
+# watchdog reads it from here to enumerate and kill the wedged tree by id. Never
+# by name pattern -- pgrep -f also matches the ssh command carrying the pattern.
+echo "PROOF_PID=\$\$"
 export PATH=$REMOTE_NODE_BIN:\$PATH
 export npm_config_verify_deps_before_run=false
 # Cap vitest workers on the prover. huey has 24 cores, so the default local
@@ -286,13 +301,74 @@ if [ -n "\$NEWFAIL" ]; then TEST_REGRESS=1; while read -r f; do [ -n "\$f" ] && 
 if [ "\$BUILD_EXIT" = 0 ] && [ "\$TSGO_REGRESS" = 0 ] && [ "\$TEST_REGRESS" = 0 ]; then echo "EXIT=0"; else echo "EXIT=1"; fi
 EOF
 
+# Every path a running phase writes to. The run log only gains a line at phase
+# boundaries, so it alone cannot distinguish a 40-minute test:fast from a wedge.
+PROGRESS_PATHS="$RLOG /tmp/rp-*.log /tmp/rp-tsgo-shards"
+
+# --- 3b. Stall diagnostic + abort (run once, only when the watchdog fires) ----
+# Captures WHAT was wedged before killing it, because the kill destroys the
+# evidence: the phase, each phase log's tail and last write time, and the process
+# tree with %CPU and kernel wait state (a wedged node step shows ~0% CPU). Prints
+# with the EXIT-DETAIL prefix so the poller's line filter keeps every line.
+rsh "cat > /tmp/remote-proof-$STAMP-stall.sh" <<EOF
+#!/usr/bin/env bash
+set -uo pipefail
+RLOG=$RLOG
+PROGRESS_PATHS="$PROGRESS_PATHS"
+echo "EXIT-DETAIL stall after \${1:-?}s with no write to any proof log"
+echo "EXIT-DETAIL last run-log line: \$(tail -1 "\$RLOG" 2>/dev/null)"
+for f in \$PROGRESS_PATHS; do
+  [ -f "\$f" ] || continue
+  echo "EXIT-DETAIL --- \$f (last write \$(date -r "\$f" '+%H:%M:%S'))"
+  tail -6 "\$f" | sed 's/^/EXIT-DETAIL   /'
+done
+SID=\$(sed -n 's/^PROOF_PID=//p' "\$RLOG" 2>/dev/null | head -1)
+if [ -n "\$SID" ] && kill -0 "\$SID" 2>/dev/null; then
+  ps -o pid,ppid,etime,pcpu,rss,wchan:14,args --forest -g "\$SID" 2>/dev/null \
+    | sed 's/^/EXIT-DETAIL   /'
+  # Kill every pid in the SESSION, not just the leader's process group: pnpm puts
+  # its children in groups of their own (its native shim group-kills them), and
+  # those survive "kill -- -<pgid>". A descendant that starts its own session does
+  # escape this; none did in the wedges seen so far, and the tree printed above
+  # names anything left behind.
+  PIDS=\$(ps -o pid= -g "\$SID" 2>/dev/null)
+  # shellcheck disable=SC2086
+  [ -n "\$PIDS" ] && kill -9 \$PIDS 2>/dev/null
+  echo "EXIT-DETAIL killed wedged proof session \$SID"
+else
+  echo "EXIT-DETAIL proof session \${SID:-unknown} already gone"
+fi
+# Its dist-artifact lock outlived it, and a lock whose owner is dead refuses every
+# tsgo lane on the NEXT run -- that is how an empty "clean" baseline got recorded
+# on 2026-09-30. The session above is dead, and the flock serializes runs, so
+# nothing else can own this lock.
+rm -rf "$PROOF_DIR/.artifacts/dist-artifacts.lock"
+echo "EXIT=99 (stalled)"
+EOF
+
 rsh "rm -f $RLOG; setsid bash /tmp/remote-proof-$STAMP.sh </dev/null >$RLOG 2>&1 & echo launched" >/dev/null 2>&1
-log "remote proof launched (stamp $STAMP); polling $RLOG every ${POLL}s up to ${PROOF_TIMEOUT}s"
+log "remote proof launched (stamp $STAMP); polling $RLOG every ${POLL}s up to ${PROOF_TIMEOUT}s, abort after ${PROOF_STALL}s of silence"
 
 # --- 4. Poll the remote log for the terminal EXIT= marker --------------------
+# One ssh per poll reads both the terminal marker and the newest write time across
+# PROGRESS_PATHS; an unchanged time means the run produced nothing since the last
+# poll. ssh failures leave MARK and PROGRESS empty: an unreachable prover must not
+# read as a stall, so a failed probe neither advances nor accumulates silence.
 elapsed=0
+stalled=0
+last_progress=""
 while [ "$elapsed" -lt "$PROOF_TIMEOUT" ]; do
-  MARK="$(rsh "grep -E '^EXIT=' $RLOG 2>/dev/null | tail -1" 2>/dev/null)"
+  PROBE="$(rsh "grep -E '^EXIT=' $RLOG 2>/dev/null | tail -1; echo PROGRESS=\$(find $PROGRESS_PATHS -maxdepth 1 -printf '%T@\n' 2>/dev/null | sort -rn | head -1)" 2>/dev/null)"
+  MARK="$(printf '%s\n' "$PROBE" | grep -E '^EXIT=' | tail -1)"
+  PROGRESS="$(printf '%s\n' "$PROBE" | sed -n 's/^PROGRESS=//p')"
+  if [ -z "$PROGRESS" ]; then
+    : # probe failed (ssh down, log not created yet) -- no verdict either way
+  elif [ "$PROGRESS" != "$last_progress" ]; then
+    last_progress="$PROGRESS"
+    stalled=0
+  else
+    stalled=$((stalled + POLL))
+  fi
   if [ -n "$MARK" ]; then
     TAIL="$(rsh "grep -E '^(BUILD_EXIT=|TSGO |NEWFAIL |EXIT-DETAIL |EXIT=)' $RLOG 2>/dev/null" 2>/dev/null)"
     log "remote result:"; echo "$TAIL" >&2
@@ -302,6 +378,16 @@ while [ "$elapsed" -lt "$PROOF_TIMEOUT" ]; do
     if [ "$CODE" = "97" ]; then echo "PROOF=UNAVAILABLE transport=huey reason=proof-lock-held"; echo "$TAIL"; exit 3; fi
     if [ "$CODE" = "0" ]; then echo "PROOF=PASS transport=huey"; echo "$TAIL"; exit 0
     else echo "PROOF=FAIL transport=huey"; echo "$TAIL"; exit 1; fi
+  fi
+  if [ "$stalled" -ge "$PROOF_STALL" ]; then
+    log "no remote write for ${stalled}s — capturing diagnostics and aborting the wedged run"
+    # tee: the diagnosis and its EXIT=99 belong in the run log too, so the wedge
+    # stays readable on the prover after this poller is gone.
+    TAIL="$(rsh "bash /tmp/remote-proof-$STAMP-stall.sh $stalled 2>&1 | tee -a $RLOG" 2>/dev/null)"
+    log "remote result:"; echo "$TAIL" >&2
+    echo "PROOF=FAIL transport=huey reason=stalled"
+    echo "$TAIL"
+    exit 1
   fi
   sleep "$POLL"; elapsed=$((elapsed + POLL))
 done
