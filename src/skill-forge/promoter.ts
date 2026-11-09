@@ -5,6 +5,10 @@ import {
   writeCapabilityScanSidecar,
   type CapabilityScanResult,
 } from "./capability-scan.js";
+import {
+  differentiatePromotedSkillDescription,
+  type NearestNeighbor,
+} from "./description-differentiator.js";
 import { evaluateGate, type GateVerdict } from "./gate.js";
 import { stampSkillLifecycleInFrontmatter } from "./lifecycle.js";
 import {
@@ -45,6 +49,15 @@ export type PromotionResult =
        * as a sidecar. Informational only — never blocks promotion.
        */
       capabilityScan?: CapabilityScanResult;
+      /**
+       * QW5 (2026-11-09, Skill++-inspired): description rewrite against the
+       * nearest promoted sibling. Present only when a near neighbor existed
+       * and the rewrite landed — informational, never gates.
+       */
+      differentiatedDescription?: {
+        description: string;
+        nearest?: NearestNeighbor;
+      };
     }
   | { status: "rejected"; name: string; verdict: GateVerdict };
 
@@ -101,6 +114,21 @@ export async function promoteStagedSkill(params: {
   // library but not auto-invokable until fitness is proven (first successful
   // task flips trial→active via recordSkillUsageOutcome).
   await stampLifecycleInSkillMd(promotedDir, "trial");
+  // QW5 (2026-11-09): differentiate the description against sibling promoted
+  // skills (supports / differs-from / excludes) so look-alike skills stop
+  // duplicating each other's descriptions. Best-effort — never retro-fails a
+  // completed promotion.
+  let differentiatedDescription: { description: string; nearest?: NearestNeighbor } | undefined;
+  try {
+    differentiatedDescription = await differentiatePromotedSkillDescription({
+      name: params.name,
+      env,
+    });
+  } catch (error) {
+    console.warn(
+      `[skill-forge] description differentiation failed for '${params.name}': ${error instanceof Error ? error.message : "unknown"}`,
+    );
+  }
   await recordSkillPromotion({
     name: params.name,
     now: params.now,
@@ -162,6 +190,7 @@ export async function promoteStagedSkill(params: {
     verdict,
     ...(securityJudge ? { securityJudge } : {}),
     ...(capabilityScan ? { capabilityScan } : {}),
+    ...(differentiatedDescription ? { differentiatedDescription } : {}),
   };
 }
 
