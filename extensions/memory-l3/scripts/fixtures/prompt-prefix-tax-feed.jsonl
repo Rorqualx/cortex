@@ -1,0 +1,3 @@
+{"turn":1,"stablePrefixTokens":4000,"suffixTokens":800,"sections":[{"name":"Memory Recall","chars":1200,"estTokens":300},{"name":"Working Context","chars":2000,"estTokens":500}],"input":4800,"cacheRead":0}
+{"turn":2,"stablePrefixTokens":4000,"suffixTokens":800,"sections":[{"name":"Memory Recall","chars":1200,"estTokens":300},{"name":"Working Context","chars":2000,"estTokens":500}],"input":4800,"cacheRead":4000}
+{"turn":3,"stablePrefixTokens":4000,"suffixTokens":800,"sections":[{"name":"Working Context","chars":2000,"estTokens":500},{"name":"Memory Recall","chars":1200,"estTokens":300}],"input":4800,"cacheRead":0,"dropCause":"tracked-input-change"}
