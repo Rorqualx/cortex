@@ -10,8 +10,10 @@
 // confirmations), typed tracks drift (history = trail of value changes).
 
 import { randomUUID } from "node:crypto";
+import { originTrustFactor } from "./scoring.js";
 import type { Storage } from "./storage.js";
 import type {
+  FactOrigin,
   LongTermTypedFact,
   LongTermTypedFrontmatter,
   SourceTrust,
@@ -141,6 +143,65 @@ export function inferSourceTrust(t: TypedFact): SourceTrust {
   }
   // Unknown source — treat as untrusted
   return "untrusted";
+}
+
+// ---------------------------------------------------------------------------
+// Origin-trust provenance (2026-11-09 daily-research QW2)
+// ---------------------------------------------------------------------------
+
+/** statedBy fragments marking fetched-content origin. */
+const WEB_ORIGIN_FRAGMENTS = ["web", "search", "http", "browser", "scraper", "url", "fetch"];
+
+/** statedBy fragments marking local-tool output origin. */
+const TOOL_ORIGIN_FRAGMENTS = [
+  "tool",
+  "exec",
+  "shell",
+  "command",
+  "terminal",
+  "script",
+  "process",
+  "sensor",
+  "diagnostic",
+];
+
+/**
+ * Infer a FactOrigin from a TypedFact's metadata (QW2 origin-trust).
+ *
+ * Parallel to `inferSourceTrust()` but the taxonomy tracks the ULTIMATE
+ * information origin (web | user | tool | transcript) and — critically —
+ * defaults absent `statedBy` to `"unknown"` (neutral weight), not "user":
+ * pre-existing facts must not silently gain provenance they never had.
+ *
+ * - "user" | "human" → "user"
+ * - fetched-content fragments (web/search/http/browser/scraper/url/fetch) → "web"
+ * - local-tool fragments (exec/shell/command/terminal/script/process/…) → "tool"
+ * - "assistant" | "agent" | "ai" | "model" → "transcript" (agent's own words)
+ * - absent or unrecognized → "unknown" (neutral — implicit backfill)
+ */
+export function inferOrigin(t: TypedFact): FactOrigin {
+  const statedBy = t.statedBy;
+  if (!statedBy) {
+    return "unknown"; // Backfill semantics: pre-existing facts stay neutral.
+  }
+  const lower = statedBy.toLowerCase();
+  if (lower === "user" || lower === "human") {
+    return "user";
+  }
+  for (const fragment of WEB_ORIGIN_FRAGMENTS) {
+    if (lower.includes(fragment)) {
+      return "web";
+    }
+  }
+  for (const fragment of TOOL_ORIGIN_FRAGMENTS) {
+    if (lower.includes(fragment)) {
+      return "tool";
+    }
+  }
+  if (lower === "assistant" || lower === "agent" || lower === "ai" || lower === "model") {
+    return "transcript";
+  }
+  return "unknown";
 }
 
 // ---------------------------------------------------------------------------
@@ -452,7 +513,13 @@ export async function consolidateLongTermTyped(params: {
           (sum, fid) => sum + (retrievalHitMap.get(fid) ?? 0),
           0,
         );
-        const score = fact.recallCount * fact.confidence + retrievalHits * retrievalHitBoost;
+        const score =
+          (fact.recallCount * fact.confidence + retrievalHits * retrievalHitBoost) *
+          // QW2 (2026-11-09): origin-trust ladder multiplied into the
+          // promotion composite — provenance is orthogonal to recallCount ×
+          // confidence; web-origin facts must not outrank user-stated ones
+          // on equal evidence. Unknown (pre-existing facts) is neutral.
+          originTrustFactor({ origin: fact.origin });
         return { slot: entry.slot, score };
       })
       .toSorted((a, b) => b.score - a.score);
@@ -582,6 +649,7 @@ function promote(c: TypedCandidate, sessionId?: string, modelId?: string): LongT
     sourceSessionId: sessionId,
     sourceModel: modelId ?? null,
     sourceTrust: inferSourceTrust(c.latest),
+    origin: inferOrigin(c.latest),
     // Verification sliver (2026-10-08): thread the winning emission's
     // episodic attribution (event time, participants, mention time) through
     // promotion — previously dropped at the L2→L3 boundary.
@@ -646,6 +714,7 @@ function reaffirm(
     sourceSessionId: effectiveSession,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
     sourceTrust: inferSourceTrust(c.latest),
+    origin: inferOrigin(c.latest),
     // Verification sliver (2026-10-08): refresh attribution from the latest
     // emission; absent fields keep the prior value (conservative).
     eventTime: c.latest.eventTime ?? prior.eventTime,
@@ -706,6 +775,7 @@ function supersede(
     sourceSessionId: effectiveSession,
     sourceModel: modelId !== undefined ? modelId : prior.sourceModel,
     sourceTrust: inferSourceTrust(c.latest),
+    origin: inferOrigin(c.latest),
     // Verification sliver (2026-10-08): the new value's attribution wins.
     eventTime: c.latest.eventTime,
     participants: c.latest.participants,

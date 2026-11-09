@@ -175,6 +175,7 @@ describe("scoreFact + composite", () => {
         validity: 1.0,
         entityScore: 0,
         polarityMultiplier: 1.0,
+        provenanceMultiplier: 1.0,
       },
       config,
     );
@@ -194,6 +195,7 @@ describe("scoreFact + composite", () => {
         validity: 1.0,
         entityScore: 0,
         polarityMultiplier: 1.0,
+        provenanceMultiplier: 1.0,
       },
       config,
     );
@@ -236,6 +238,7 @@ describe("scoreFact + composite", () => {
       validity: 1.0,
       entityScore: 0,
       polarityMultiplier: 1.0,
+      provenanceMultiplier: 1.0,
     };
     expect(composite(signals, config)).toBe(0);
     expect(composite(signals, { ...config, weightInformationGain: 0.5 })).toBeCloseTo(0.4, 6);
@@ -278,6 +281,7 @@ describe("scoreFact + composite", () => {
         validity: 1.0,
         entityScore: 0,
         polarityMultiplier: 1.0,
+        provenanceMultiplier: 1.0,
       },
       config,
     );
@@ -584,6 +588,7 @@ describe("buildCorpusStats + BM25", () => {
       validity: 1.0,
       entityScore: 0,
       polarityMultiplier: 1.0,
+      provenanceMultiplier: 1.0,
     };
     expect(composite(signals, config)).toBeCloseTo(0.5 * 0.2 + 0.8 * 0.3, 6);
   });

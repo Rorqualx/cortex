@@ -1,4 +1,4 @@
-import type { FactValidity, L2Fact } from "./types.js";
+import type { FactCertainty, FactOrigin, FactValidity, L2Fact, SourceTrust } from "./types.js";
 export type ScoringConfig = {
   weightLexical: number;
   /** BM25 lexical signal. Augments Jaccard with term-frequency/document-rarity
@@ -356,6 +356,16 @@ export type Signals = {
    * `composite()`.
    */
   polarityMultiplier: number;
+  /**
+   * Origin-trust provenance multiplier (2026-11-09 QW2). Defaults to 1.0
+   * (neutral — absent origin, or any origin without the attack shape).
+   * Set to `ORIGIN_INSTRUCTIONAL_WEB_PENALTY` when the fact is BOTH
+   * `certainty: "instructional"` AND web-origin: imperatives from fetched
+   * pages are the MemoryDojo poisoning vector — epistemically mid-tier
+   * (instructional 0.85) and provenance-mid-tier (web 0.75) still compose
+   * to a dangerous directive. Applied multiplicatively in `composite()`.
+   */
+  provenanceMultiplier: number;
 };
 
 // Match alphabetic words, multi-char numeric runs (preserving internal . and ,
@@ -575,6 +585,12 @@ export function scoreFact(params: {
    * so a low-trust source cannot hide behind a high-certainty extraction.
    */
   sourceTrust?: import("./types.js").SourceTrust;
+  /**
+   * Origin-trust provenance (2026-11-09 QW2): explicit origin for the
+   * fact, overriding the sourceTrust-derived fallback in
+   * `resolveOrigin()`. Absent → resolved from sourceTrust, else neutral.
+   */
+  origin?: FactOrigin;
   /** TEMPS: query-side parsed time range; absent = non-temporal query. */
   queryTimeRange?: QueryTimeRange;
 }): Signals {
@@ -623,6 +639,10 @@ export function scoreFact(params: {
       : 0,
     polarityMultiplier:
       params.fact.polarity === "negative" ? params.config.polarityDemotionFactor : 1.0,
+    provenanceMultiplier: provenanceInteractionMultiplier(
+      resolveOrigin(params.origin, params.sourceTrust),
+      params.fact.certainty,
+    ),
   };
   if (params.groundingConfidence !== undefined && params.groundingConfidence >= 0) {
     signals.reliability = signals.reliability * params.groundingConfidence;
@@ -858,7 +878,7 @@ export function composite(signals: Signals, config: ScoringConfig): number {
     signals.validity * config.weightValidity +
     (signals.temporalAlignment ?? 0) * (config.weightTemporalAlignment ?? 0.05) +
     signals.entityScore * config.weightEntity;
-  return weighted * signals.polarityMultiplier;
+  return weighted * signals.polarityMultiplier * signals.provenanceMultiplier;
 }
 
 // ---------------------------------------------------------------------------
@@ -953,6 +973,91 @@ export function sourceTrustToReliability(
     default:
       return 1.0;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Origin-trust provenance (2026-11-09 daily-research QW2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Promotion-composite origin-trust ladder (2026-11-09 QW2). Multiplied into
+ * the L2→L3 typed-fact promotion score where no other trust signal exists.
+ * `unknown` is deliberately neutral (1.0) — the implicit backfill for
+ * pre-existing facts: no migration, no behavior change until provenance is
+ * re-stamped by the next consolidation pass.
+ */
+export const ORIGIN_TRUST_LADDER: Record<FactOrigin, number> = {
+  user: 1.0,
+  transcript: 0.9,
+  tool: 0.85,
+  web: 0.7,
+  unknown: 1.0,
+};
+
+/**
+ * Penalty for the MemoryDojo attack shape: a fact that is BOTH
+ * `certainty: "instructional"` AND web-origin. An imperative phrased inside
+ * fetched page content ("always do X", injection payloads) must not ride
+ * its confident epistemic framing into long-term memory. Note the asymmetry
+ * this encodes: instructional facts from the USER are legitimate directives
+ * (no penalty) — the penalty fires on the provenance, not the mood.
+ */
+export const ORIGIN_INSTRUCTIONAL_WEB_PENALTY = 0.5;
+
+/**
+ * Resolve a fact's origin: explicit `origin` wins; otherwise derive from
+ * persisted `sourceTrust` (user→user, web→web, agent-inferred→transcript);
+ * absent both → `unknown` (neutral — implicit backfill semantics).
+ */
+export function resolveOrigin(
+  origin: FactOrigin | undefined,
+  sourceTrust: SourceTrust | undefined,
+): FactOrigin {
+  if (origin) return origin;
+  switch (sourceTrust) {
+    case "user":
+      return "user";
+    case "web":
+      return "web";
+    case "agent-inferred":
+      return "transcript";
+    default:
+      return "unknown";
+  }
+}
+
+/**
+ * Retrieval-time provenance interaction: ONLY the instructional∧web penalty,
+ * not the full ladder — the general trust axis is already carried by the
+ * reliability signal (`min(certaintyReliability, sourceTrustToReliability)`),
+ * and stacking the ladder here would double-count web provenance.
+ */
+export function provenanceInteractionMultiplier(
+  origin: FactOrigin,
+  certainty: FactCertainty | undefined,
+): number {
+  if (origin === "web" && certainty === "instructional") {
+    return ORIGIN_INSTRUCTIONAL_WEB_PENALTY;
+  }
+  return 1.0;
+}
+
+/**
+ * Promotion-composite origin-trust factor: full ladder × the
+ * instructional∧web interaction. Used by typed-fact promotion scoring
+ * (longterm-typed.ts J-space cap) where no other trust signal applies.
+ * Typed facts carry no `certainty` field, so the interaction lane only fires
+ * when the caller supplies one (future-proofing; prose promotion may reuse
+ * this with certainty).
+ */
+export function originTrustFactor(params: {
+  origin?: FactOrigin;
+  certainty?: FactCertainty;
+}): number {
+  const resolved = params.origin ?? "unknown";
+  return (
+    ORIGIN_TRUST_LADDER[resolved] * provenanceInteractionMultiplier(resolved, params.certainty)
+  );
 }
 
 // ---------------------------------------------------------------------------

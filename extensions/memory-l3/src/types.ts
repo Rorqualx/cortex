@@ -187,6 +187,13 @@ export type TypedFact = {
    */
   statedBy?: string;
   /**
+   * Origin-trust provenance (2026-11-09 QW2): ultimate information origin,
+   * inferred from `statedBy` at ingestion (see `inferOrigin()`). Absent on
+   * facts extracted before this feature; readers treat absent as `"unknown"`
+   * (neutral weight).
+   */
+  origin?: FactOrigin;
+  /**
    * QW-2 (LAPSE): time-bounded vs. standing distinction. Extractor emits
    * `{ kind: "time-bounded", validThrough }` for values with an explicit
    * end ("until 2026-06", "through Q3"). Absent = standing — readers treat
@@ -544,6 +551,15 @@ export type LongTermTypedFact = {
   sourceTrust?: SourceTrust;
 
   /**
+   * Origin-trust provenance (2026-11-09 daily-research QW2): ultimate
+   * information origin of the winning L2 emission, stamped at promotion /
+   * reaffirmation / supersession alongside `sourceTrust` (via `inferOrigin`).
+   * Absent on facts consolidated before this feature; readers treat absent
+   * as `"unknown"` → neutral weight (implicit backfill).
+   */
+  origin?: FactOrigin;
+
+  /**
    * QW-1 (ScrubJay-MEM-inspired): Per-fact perishability coefficient
    * (0..1). Auto-classified at insertion from slot/value keywords and
    * source-trust. Applied as a per-fact decay multiplier alongside the
@@ -581,6 +597,19 @@ export type LongTermTypedFact = {
  * - `untrusted`: Untrusted source, unknown or explicitly flagged as uncertain
  */
 export type SourceTrust = "user" | "web" | "agent-inferred" | "untrusted";
+
+/**
+ * Origin-trust provenance (2026-11-09 daily-research QW2): where a fact's
+ * information ULTIMATELY came from — the provenance axis, orthogonal to
+ * `certainty` (the epistemic axis). A confidently-phrased imperative from a
+ * fetched page is `certainty: "instructional"` AND `origin: "web"` — the
+ * MemoryDojo attack vector — and origin-trust scoring specifically
+ * downweights that combination. Absent on facts created before this
+ * feature; readers treat absent as `"unknown"` → neutral weight (the
+ * implicit backfill: no doctor migration needed, no behavior change for
+ * pre-existing facts).
+ */
+export type FactOrigin = "web" | "user" | "tool" | "transcript" | "unknown";
 
 export type LongTermTypedFrontmatter = {
   version: 1;
