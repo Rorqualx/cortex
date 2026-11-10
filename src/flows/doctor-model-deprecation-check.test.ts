@@ -85,14 +85,22 @@ describe("visionDropNote", () => {
     ).toBeNull();
   });
 
-  it("fires for the live provider index: retired deepseek vision alias -> deepseek-flash", () => {
+  // QW-A probe (2026-11-10): since the 2026-10-09 index alignment, deepseek-flash
+  // (V4.1 Flash) accepts image input, so repointing the retired vision alias
+  // preserves modality and the note correctly stays silent. Regression-locks
+  // the discovery reroute: any future capability regression on the survivor
+  // (image flag dropped) must re-arm this warning.
+  it("stays silent for the live provider index: retired vision alias -> deepseek-flash (V4.1 keeps vision)", () => {
     const liveCaps = buildProviderIndexInputCaps(loadOpenClawProviderIndex());
     expect(
       visionDropNote(
         rewriteAction("deepseek", "deepseek-v4-flash-vision-exp", "deepseek-flash"),
         liveCaps,
       ),
-    ).toContain("drops vision capability");
+    ).toBeNull();
+    // Guard the premise: the survivor must still be vision-capable, otherwise
+    // this test would pass vacuously after a capability regression.
+    expect(liveCaps.get("deepseek/deepseek-flash")).toContain("image");
   });
 });
 

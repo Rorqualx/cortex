@@ -202,8 +202,9 @@ describe("OpenClaw provider index", () => {
       replacedBy: "deepseek-flash",
     });
     // Retired vision variant: capability-flagged (image input), deliberately
-    // absent from any default routing chain, and deprecated onto the text-only
-    // deepseek-flash survivor — the swap silently drops image input.
+    // absent from any default routing chain, and deprecated onto deepseek-flash.
+    // Since the 2026-10-09 index alignment, the survivor (V4.1 Flash) also
+    // accepts image input — the repoint preserves modality (QW-A 2026-11-10).
     const visionExp = index.providers.deepseek?.previewCatalog?.models.find(
       (model) => model.id === "deepseek-v4-flash-vision-exp",
     );
