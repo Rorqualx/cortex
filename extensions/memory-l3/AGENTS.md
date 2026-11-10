@@ -184,6 +184,18 @@ The 10M-token crossover is the calibration threshold: below it, semantic and
 lexical signals are roughly equal contributors; above it, BM25 dominance grows.
 Monitor corpus size during growth-slope checks (see deferred table above).
 
+### Retrieval evaluation composition rule (LASAGNA, 2026-11-10)
+
+Every retrieval-side change (verify-then-expand, per-type budgets, diffusion
+re-ranking, learned rerankers, any future reranker) is evaluated **in composition**
+on the LongMemEval harness — never on the component metric alone. Techniques from
+different pipeline phases predict +47% combined but deliver +17% (LASAGNA):
+component-metric gains do not add up, and a component win can be a composition
+loss. Concretely: when two or more retrieval-side changes are both unproven on the
+harness, evaluate them together (and each alone) before declaring either an
+improvement. Corpus-scale sensitivity is part of the rule — re-baseline whenever
+the store crosses the ~10k-chunk sqlite-vec trigger (see deferred table above).
+
 ### Quick wins (recommended for immediate implementation)
 
 - **Temporal validity signals** (QW-1): Flag stale facts in retrieval output by age
