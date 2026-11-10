@@ -309,6 +309,20 @@ export type RetrievalConfig = {
    */
   coverageExpandRounds?: number;
   /**
+   * QW-D (2026-11-10, ETAMem-inspired): entropy-based per-type retrieval
+   * budgets. When true, top-K selection allocates K per typed-fact category
+   * by the entropy of the query-type affinity distribution instead of a
+   * uniform top-K: a query that concentrates on one type sharpens budgets
+   * toward it, while every category present in the pool keeps a guaranteed
+   * minimum share (1 slot when topK allows) so minority types — the retrieval
+   * side of the temporal-anchor survival problem — cannot be crowded out by
+   * keyword-heavy categories. Planner arithmetic only: no schema change, no
+   * extra storage reads. Default false; enable via config or env
+   * OPENCLAW_MEMORY_L3_TYPE_BUDGETS=1. Evaluate in composition on LongMemEval
+   * with QW-C per the LASAGNA rule in extensions/memory-l3/AGENTS.md.
+   */
+  entropyTypeBudgets?: boolean;
+  /**
    * QW-1: When true, fuse BM25 and semantic signals via Reciprocal Rank
    * Fusion (RRF) instead of linear weighting. RRF is rank-based and
    * parameter-light (only k), making it robust to score-scale differences.
@@ -362,6 +376,7 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   reformulationThreshold: 0.4,
   evidenceDrillRounds: 0,
   coverageExpandRounds: 1,
+  entropyTypeBudgets: false,
   useRRFFusion: false,
   rrfK: 60,
   evidenceFirstOrdering: true,
@@ -1314,7 +1329,19 @@ export async function retrieveTopK(params: {
   }
 
   let result: RetrievedFact[];
-  if (retConfig.useSubmodularSelect) {
+  const entropyTypeBudgets =
+    retConfig.entropyTypeBudgets ?? process.env.OPENCLAW_MEMORY_L3_TYPE_BUDGETS === "1";
+  if (entropyTypeBudgets) {
+    // QW-D (2026-11-10): per-category entropy budgets replace uniform top-K.
+    // Categories live on scorable items, so key them by dedupKey for lookup.
+    const categoryByKey = new Map<string, string | undefined>();
+    for (const it of items) {
+      if (!categoryByKey.has(it.fact.dedupKey)) {
+        categoryByKey.set(it.fact.dedupKey, it.category);
+      }
+    }
+    result = entropyTypeBudgetSelect(scored, categoryByKey, topK);
+  } else if (retConfig.useSubmodularSelect) {
     result = submodularSelect(
       scored,
       queryTokens,
@@ -2173,6 +2200,153 @@ async function selectEpochPaths(
 function chunkSeq(chunkId: string): number | null {
   const seq = /^chunk-(\d+)/.exec(chunkId)?.[1];
   return seq !== undefined ? Number.parseInt(seq, 10) : null;
+}
+
+// QW-D (2026-11-10, ETAMem-inspired): entropy-based per-type retrieval
+// budgets. Instead of a uniform top-K over the whole pool, top-K is allocated
+// per typed-fact category bucket by the entropy of the query-type affinity
+// distribution: affinity of a bucket = its best candidate's score. Low
+// entropy (the query concentrates on one type) sharpens budgets toward it;
+// high entropy (type-agnostic query) spreads them nearly proportionally.
+// Every bucket present in the pool keeps a guaranteed minimum share of one
+// slot (when topK allows) — the retrieval-side fix for minority-type crowding
+// out (the 2.9% temporal-anchor survival problem's retrieval side: temporal
+// and episodic types can no longer be fully evicted by keyword-heavy ones).
+// Pure planner arithmetic: no schema change, no storage reads.
+
+/** Bucket key for candidates with no typed-fact category (L2/longterm prose). */
+const TYPE_BUDGET_PROSE_BUCKET = "_prose";
+
+/**
+ * Largest-remainder allocation of `topK` slots over normalized weights,
+ * followed by a min-1 guarantee: while some bucket has 0 slots, another has
+ * ≥2, and topK >= bucket count, one slot is transferred. Total always sums
+ * to topK (when topK > 0).
+ */
+export function allocateTypeBudgets(
+  affinities: Map<string, number>,
+  topK: number,
+): Map<string, number> {
+  const buckets = [...affinities.entries()].filter(([, a]) => a > 0);
+  const C = buckets.length;
+  if (C === 0 || topK <= 0) {
+    return new Map();
+  }
+  if (C === 1) {
+    return new Map([[buckets[0]![0], topK]]);
+  }
+
+  const total = buckets.reduce((sum, [, a]) => sum + a, 0);
+  const q = buckets.map(([b, a]) => [b, a / total] as const);
+  // Normalized entropy u = H(q)/ln(C) ∈ (0,1]: 1 = type-agnostic query,
+  // →0 = single-type query. Concentration exponent γ interpolates 1..3.
+  const H = -q.reduce((sum, [, p]) => sum + p * Math.log(p), 0);
+  const u = H / Math.log(C);
+  const gamma = 1 + 2 * (1 - u);
+
+  const sharpened = q.map(([b, p]) => [b, Math.pow(p, gamma)] as const);
+  const wTotal = sharpened.reduce((sum, [, w]) => sum + w, 0);
+  const raw = sharpened.map(([b, w]) => [b, (topK * w) / wTotal] as const);
+
+  const alloc = new Map<string, number>();
+  const remainders: Array<{ bucket: string; rem: number }> = [];
+  let assigned = 0;
+  for (const [b, r] of raw) {
+    const floor = Math.floor(r);
+    alloc.set(b, floor);
+    assigned += floor;
+    remainders.push({ bucket: b, rem: r - floor });
+  }
+  remainders.sort((a, b) => b.rem - a.rem || (a.bucket < b.bucket ? -1 : 1));
+  for (const { bucket } of remainders) {
+    if (assigned >= topK) {
+      break;
+    }
+    alloc.set(bucket, (alloc.get(bucket) ?? 0) + 1);
+    assigned += 1;
+  }
+
+  // Min-1 guarantee (only when every bucket can have one): transfer surplus
+  // slots from rich buckets to empty ones. Keeps the total at exactly topK.
+  if (topK >= C) {
+    let empty = [...alloc.entries()].filter(([, k]) => k === 0).map(([b]) => b);
+    let rich = [...alloc.entries()].filter(([, k]) => k >= 2).map(([b]) => b);
+    while (empty.length > 0 && rich.length > 0) {
+      const e = empty.shift()!;
+      const r = rich[0]!;
+      alloc.set(e, 1);
+      alloc.set(r, (alloc.get(r) ?? 0) - 1);
+      if ((alloc.get(r) ?? 0) < 2) {
+        rich = rich.slice(1);
+      }
+    }
+  }
+
+  return alloc;
+}
+
+/**
+ * Top-K selection under entropy-based per-type budgets. Candidates are
+ * bucketed by category (category-less → prose bucket); each bucket yields
+ * its budget of best-scoring facts; exhausted budgets' unused slots spill
+ * over to the globally best unselected candidates so slots never go wasted.
+ * Deterministic: ties broken by dedupKey.
+ */
+export function entropyTypeBudgetSelect(
+  scored: RetrievedFact[],
+  categoryByKey: Map<string, string | undefined>,
+  topK: number,
+): RetrievedFact[] {
+  if (scored.length === 0 || topK <= 0) {
+    return [];
+  }
+  const bucketOf = (f: RetrievedFact): string =>
+    categoryByKey.get(f.fact.dedupKey) ?? TYPE_BUDGET_PROSE_BUCKET;
+
+  // Affinity per bucket = best score present in that bucket.
+  const affinity = new Map<string, number>();
+  for (const f of scored) {
+    const b = bucketOf(f);
+    affinity.set(b, Math.max(affinity.get(b) ?? 0, f.score));
+  }
+
+  const budgets = allocateTypeBudgets(affinity, topK);
+  const byBucket = new Map<string, RetrievedFact[]>();
+  for (const f of [...scored].sort(
+    (a, b) => b.score - a.score || (a.fact.dedupKey < b.fact.dedupKey ? -1 : 1),
+  )) {
+    const b = bucketOf(f);
+    const list = byBucket.get(b) ?? [];
+    list.push(f);
+    byBucket.set(b, list);
+  }
+
+  const selectedKeys = new Set<string>();
+  const selected: RetrievedFact[] = [];
+  for (const [b, budget] of budgets) {
+    for (const f of (byBucket.get(b) ?? []).slice(0, budget)) {
+      if (!selectedKeys.has(f.fact.dedupKey)) {
+        selectedKeys.add(f.fact.dedupKey);
+        selected.push(f);
+      }
+    }
+  }
+  // Spill-over: unused slots (exhausted buckets) go to best remaining.
+  if (selected.length < Math.min(topK, scored.length)) {
+    for (const f of scored) {
+      if (selected.length >= Math.min(topK, scored.length)) {
+        break;
+      }
+      if (!selectedKeys.has(f.fact.dedupKey)) {
+        selectedKeys.add(f.fact.dedupKey);
+        selected.push(f);
+      }
+    }
+  }
+
+  return selected
+    .sort((a, b) => b.score - a.score || (a.fact.dedupKey < b.fact.dedupKey ? -1 : 1))
+    .slice(0, topK);
 }
 
 // Greedy submodular fact selector (arXiv:2607.00725).

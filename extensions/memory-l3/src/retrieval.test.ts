@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  allocateTypeBudgets,
   buildEvidenceExpansionTerms,
   classifyQueryIntent,
   critiqueStaleFacts,
@@ -2599,5 +2600,120 @@ describe("retrieveTopK evidence-conditioned drill (QW-C)", () => {
     expect(result.coverageExpanded).toBeUndefined();
     expect(result.missingInfo).toBeDefined();
     expect(result.missingInfo?.missingFields).toContain("password");
+  });
+});
+
+describe("QW-D entropy-based per-type retrieval budgets (2026-11-10)", () => {
+  it("allocateTypeBudgets: concentrated affinity gives the dominant type the majority but keeps a guaranteed minority slot", () => {
+    const alloc = allocateTypeBudgets(
+      new Map([
+        ["infra", 0.9],
+        ["diagnosis", 0.1],
+      ]),
+      4,
+    );
+    const infra = alloc.get("infra") ?? 0;
+    const diag = alloc.get("diagnosis") ?? 0;
+    expect(infra + diag).toBe(4);
+    expect(infra).toBeGreaterThan(diag);
+    // Guaranteed minimum share: the minority type survives retrieval.
+    expect(diag).toBeGreaterThanOrEqual(1);
+  });
+
+  it("allocateTypeBudgets: uniform affinity splits evenly (entropy max)", () => {
+    const alloc = allocateTypeBudgets(
+      new Map([
+        ["a", 0.5],
+        ["b", 0.5],
+      ]),
+      4,
+    );
+    expect(alloc.get("a")).toBe(2);
+    expect(alloc.get("b")).toBe(2);
+  });
+
+  it("allocateTypeBudgets: single bucket takes all; empty pool returns empty", () => {
+    expect(allocateTypeBudgets(new Map([["only", 1]]), 3).get("only")).toBe(3);
+    expect(allocateTypeBudgets(new Map(), 3).size).toBe(0);
+  });
+
+  it("allocateTypeBudgets: fewer slots than buckets never exceeds topK", () => {
+    const alloc = allocateTypeBudgets(
+      new Map([
+        ["a", 0.4],
+        ["b", 0.3],
+        ["c", 0.3],
+      ]),
+      2,
+    );
+    const total = [...alloc.values()].reduce((s, k) => s + k, 0);
+    expect(total).toBe(2);
+  });
+
+  it("keeps a minority typed category in the packet that uniform top-K evicts", async () => {
+    await writeChunk("chunk-type-budgets", [], NOW, [
+      {
+        id: "tf-gw",
+        slot: "infra:gateway_ip",
+        value: "192.168.50.1",
+        sourceSpan: "gateway at 192.168.50.1",
+        unit: null,
+        confidence: 0.9,
+        createdAt: NOW,
+      },
+      {
+        id: "tf-dns",
+        slot: "infra:dns_ip",
+        value: "192.168.50.128",
+        sourceSpan: "dns at 192.168.50.128",
+        unit: null,
+        confidence: 0.9,
+        createdAt: NOW,
+      },
+      {
+        id: "tf-diag",
+        slot: "diag:slow_network",
+        value: "bufferbloat on the upstream link",
+        sourceSpan: "diagnosed bufferbloat",
+        unit: null,
+        confidence: 0.9,
+        createdAt: NOW,
+      },
+    ]);
+    const base = {
+      useEpochFirst: false,
+      epochExpandTopN: 3,
+      useSubmodularSelect: false,
+      submodularDiversityWeight: 0.3,
+      submodularCoverageWeight: 0.3,
+      submodularTokenBudget: null,
+      mode: "blended" as const,
+    };
+    // Control (uniform top-K): the two keyword-strong infra facts crowd out
+    // the weaker diagnosis fact at topK 2.
+    const control = await retrieveTopK({
+      query: "192.168.50 gateway dns ip",
+      storage,
+      topK: 2,
+      now: NOW,
+      retrievalConfig: base,
+    });
+    const controlKeys = control.facts.map((f) => f.fact.dedupKey);
+    expect(controlKeys).not.toContain("diag:slow_network");
+
+    // With per-type budgets: diagnosis keeps its guaranteed share.
+    const budgeted = await retrieveTopK({
+      query: "192.168.50 gateway dns ip",
+      storage,
+      topK: 2,
+      now: NOW,
+      retrievalConfig: { ...base, entropyTypeBudgets: true },
+    });
+    const budgetedKeys = budgeted.facts.map((f) => f.fact.dedupKey);
+    expect(budgetedKeys).toContain("diag:slow_network");
+    expect(budgetedKeys.some((k) => k.startsWith("infra:"))).toBe(true);
+    // The packet only ever widens relative to control on the minority side:
+    // still capped at topK.
+    expect(budgeted.facts).toHaveLength(2);
   });
 });
