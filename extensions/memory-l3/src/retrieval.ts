@@ -1651,14 +1651,123 @@ export async function retrieveTopK(params: {
   }
 
   // -----------------------------------------------------------------
-  // Sufficient Context Agent (gap analysis)
+  // Sufficient Context Agent (gap analysis) + closed-loop expansion
   // -----------------------------------------------------------------
   // Post-retrieval sufficiency check: compare what the query asked for
-  // against what we actually retrieved, trigger follow-up searches for gaps.
-  const missingInfo =
+  // against what we actually retrieved. CVSA-style verify-then-expand:
+  // when explicit fields are missing from the selected set, ONE bounded
+  // expansion pass tries to recover them from the already-scored
+  // candidate pool before reporting the gap — rescore unselected
+  // candidates against the missing fields, admit (capped) facts that
+  // lexically cover a gap at the drill-hit evidence discount, re-check
+  // once, stop. Training-free; no extra storage reads; gap queries only.
+  let missingInfo =
     params.enableSufficientContext !== false
       ? await checkSufficientContext(params.query, finalFacts)
       : undefined;
+
+  if (missingInfo) {
+    const missingLower = missingInfo.missingFields.map((f) => f.toLowerCase());
+    const present = new Set(finalFacts.map((r) => r.fact.dedupKey));
+    const expandTokens = new Set([...queryTokens, ...tokenize(missingLower.join(" "))]);
+    type ExpandCandidate = {
+      fact: L2Fact;
+      chunkId: string;
+      tier: RetrievalTier;
+      score: number;
+      signals: ReturnType<typeof scoreFact>;
+      covers: number;
+    };
+    const candidates: ExpandCandidate[] = [];
+    for (const item of items) {
+      if (present.has(item.fact.dedupKey)) {
+        continue;
+      }
+      const textLower = item.fact.text.toLowerCase();
+      let covers = 0;
+      for (const m of missingLower) {
+        if (textLower.includes(m)) {
+          covers += 1;
+        }
+      }
+      if (covers === 0) {
+        continue; // must close a gap to be admittable
+      }
+      const signals = scoreFact({
+        queryTokens: expandTokens,
+        fact: item.fact,
+        now,
+        config: effectiveConfig,
+        l3Boost: item.l3Boost,
+        corpusStats,
+        significant: item.fact.significant,
+        informationGain: item.informationGain,
+      });
+      if (
+        params.queryEmbedding &&
+        item.embedding &&
+        params.queryEmbedding.length === item.embedding.length
+      ) {
+        signals.semantic = cosineSimilarity(params.queryEmbedding, item.embedding);
+      }
+      if (retConfig.mode === "keyword") {
+        signals.semantic = 0;
+      } else if (retConfig.mode === "semantic") {
+        signals.bm25 = 0;
+        signals.lexical = 0;
+      }
+      const baseScore = composite(signals, effectiveConfig);
+      const rawScore = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
+      // Same 0.8 evidence-supplement discount as anchor drill hits so a
+      // downstream sort keeps genuine matches above expansion admits.
+      candidates.push({
+        fact: item.fact,
+        chunkId: item.chunkId,
+        tier: item.tier,
+        score: rawScore * 0.8,
+        signals,
+        covers,
+      });
+    }
+    candidates.sort((a, b) => b.covers - a.covers || b.score - a.score);
+    const coveredGaps = new Set<string>();
+    for (const cand of candidates) {
+      if (finalFacts.length >= topK + SUFFICIENT_CONTEXT_EXPAND_MAX) {
+        break;
+      }
+      const textLower = cand.fact.text.toLowerCase();
+      const closesGap = missingLower.some((m) => !coveredGaps.has(m) && textLower.includes(m));
+      if (!closesGap) {
+        continue;
+      }
+      for (const m of missingLower) {
+        if (textLower.includes(m)) {
+          coveredGaps.add(m);
+        }
+      }
+      finalFacts.push({
+        fact: cand.fact,
+        score: cand.score,
+        signals: cand.signals,
+        chunkId: cand.chunkId,
+        tier: cand.tier,
+      });
+    }
+    if (coveredGaps.size > 0) {
+      // Re-check once: only the previously-missing fields, expanded set.
+      const stillMissing = missingInfo.missingFields.filter(
+        (field) => !finalFacts.some((f) => f.fact.text.toLowerCase().includes(field.toLowerCase())),
+      );
+      missingInfo =
+        stillMissing.length === 0
+          ? undefined
+          : {
+              queryId: missingInfo.queryId,
+              missingFields: stillMissing,
+              suggestedQueries: generateFollowUpQueries(stillMissing),
+            };
+    }
+  }
 
   // -----------------------------------------------------------------
   // REFACT-style adaptive fact compression (arXiv:2507.15147)
@@ -2446,6 +2555,12 @@ function tierMarker(tier: RetrievalTier): string {
     }
   }
 }
+
+/**
+ * Max facts admitted per verify-then-expand pass. One bounded pass per
+ * retrieval; caps both miss and bloat (CVSA-style closed loop).
+ */
+const SUFFICIENT_CONTEXT_EXPAND_MAX = 4;
 
 /**
  * Sufficient Context Agent: performs gap analysis after retrieval.

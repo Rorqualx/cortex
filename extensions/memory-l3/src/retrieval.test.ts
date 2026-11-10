@@ -2499,3 +2499,91 @@ describe("retrieveTopK evidence-conditioned drill (QW-C)", () => {
     expect(result.drillDepth).toBeUndefined();
   });
 });
+
+describe("retrieveTopK sufficient-context verify-then-expand (CVSA closed loop)", () => {
+  it("expands once to recover a missing field below top-K, then clears missingInfo", async () => {
+    await writeChunk("chunk-vte-1", [
+      {
+        id: "f-ip",
+        text: "the router ip is 192.168.50.1",
+        importance: 0.9,
+        createdAt: NOW,
+        dedupKey: "k:vte-1",
+      },
+    ]);
+    await writeChunk(
+      "chunk-vte-2",
+      [
+        {
+          id: "f-port",
+          text: "the ssh port is 2222",
+          importance: 0.1,
+          createdAt: NOW - 90 * 24 * 3600 * 1000,
+          dedupKey: "k:vte-2",
+        },
+      ],
+      NOW - 90 * 24 * 3600 * 1000,
+    );
+
+    const result = await retrieveTopK({
+      query: "show me the ip and port",
+      storage,
+      topK: 1,
+      now: NOW,
+    });
+
+    // Exactly one fact fits topK=1; the closed loop must admit the other
+    // (gap-covering) fact from the scored candidate pool in one pass.
+    expect(result.facts.length).toBe(2);
+    const texts = result.facts.map((f) => f.fact.text);
+    expect(texts.some((t) => t.includes("192.168.50.1"))).toBe(true);
+    expect(texts.some((t) => t.includes("2222"))).toBe(true);
+    // Both requested fields are covered -> no gap remains to report.
+    expect(result.missingInfo).toBeUndefined();
+  });
+
+  it("reports the remaining gap when no candidate covers a missing field", async () => {
+    await writeChunk("chunk-vte-3", [
+      {
+        id: "f-only-ip",
+        text: "the router ip is 192.168.50.2",
+        importance: 0.9,
+        createdAt: NOW,
+        dedupKey: "k:vte-3",
+      },
+    ]);
+
+    const result = await retrieveTopK({
+      query: "show me the ip and port",
+      storage,
+      topK: 1,
+      now: NOW,
+    });
+
+    expect(result.facts.length).toBe(1);
+    expect(result.missingInfo?.missingFields).toContain("port");
+  });
+
+  it("stays silent when sufficiency checking is disabled", async () => {
+    await writeChunk("chunk-vte-4", [
+      {
+        id: "f-ip2",
+        text: "the router ip is 192.168.50.3",
+        importance: 0.9,
+        createdAt: NOW,
+        dedupKey: "k:vte-4",
+      },
+    ]);
+
+    const result = await retrieveTopK({
+      query: "show me the ip and port",
+      storage,
+      topK: 1,
+      now: NOW,
+      enableSufficientContext: false,
+    });
+
+    expect(result.facts.length).toBe(1);
+    expect(result.missingInfo).toBeUndefined();
+  });
+});
