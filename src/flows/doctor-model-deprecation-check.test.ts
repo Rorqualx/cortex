@@ -85,14 +85,14 @@ describe("visionDropNote", () => {
     ).toBeNull();
   });
 
-  it("fires for the live provider index: retired deepseek vision alias -> deepseek-flash", () => {
+  it("stays silent for the live provider index: retired deepseek vision alias -> deepseek-flash (V4.1 Flash accepts image input since 2026-10-09, so the repoint preserves modality)", () => {
     const liveCaps = buildProviderIndexInputCaps(loadOpenClawProviderIndex());
     expect(
       visionDropNote(
         rewriteAction("deepseek", "deepseek-v4-flash-vision-exp", "deepseek-flash"),
         liveCaps,
       ),
-    ).toContain("drops vision capability");
+    ).toBeNull();
   });
 });
 
