@@ -2498,4 +2498,106 @@ describe("retrieveTopK evidence-conditioned drill (QW-C)", () => {
     });
     expect(result.drillDepth).toBeUndefined();
   });
+
+  // QW-C (2026-11-10): coverage-based verify-then-expand — closed-loop
+  // upgrade of the Sufficient Context Agent gap analysis.
+  const coverageConfig = (coverageExpandRounds: number) => ({
+    useEpochFirst: false,
+    epochExpandTopN: 3,
+    useSubmodularSelect: false,
+    submodularDiversityWeight: 0.3,
+    submodularCoverageWeight: 0.3,
+    submodularTokenBudget: null,
+    mode: "blended" as const,
+    coverageExpandRounds,
+  });
+
+  it("expands once to close a field gap and reports coverageExpanded with the residual gap cleared", async () => {
+    await writeChunk("chunk-coverage", [
+      {
+        id: "f-user",
+        text: "router username is admin",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "k:user",
+      },
+      {
+        id: "f-pass",
+        text: "router password was rotated to a new secret last month",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "k:pass",
+      },
+    ]);
+    // topK 1 forces the initial packet to carry only one of the two
+    // requested fields; the closed-loop expansion must pull in the other.
+    const result = await retrieveTopK({
+      query: "Show me the username and password for the router",
+      storage,
+      topK: 1,
+      now: NOW,
+      retrievalConfig: coverageConfig(1),
+    });
+    expect(result.coverageExpanded).toBe(true);
+    const keys = new Set(result.facts.map((f) => f.fact.dedupKey));
+    expect(keys.has("k:user")).toBe(true);
+    expect(keys.has("k:pass")).toBe(true);
+    // Re-check after expansion: both requested fields covered, no residual gap.
+    expect(result.missingInfo).toBeUndefined();
+  });
+
+  it("skips expansion when coverageExpandRounds is 0 and keeps the gap report", async () => {
+    await writeChunk("chunk-coverage-off", [
+      {
+        id: "f-user",
+        text: "router username is admin",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "k:user",
+      },
+      {
+        id: "f-pass",
+        text: "router password was rotated to a new secret last month",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "k:pass",
+      },
+    ]);
+    const result = await retrieveTopK({
+      query: "Show me the username and password for the router",
+      storage,
+      topK: 1,
+      now: NOW,
+      retrievalConfig: coverageConfig(0),
+    });
+    expect(result.coverageExpanded).toBeUndefined();
+    // Gap analysis still runs (sufficiency agent default-on) — the missing
+    // field stays reported, never silently dropped.
+    expect(result.missingInfo).toBeDefined();
+    expect(result.missingInfo?.missingFields.length).toBeGreaterThan(0);
+  });
+
+  it("stops after one round when no candidate covers the missing field", async () => {
+    await writeChunk("chunk-coverage-gap", [
+      {
+        id: "f-user",
+        text: "router username is admin",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "k:user",
+      },
+    ]);
+    const result = await retrieveTopK({
+      query: "Show me the username and password for the router",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: coverageConfig(1),
+    });
+    // Nothing in the pool covers "password" — expansion admits nothing,
+    // stays bounded, and the residual gap is reported.
+    expect(result.coverageExpanded).toBeUndefined();
+    expect(result.missingInfo).toBeDefined();
+    expect(result.missingInfo?.missingFields).toContain("password");
+  });
 });

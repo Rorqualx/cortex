@@ -294,6 +294,21 @@ export type RetrievalConfig = {
    */
   evidenceDrillRounds?: number;
   /**
+   * QW-C (2026-11-10): coverage-based verify-then-expand rounds. When > 0,
+   * the Sufficient Context Agent's gap analysis becomes closed-loop: if the
+   * selected set lexically misses requested fields/entities, ONE bounded
+   * expansion re-scores the already-collected candidate pool targeted at the
+   * missing fields, then re-checks coverage and stops (max 1 round, no extra
+   * storage reads). Distinct from evidenceDrillRounds above (which fires on
+   * missing entity/time anchors in the packet); this fires on the field-gap
+   * analysis that previously only *suggested* follow-up queries. Whether the
+   * expansion added facts is reported on RetrievalResult.coverageExpanded;
+   * missingInfo carries the post-expansion residual gap. Default 1 (on,
+   * matching the default-on sufficiency agent). Disable via config 0 or env
+   * OPENCLAW_MEMORY_L3_COVERAGE_EXPAND=0.
+   */
+  coverageExpandRounds?: number;
+  /**
    * QW-1: When true, fuse BM25 and semantic signals via Reciprocal Rank
    * Fusion (RRF) instead of linear weighting. RRF is rank-based and
    * parameter-light (only k), making it robust to score-scale differences.
@@ -346,6 +361,7 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   reformulationPasses: 0,
   reformulationThreshold: 0.4,
   evidenceDrillRounds: 0,
+  coverageExpandRounds: 1,
   useRRFFusion: false,
   rrfK: 60,
   evidenceFirstOrdering: true,
@@ -374,6 +390,10 @@ export type RetrievalResult = {
   reformulated?: boolean;
   /** QW-C: evidence-conditioned drill rounds executed (0–1); absent = none. */
   drillDepth?: number;
+  /** QW-C (2026-11-10): true when the coverage verify-then-expand pass added
+   * gap-targeted facts to the result. missingInfo (when present) reports the
+   * residual gap AFTER expansion. */
+  coverageExpanded?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -1651,14 +1671,97 @@ export async function retrieveTopK(params: {
   }
 
   // -----------------------------------------------------------------
-  // Sufficient Context Agent (gap analysis)
+  // Sufficient Context Agent (gap analysis) + QW-C closed-loop expansion
   // -----------------------------------------------------------------
   // Post-retrieval sufficiency check: compare what the query asked for
   // against what we actually retrieved, trigger follow-up searches for gaps.
-  const missingInfo =
+  // QW-C (2026-11-10, CVSA-inspired verify-then-expand): when the lexical
+  // field/entity coverage of the selected set falls short, ONE bounded
+  // expansion re-scores the already-collected candidate pool targeted at the
+  // missing fields (gap-targeted, not a general K raise; no extra storage
+  // reads), the gap analysis re-runs, and the residual gap is reported.
+  // Stop after one round regardless of outcome — caps both miss and bloat.
+  const coverageExpandRounds = Math.min(
+    1,
+    retConfig.coverageExpandRounds ??
+      (process.env.OPENCLAW_MEMORY_L3_COVERAGE_EXPAND === "0" ? 0 : 1),
+  );
+  let missingInfo =
     params.enableSufficientContext !== false
       ? await checkSufficientContext(params.query, finalFacts)
       : undefined;
+  let coverageExpanded = false;
+  if (missingInfo && coverageExpandRounds > 0 && items.length > 0) {
+    // Expansion tokens: the query plus the missing field names — candidates
+    // covering a missing field get a lexical boost the original query didn't
+    // give them.
+    const expandTokens = new Set(queryTokens);
+    for (const field of missingInfo.missingFields) {
+      for (const tok of tokenize(field)) {
+        expandTokens.add(tok);
+      }
+    }
+    const present = new Set(finalFacts.map((r) => r.fact.dedupKey));
+    const expanded: RetrievedFact[] = [];
+    for (const item of items) {
+      if (present.has(item.fact.dedupKey)) {
+        continue;
+      }
+      // Only admit candidates that lexically cover at least one missing
+      // field — the pass is gap-targeted, never a general K raise.
+      const textLower = item.fact.text.toLowerCase();
+      if (!missingInfo.missingFields.some((f) => textLower.includes(f.toLowerCase()))) {
+        continue;
+      }
+      const signals = scoreFact({
+        queryTokens: expandTokens,
+        fact: item.fact,
+        now,
+        config: effectiveConfig,
+        l3Boost: item.l3Boost,
+        corpusStats,
+        significant: item.fact.significant,
+        informationGain: item.informationGain,
+      });
+      if (
+        params.queryEmbedding &&
+        item.embedding &&
+        params.queryEmbedding.length === item.embedding.length
+      ) {
+        signals.semantic = cosineSimilarity(params.queryEmbedding, item.embedding);
+      }
+      if (retConfig.mode === "keyword") {
+        signals.semantic = 0;
+      } else if (retConfig.mode === "semantic") {
+        signals.bm25 = 0;
+        signals.lexical = 0;
+      }
+      const baseScore = composite(signals, effectiveConfig);
+      const rawScore = signals.lexical > 0 ? baseScore + item.tierBoost : baseScore;
+      // Coverage supplements are gap-targeted evidence: 0.8 discount mirrors
+      // the drill pass — below direct hits, above query rephrasings.
+      const score = rawScore * 0.8;
+      if (score > 0) {
+        expanded.push({
+          fact: item.fact,
+          score,
+          signals,
+          chunkId: item.chunkId,
+          tier: item.tier,
+          contextWindow: item.contextWindow,
+        });
+        present.add(item.fact.dedupKey);
+      }
+    }
+    if (expanded.length > 0) {
+      coverageExpanded = true;
+      finalFacts.push(...expanded);
+      finalFacts.sort((a, b) => b.score - a.score);
+      // Verify once after expansion: report the residual gap (undefined =
+      // gap closed). Bounded — no second expansion round even if gaps remain.
+      missingInfo = await checkSufficientContext(params.query, finalFacts);
+    }
+  }
 
   // -----------------------------------------------------------------
   // REFACT-style adaptive fact compression (arXiv:2507.15147)
@@ -1690,6 +1793,7 @@ export async function retrieveTopK(params: {
     missingInfo,
     reformulated,
     ...(drillDepth > 0 ? { drillDepth } : {}),
+    ...(coverageExpanded ? { coverageExpanded: true } : {}),
   };
 }
 
