@@ -184,6 +184,21 @@ The 10M-token crossover is the calibration threshold: below it, semantic and
 lexical signals are roughly equal contributors; above it, BM25 dominance grows.
 Monitor corpus size during growth-slope checks (see deferred table above).
 
+### Standing eval rule: composition over component metrics (LASAGNA, 2026-11-10)
+
+**Every retrieval-side change (coverage expansion, per-type budgets, diffusion
+re-ranking, learned rerankers, ...) is evaluated IN COMPOSITION on the LongMemEval
+harness — never on the component metric alone.** Rationale: LASAGNA (finding 13,
+2026-11-10 analysis) shows techniques from different pipeline phases that
+individually predict large gains compose sub-additively (predicted +47% combined,
+delivered +17%). A change that wins on its own metric but regresses the composed
+pipeline must not ship.
+
+Corollary — corpus-scale sensitivity: composed gains drift as the store grows.
+**Re-baseline the composed LongMemEval score whenever the store crosses the
+~10k-chunk sqlite-vec trigger** (the same milestone that gates the ANN migration
+above). Component-metric wins recorded before that crossing are invalidated by it.
+
 ### Quick wins (recommended for immediate implementation)
 
 - **Temporal validity signals** (QW-1): Flag stale facts in retrieval output by age
