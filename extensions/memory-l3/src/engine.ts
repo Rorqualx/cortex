@@ -40,11 +40,25 @@ export type EmbeddingProvider = {
   /** Compute embeddings for multiple texts in a batch. */
   embedBatch(texts: string[]): Promise<number[][]>;
 };
+import {
+  banditActionSpace,
+  BANDIT_STATE_KV_KEY,
+  consultBandit,
+  readBanditConfig,
+} from "./bandit.js";
 import { recordRetrievalUses, type RetrievedUseItem } from "./retrieval-use-store.js";
-import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
+import {
+  classifyQueryIntent,
+  DEFAULT_RETRIEVAL_CONFIG,
+  formatMemorySection,
+  getIntentScoringPreset,
+  type MemoryCoreLookup,
+  retrieveTopK,
+  type QueryIntent,
+} from "./retrieval.js";
 import { cosineSimilarity } from "./scoring.js";
 import { selectSlidingWindow } from "./sliding-window.js";
-import { Storage } from "./storage.js";
+import { Storage, type RetrievalEventRow } from "./storage.js";
 import { estimateTotalTokens } from "./token-estimate.js";
 import type { L3State, MessageChunkFacets } from "./types.js";
 
@@ -325,6 +339,7 @@ export class HierarchicalL3Engine implements ContextEngine {
         ? Math.min(1, window.estimatedTokens / params.tokenBudget)
         : 0,
       params.sessionId,
+      params.sessionKey,
     );
 
     return {
@@ -338,6 +353,7 @@ export class HierarchicalL3Engine implements ContextEngine {
     prompt: string | undefined,
     tokenPressure = 0,
     sessionId = "unknown",
+    sessionKey?: string,
   ): Promise<string | undefined> {
     if (!prompt || prompt.length === 0) {
       return undefined;
@@ -362,15 +378,46 @@ export class HierarchicalL3Engine implements ContextEngine {
           l3debug(`ReTopK cache hit (sim ≥ ${retopkThreshold}) for query: ${prompt.slice(0, 60)}`);
           // Retrieve-then-use telemetry: a cache hit still injects these chunks.
           this.recordRetrievalUse(sessionId, entry.injected);
+          // ARCH-2 v1 retrieval telemetry (2026-11-11): record the cache-hit
+          // lane too — join coverage must not silently drop replayed results.
+          // preset/topK are null: the cached result was resolved on the
+          // original query's pressure, which is no longer observable here.
+          this.recordRetrievalEventSafe({
+            ts: Date.now(),
+            sessionId,
+            sessionKey,
+            intentClass: classifyQueryIntent(prompt),
+            preset: null,
+            topK: null,
+            factIds: entry.injected.map((item) => item.chunkId),
+            estTokens: Math.ceil(entry.result.length / 4),
+            source: "engine-retopk-cache",
+          });
           return entry.result;
         }
       }
     }
 
+    // ARCH-2 v2 (2026-11-11): optional UCB1 bandit consult over the tiny
+    // preset×topK action space. Flag OFF by default — consultBandit returns
+    // null without touching bandit state (structural default-off, T-B4),
+    // leaving retrieval behavior identical to the pre-bandit engine.
+    const queryIntent = classifyQueryIntent(prompt);
+    const banditAction = consultBandit(
+      queryIntent,
+      banditActionSpace(),
+      () => this.storage.readKvPublic(BANDIT_STATE_KV_KEY),
+      readBanditConfig(),
+    );
+    const adaptiveTopK = pressureAdaptiveTopK(tokenPressure);
+
     const top = await retrieveTopK({
       query: prompt,
       storage: this.storage,
-      topK: pressureAdaptiveTopK(tokenPressure),
+      topK: banditAction?.topK ?? adaptiveTopK,
+      ...(banditAction
+        ? { config: getIntentScoringPreset(banditAction.preset as QueryIntent) }
+        : {}),
       memoryCoreLookup: this.resolveMemoryCoreLookup(),
       skillForgeDir: this.skillForgeDir,
       sharedMemoryDir: this.sharedMemoryDir,
@@ -390,6 +437,21 @@ export class HierarchicalL3Engine implements ContextEngine {
       tier: fact.tier,
     }));
     this.recordRetrievalUse(sessionId, injected);
+
+    // ARCH-2 v1 retrieval telemetry (2026-11-11): intent is recomputed pure
+    // (classifyQueryIntent is regex-only); preset is the effective retrieval
+    // mode (bandit pick when enabled); topK is the resolution actually used.
+    this.recordRetrievalEventSafe({
+      ts: Date.now(),
+      sessionId,
+      sessionKey,
+      intentClass: queryIntent,
+      preset: banditAction?.preset ?? DEFAULT_RETRIEVAL_CONFIG.mode,
+      topK: banditAction?.topK ?? adaptiveTopK,
+      factIds: top.facts.map((fact) => fact.chunkId),
+      estTokens: Math.ceil(result.length / 4),
+      source: "engine-fresh",
+    });
 
     // Populate cache when we have an embedding for similarity comparison.
     if (queryEmbedding && queryEmbedding.length > 0) {
@@ -420,6 +482,22 @@ export class HierarchicalL3Engine implements ContextEngine {
     }
     try {
       recordRetrievalUses({ sessionId, items: injected, dir: this.storage.root });
+    } catch {
+      // Telemetry must never break assembly.
+    }
+  }
+
+  /** ARCH-2 v1 retrieval telemetry: fire-and-forget, never blocks or breaks
+   * assembly (same discipline as recordRetrievalUse). */
+  private recordRetrievalEventSafe(event: RetrievalEventRow): void {
+    try {
+      const maybe = this.storage.recordRetrievalEvent(event) as unknown;
+      // Defensive: a storage implementation may return a rejected promise
+      // instead of throwing synchronously (T-E3 covers both variants) —
+      // swallow it so telemetry can never surface as an unhandled rejection.
+      if (maybe && typeof (maybe as Promise<unknown>).catch === "function") {
+        (maybe as Promise<unknown>).catch(() => {});
+      }
     } catch {
       // Telemetry must never break assembly.
     }

@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Storage } from "./storage.js";
 import {
@@ -471,3 +472,129 @@ function makeChunk(id: string, createdAt: number): L2ChunkFrontmatter {
     dedupKeys: [],
   };
 }
+
+describe("Storage retrieval telemetry (ARCH-2 v1, 2026-11-11)", () => {
+  it("retrieval telemetry schema is boot-idempotent (T-S1)", async () => {
+    await storage.ensureLayout();
+    await expect(storage.ensureLayout()).resolves.toBeUndefined();
+    storage.close();
+    const reopened = new Storage(storage.root);
+    await reopened.ensureLayout();
+    const db = new DatabaseSync(path.join(storage.root, "l3.sqlite"), { readOnly: true });
+    const tables = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('retrieval_events','retrieval_outcomes')",
+      )
+      .all()
+      .map((r) => (r as { name: string }).name)
+      .sort();
+    expect(tables).toEqual(["retrieval_events", "retrieval_outcomes"]);
+    const indexes = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name IN ('retrieval_events_session','retrieval_events_session_key')",
+      )
+      .all()
+      .map((r) => (r as { name: string }).name)
+      .sort();
+    expect(indexes).toEqual(["retrieval_events_session", "retrieval_events_session_key"]);
+    db.close();
+    reopened.close();
+  });
+
+  it("retrieval event round-trips all fields (T-S2)", () => {
+    storage.recordRetrievalEvent({
+      ts: 1000,
+      sessionId: "sess-1",
+      sessionKey: "key-1",
+      intentClass: "factual",
+      preset: "blended",
+      topK: 5,
+      factIds: ["a", "b"],
+      estTokens: 42,
+      source: "engine-fresh",
+    });
+    storage.recordRetrievalEvent({
+      ts: 2000,
+      sessionId: "sess-2",
+      sessionKey: null,
+      intentClass: null,
+      preset: null,
+      topK: null,
+      factIds: [],
+      estTokens: null,
+      source: "engine",
+    });
+    const events = storage.listRetrievalEvents();
+    expect(events).toHaveLength(2);
+    expect(events[0]).toEqual({
+      ts: 1000,
+      sessionId: "sess-1",
+      sessionKey: "key-1",
+      intentClass: "factual",
+      preset: "blended",
+      topK: 5,
+      factIds: ["a", "b"],
+      estTokens: 42,
+      source: "engine-fresh",
+    });
+    // Nullable fields stay null (not the string "null"); factIds JSON survives.
+    expect(events[1]).toEqual({
+      ts: 2000,
+      sessionId: "sess-2",
+      sessionKey: null,
+      intentClass: null,
+      preset: null,
+      topK: null,
+      factIds: [],
+      estTokens: null,
+      source: "engine",
+    });
+  });
+
+  it("retrieval outcome upserts keyed on session_key (T-S3)", () => {
+    storage.recordRetrievalOutcome({ sessionKey: "k1", ts: 1, ok: true, detail: "ok" });
+    storage.recordRetrievalOutcome({ sessionKey: "k1", ts: 2, ok: false, detail: "fail" });
+    storage.recordRetrievalOutcome({ sessionKey: "k2", ts: 3, ok: true });
+    const outcomes = storage.listRetrievalOutcomes();
+    expect(outcomes).toHaveLength(2); // same session_key upserted, distinct key kept
+    const k1 = outcomes.find((o) => o.sessionKey === "k1");
+    expect(k1?.ts).toBe(2);
+    expect(k1?.ok).toBe(false); // latest write wins
+  });
+
+  it("listRetrievalEvents filters by sinceTs (T-S4)", () => {
+    for (const ts of [1000, 1500, 2000]) {
+      storage.recordRetrievalEvent({
+        ts,
+        sessionId: "sess",
+        sessionKey: null,
+        intentClass: null,
+        preset: null,
+        topK: null,
+        factIds: [],
+        estTokens: null,
+        source: "engine",
+      });
+    }
+    const filtered = storage.listRetrievalEvents({ sinceTs: 1500 });
+    expect(filtered.map((e) => e.ts)).toEqual([1500, 2000]);
+  });
+
+  it("pruneRetrievalEvents deletes older-only and returns the count (T-S5)", () => {
+    for (const ts of [1000, 2000]) {
+      storage.recordRetrievalEvent({
+        ts,
+        sessionId: "sess",
+        sessionKey: null,
+        intentClass: null,
+        preset: null,
+        topK: null,
+        factIds: [],
+        estTokens: null,
+        source: "engine",
+      });
+    }
+    expect(storage.pruneRetrievalEvents(1500)).toBe(1);
+    expect(storage.listRetrievalEvents().map((e) => e.ts)).toEqual([2000]);
+  });
+});

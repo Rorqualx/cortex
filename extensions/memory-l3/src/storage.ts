@@ -114,6 +114,26 @@ CREATE TABLE IF NOT EXISTS l3_metrics (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS l3_metrics_created ON l3_metrics (created_at, session_id);
+CREATE TABLE IF NOT EXISTS retrieval_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts INTEGER NOT NULL,
+  session_id TEXT NOT NULL,
+  session_key TEXT,
+  intent_class TEXT,
+  preset TEXT,
+  top_k INTEGER,
+  fact_ids TEXT NOT NULL,
+  est_tokens INTEGER,
+  source TEXT NOT NULL DEFAULT 'engine'
+);
+CREATE INDEX IF NOT EXISTS retrieval_events_session ON retrieval_events (session_id, ts);
+CREATE INDEX IF NOT EXISTS retrieval_events_session_key ON retrieval_events (session_key);
+CREATE TABLE IF NOT EXISTS retrieval_outcomes (
+  session_key TEXT PRIMARY KEY,
+  ts INTEGER NOT NULL,
+  ok INTEGER NOT NULL,
+  detail TEXT
+);
 `;
 
 const FACET_INDEXES_SQL = `
@@ -157,6 +177,28 @@ function ensureMessageFacetColumns(db: DatabaseSync): void {
  * archive (`l1_archive/*.jsonl`) stays a file — it is an append-only replay
  * artifact, not index state.
  */
+/** Retrieval telemetry event (ARCH-2 v1, 2026-11-11 — MemCon correlation join).
+ * Written fire-and-forget at both engine injection lanes; never blocks assembly. */
+export type RetrievalEventRow = {
+  ts: number;
+  sessionId: string;
+  sessionKey?: string | null;
+  intentClass?: string | null;
+  preset?: string | null;
+  topK?: number | null;
+  factIds: string[];
+  estTokens?: number | null;
+  source: string;
+};
+
+/** Terminal run outcome, upserted per session_key (offline join lane). */
+export type RetrievalOutcomeRow = {
+  sessionKey: string;
+  ts: number;
+  ok: boolean;
+  detail?: string | null;
+};
+
 export class Storage {
   readonly root: string;
   private db: DatabaseSync | null = null;
@@ -785,6 +827,105 @@ export class Storage {
     runSqliteImmediateTransactionSync(db, () => {
       db.prepare("INSERT OR REPLACE INTO l3_kv (key, value) VALUES (?, ?)").run(key, value);
     });
+  }
+
+  /** Public raw kv read (ARCH-2 v2 bandit state consult; local store only). */
+  readKvPublic(key: string): string | null {
+    return this.readKv(key);
+  }
+
+  /** Public raw kv write (ARCH-2 v2 offline bandit-state write-back). */
+  writeKvPublic(key: string, value: string): void {
+    this.writeKv(key, value);
+  }
+
+  // -----------------------------------------------------------------
+  // Retrieval telemetry (ARCH-2 v1, 2026-11-11 — MemCon correlation join).
+  // Write-only from the engine (fire-and-forget, non-fatal); read by the
+  // offline correlation report. Events join to outcomes on session_key.
+  // -----------------------------------------------------------------
+
+  /** Append one retrieval event row. Sync + cheap; callers wrap in try/catch. */
+  recordRetrievalEvent(event: RetrievalEventRow): void {
+    const db = this.database();
+    db.prepare(
+      `INSERT INTO retrieval_events
+        (ts, session_id, session_key, intent_class, preset, top_k, fact_ids, est_tokens, source)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      event.ts,
+      event.sessionId,
+      event.sessionKey ?? null,
+      event.intentClass ?? null,
+      event.preset ?? null,
+      event.topK ?? null,
+      JSON.stringify(event.factIds),
+      event.estTokens ?? null,
+      event.source,
+    );
+  }
+
+  /** Upsert a terminal run outcome keyed on session_key (latest wins). */
+  recordRetrievalOutcome(outcome: RetrievalOutcomeRow): void {
+    const db = this.database();
+    db.prepare(
+      `INSERT OR REPLACE INTO retrieval_outcomes (session_key, ts, ok, detail)
+       VALUES (?, ?, ?, ?)`,
+    ).run(outcome.sessionKey, outcome.ts, outcome.ok ? 1 : 0, outcome.detail ?? null);
+  }
+
+  /** List retrieval events (optionally ts >= sinceTs) in insertion order. */
+  listRetrievalEvents(filter?: { sinceTs?: number }): RetrievalEventRow[] {
+    const db = this.database();
+    const rows = (
+      filter?.sinceTs !== undefined
+        ? db
+            .prepare("SELECT * FROM retrieval_events WHERE ts >= ? ORDER BY ts, id")
+            .all(filter.sinceTs)
+        : db.prepare("SELECT * FROM retrieval_events ORDER BY ts, id").all()
+    ) as Array<{
+      ts: number;
+      session_id: string;
+      session_key: string | null;
+      intent_class: string | null;
+      preset: string | null;
+      top_k: number | null;
+      fact_ids: string;
+      est_tokens: number | null;
+      source: string;
+    }>;
+    return rows.map((row) => ({
+      ts: row.ts,
+      sessionId: row.session_id,
+      sessionKey: row.session_key,
+      intentClass: row.intent_class,
+      preset: row.preset,
+      topK: row.top_k,
+      factIds: JSON.parse(row.fact_ids) as string[],
+      estTokens: row.est_tokens,
+      source: row.source,
+    }));
+  }
+
+  /** List all recorded outcomes (joined on session_key by the report). */
+  listRetrievalOutcomes(): RetrievalOutcomeRow[] {
+    const rows = this.database()
+      .prepare("SELECT session_key, ts, ok, detail FROM retrieval_outcomes ORDER BY ts")
+      .all() as Array<{ session_key: string; ts: number; ok: number; detail: string | null }>;
+    return rows.map((row) => ({
+      sessionKey: row.session_key,
+      ts: row.ts,
+      ok: row.ok === 1,
+      detail: row.detail,
+    }));
+  }
+
+  /** Delete events older than beforeTs; returns the deleted row count. */
+  pruneRetrievalEvents(beforeTs: number): number {
+    const result = this.database()
+      .prepare("DELETE FROM retrieval_events WHERE ts < ?")
+      .run(beforeTs) as unknown as { changes?: number | bigint };
+    return Number(result.changes ?? 0);
   }
 
   private async readChunkRow<TFrontmatter>(
