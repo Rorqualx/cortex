@@ -6,6 +6,7 @@ import {
   buildEvidenceExpansionTerms,
   classifyQueryIntent,
   critiqueStaleFacts,
+  DEFAULT_EVIDENCE_TOKEN_BUDGETS,
   extractQueryAnchors,
   findMissingPacketAnchors,
   formatMemorySection,
@@ -2241,6 +2242,110 @@ describe("retrieveTopK with query reformulation", () => {
     expect(result.facts.length).toBeGreaterThan(0);
     // Highest-score fact always present
     expect(result.facts.some((r) => r.fact.dedupKey === "budget:1")).toBe(true);
+  });
+
+  it("applies the intent-gated default evidence budget for factual queries (QW1 2026-11-11)", async () => {
+    // 12 single-sentence facts (~200 chars each) sharing the rare token
+    // "novanet" so every fact scores above zero for both query shapes.
+    // 12 facts × ~(200+20)/4 ≈ 55 tokens = ~660 tokens total — above the
+    // 500-token factual default, below the 1400-token synthesis default.
+    const facts = Array.from({ length: 12 }, (_, i) => ({
+      id: `qf${i}`,
+      text: `novanet node ${i} handles gateway routing for the 192.168.50.0 subnet with failover to the secondary uplink and keeps a rolling cache of route advertisements across all regional edges`,
+      importance: 0.9 - i * 0.01,
+      createdAt: NOW,
+      dedupKey: `novanet:${i}`,
+    }));
+    await writeChunk("chunk-qw1-factual", facts);
+
+    const result = await retrieveTopK({
+      query: "novanet gateway address",
+      storage,
+      topK: 20,
+      now: NOW,
+      retrievalConfig: {
+        useEpochFirst: false,
+        epochExpandTopN: 3,
+        useSubmodularSelect: false,
+        submodularTokenBudget: null,
+        mode: "routed",
+      },
+    });
+
+    // Default factual budget (500) trims the ~660-token set from the bottom.
+    expect(result.facts.length).toBeGreaterThan(0);
+    expect(result.facts.length).toBeLessThan(12);
+    // Trimmed result must fit the budget: ~(len+20)/4 tokens per line + 60 prelude.
+    const totalTokens =
+      60 + result.facts.reduce((sum, r) => sum + Math.ceil((r.fact.text.length + 20) / 4), 0);
+    expect(totalTokens).toBeLessThanOrEqual(DEFAULT_EVIDENCE_TOKEN_BUDGETS.factual);
+  });
+
+  it("gives synthesis queries a looser default budget than factual (QW1 2026-11-11)", async () => {
+    const facts = Array.from({ length: 12 }, (_, i) => ({
+      id: `sf${i}`,
+      text: `novanet node ${i} handles gateway routing for the 192.168.50.0 subnet with failover to the secondary uplink and keeps a rolling cache of route advertisements across all regional edges`,
+      importance: 0.9 - i * 0.01,
+      createdAt: NOW,
+      dedupKey: `novanet-s:${i}`,
+    }));
+    await writeChunk("chunk-qw1-synthesis", facts);
+
+    const run = (query: string) =>
+      retrieveTopK({
+        query,
+        storage,
+        topK: 20,
+        now: NOW,
+        retrievalConfig: {
+          useEpochFirst: false,
+          epochExpandTopN: 3,
+          useSubmodularSelect: false,
+          submodularTokenBudget: null,
+          mode: "routed",
+        },
+      });
+
+    const factual = await run("novanet gateway address");
+    const synthesis = await run("summarize everything about novanet");
+
+    // Same evidence pool: synthesis keeps the whole ~660-token set (budget
+    // 1400) while factual trims to its 500-token budget.
+    expect(synthesis.facts.length).toBe(12);
+    expect(factual.facts.length).toBeLessThan(synthesis.facts.length);
+  });
+
+  it("env override wins over intent-gated defaults (QW1 2026-11-11)", async () => {
+    const facts = Array.from({ length: 8 }, (_, i) => ({
+      id: `ef${i}`,
+      text: `novanet node ${i} handles gateway routing for the 192.168.50.0 subnet with failover to the secondary uplink and keeps a rolling cache of route advertisements across all regional edges`,
+      importance: 0.9 - i * 0.01,
+      createdAt: NOW,
+      dedupKey: `novanet-e:${i}`,
+    }));
+    await writeChunk("chunk-qw1-env", facts);
+
+    process.env.OPENCLAW_MEMORY_L3_EVIDENCE_TOKEN_BUDGET = "100";
+    try {
+      const result = await retrieveTopK({
+        query: "novanet gateway address",
+        storage,
+        topK: 20,
+        now: NOW,
+        retrievalConfig: {
+          useEpochFirst: false,
+          epochExpandTopN: 3,
+          useSubmodularSelect: false,
+          submodularTokenBudget: null,
+          mode: "routed",
+        },
+      });
+      // 100-token budget − ~60 prelude leaves room for ~1 fact of ~55 tokens.
+      expect(result.facts.length).toBeGreaterThan(0);
+      expect(result.facts.length).toBeLessThanOrEqual(2);
+    } finally {
+      delete process.env.OPENCLAW_MEMORY_L3_EVIDENCE_TOKEN_BUDGET;
+    }
   });
 
   it("orders strongest-evidence facts first (evidence-first ordering, QW-3 2026-10-07)", async () => {

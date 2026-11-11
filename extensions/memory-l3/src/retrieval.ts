@@ -328,11 +328,60 @@ export type RetrievalConfig = {
    * result is trimmed from the bottom (lowest-score facts first) so the
    * estimated formatted token cost stays within budget. Prevents context
    * flooding — the Information Abundance Paradox shows that injecting too
-   * many facts degrades recall. Default undefined (no cap). Set to e.g.
-   * 2000 for a 2K-token budget.
+   * many facts degrades recall. Explicit setting wins over the intent-gated
+   * defaults (see DEFAULT_EVIDENCE_TOKEN_BUDGETS).
    */
   maxInjectedTokens?: number;
 };
+
+/**
+ * Intent-gated default evidence-token budgets (QW1 2026-11-11, MIRIX-2.0
+ * pattern: budgeted retrieval caps so injection size stops growing with
+ * history). Applied after ranking and before formatting.
+ *
+ * - factual: tight — exact lookups need few, high-precision facts
+ * - multihop: medium — connecting facts must survive
+ * - synthesis: loose — open-ended questions benefit from broad evidence;
+ *   too-tight caps here measurably drop recall, hence the wide default
+ *
+ * Resolution order (resolveEvidenceTokenBudget):
+ *   1. explicit `retrievalConfig.maxInjectedTokens` (caller override)
+ *   2. `OPENCLAW_MEMORY_L3_EVIDENCE_TOKEN_BUDGET` env var (0/"off" disables)
+ *   3. these per-intent defaults
+ *
+ * Blended mode (no intent signal) resolves to the "synthesis" budget, the
+ * same lossless-fallback convention compressFactsForResult uses.
+ */
+export const DEFAULT_EVIDENCE_TOKEN_BUDGETS: Record<QueryIntent, number> = {
+  factual: 500,
+  multihop: 900,
+  synthesis: 1400,
+};
+
+/** Per-call env read (injection-policy.ts precedent): explicit cap override. */
+function readEnvEvidenceTokenBudget(): number | undefined {
+  const raw = process.env.OPENCLAW_MEMORY_L3_EVIDENCE_TOKEN_BUDGET;
+  if (raw === undefined || raw === "") {
+    return undefined;
+  }
+  if (raw.toLowerCase() === "off" || raw === "0") {
+    return 0; // explicit disable
+  }
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : undefined;
+}
+
+/** Resolve the effective evidence-token budget for a retrieval call. */
+function resolveEvidenceTokenBudget(retConfig: RetrievalConfig, intent: QueryIntent): number {
+  if (retConfig.maxInjectedTokens !== undefined && retConfig.maxInjectedTokens > 0) {
+    return retConfig.maxInjectedTokens;
+  }
+  const envOverride = readEnvEvidenceTokenBudget();
+  if (envOverride !== undefined) {
+    return envOverride;
+  }
+  return DEFAULT_EVIDENCE_TOKEN_BUDGETS[intent] ?? DEFAULT_EVIDENCE_TOKEN_BUDGETS.synthesis;
+}
 
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   useEpochFirst: true,
@@ -1784,15 +1833,16 @@ export async function retrieveTopK(params: {
   const intent: QueryIntent = retConfig.mode === "routed" ? queryIntent : "synthesis";
   const compressedFacts = compressFactsForResult(finalFacts, intent);
 
-  // Token-budget guard: trim lowest-score facts to stay within budget.
-  // Prevents the Information Abundance Paradox — flooding context with too
-  // many facts degrades parametric recall. Estimate ~4 chars/token, plus
-  // ~20 chars overhead per fact line (marker, score, age annotation).
-  const maxTokens = retConfig.maxInjectedTokens;
+  // Token-budget guard (QW1 2026-11-11): trim lowest-score facts to stay
+  // within budget. Intent-gated defaults are ON (MIRIX-2.0 budgeted
+  // retrieval) so injection size stops growing with history; explicit
+  // maxInjectedTokens or the env override wins. Prevents the Information
+  // Abundance Paradox — flooding context with too many facts degrades
+  // parametric recall. Estimate ~4 chars/token, plus ~20 chars overhead
+  // per fact line (marker, score, age annotation).
+  const maxTokens = resolveEvidenceTokenBudget(retConfig, intent);
   const budgetedFacts =
-    maxTokens !== undefined && maxTokens > 0
-      ? trimToTokenBudget(compressedFacts, maxTokens)
-      : compressedFacts;
+    maxTokens > 0 ? trimToTokenBudget(compressedFacts, maxTokens) : compressedFacts;
 
   return {
     facts: budgetedFacts,
