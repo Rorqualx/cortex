@@ -24,6 +24,7 @@ import { CCRStore } from "./ccr/store.js";
 import { routeAndCompress } from "./content-router.js";
 import { danglingReferenceStats } from "./dangling-metric.js";
 import type { EntropyBucket } from "./entropy-estimator.js";
+import { hasProtectedSpan } from "./protected-spans.js";
 import { enforceTokenBudget } from "./token-budget-enforcer.js";
 import type { CompressionConfig, CompressionResult, CompressionStats } from "./types.js";
 import { DEFAULT_COMPRESSION_CONFIG } from "./types.js";
@@ -137,6 +138,17 @@ function compressToolResults(
     // Extract text content
     const textContent = extractTextContent(msg);
     if (!textContent || textContent.length < config.minContentChars) {
+      result.push(msg);
+      continue;
+    }
+
+    // F7 protected spans (2026-11-13): policy-bearing tool output (workspace
+    // red lines, TOML exec policy, egress/vault rules) is compression-exempt.
+    // A paraphrase or dropped span here would silently rewrite the safety
+    // rules the agent is expected to follow verbatim. Matchers are narrow and
+    // literal (see protected-spans.ts) so ordinary logs/diffs/JSON stay
+    // compressible.
+    if (hasProtectedSpan(textContent)) {
       result.push(msg);
       continue;
     }

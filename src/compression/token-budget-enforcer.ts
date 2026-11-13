@@ -18,6 +18,7 @@
  * Rough token estimate: 1 token ≈ 4 chars (English text average).
  */
 import type { AgentMessage } from "../agents/runtime/index.js";
+import { hasProtectedSpan } from "./protected-spans.js";
 import { hasTemporalAnchor } from "./temporal.js";
 import type { CompressionConfig } from "./types.js";
 
@@ -215,6 +216,16 @@ export function enforceTokenBudget(
     if (messages[i]?.role === "user") {
       protectedIndices.add(i);
       break;
+    }
+  }
+
+  // F7 protected spans (2026-11-13): policy-bearing messages are exempt from
+  // budget trim as well — the lossy second stage must never drop a span that
+  // the compression stage was told to preserve verbatim.
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (msg && hasProtectedSpan(extractMessageText(msg))) {
+      protectedIndices.add(i);
     }
   }
 
