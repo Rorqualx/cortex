@@ -183,6 +183,79 @@ export function parseAttribution(raw) {
   return null;
 }
 
+// ── Slate completeness (QW1, 2026-11-14) ───────────────────────────────────
+// Decomposes the overall accuracy number: was the gold evidence for a
+// question even admitted into the retrieval packet the answerer saw?
+// Computed by run-longmemeval-engine.ts (which has the store live) and
+// written per-question into packet-engine-<tag>.jsonl rows; aggregated here.
+//   all-evidence-admitted — every gold evidence session contributed a fact
+//   partial               — some gold sessions admitted, some not
+//   window-overflow       — none admitted, but gold sessions still have
+//                           surviving store facts (top-K window loss)
+//   retrieval-miss        — none admitted and no surviving store facts from
+//                           the gold sessions (compaction/consolidation loss)
+// Gold session IDs come from LongMemEval `question_answer_injection_ids`
+// (exact for injection-type questions). Without them the classifier falls
+// back to answer-text presence in the packet (approximate — labeled as such).
+
+export function classifySlateCompleteness({
+  goldSessions,
+  admittedSessions,
+  storeSessions,
+  answerInContext,
+}) {
+  const gold = [...new Set(goldSessions ?? [])];
+  if (gold.length === 0) {
+    return {
+      verdict: answerInContext ? "approx-present" : "approx-absent",
+      exact: false,
+      goldSessions: [],
+      admittedGold: 0,
+      inStoreGold: 0,
+    };
+  }
+  let admittedGold = 0;
+  let inStoreGold = 0;
+  for (const s of gold) {
+    if (admittedSessions.has(s)) {
+      admittedGold += 1;
+    }
+    if (storeSessions.has(s)) {
+      inStoreGold += 1;
+    }
+  }
+  let verdict;
+  if (admittedGold === gold.length) {
+    verdict = "all-evidence-admitted";
+  } else if (admittedGold > 0) {
+    verdict = "partial";
+  } else {
+    verdict = inStoreGold > 0 ? "window-overflow" : "retrieval-miss";
+  }
+  return { verdict, exact: true, goldSessions: gold, admittedGold, inStoreGold };
+}
+
+export function summarizeSlateCompleteness(rows) {
+  const counts = {};
+  let exact = 0;
+  let approximate = 0;
+  let probed = 0;
+  for (const row of rows ?? []) {
+    const sc = row?.slate_completeness;
+    if (!sc || typeof sc.verdict !== "string") {
+      continue;
+    }
+    probed += 1;
+    counts[sc.verdict] = (counts[sc.verdict] ?? 0) + 1;
+    if (sc.exact) {
+      exact += 1;
+    } else {
+      approximate += 1;
+    }
+  }
+  return { probed, exact, approximate, counts };
+}
+
 // ── Supersession split (knowledge-update probe, QW3 2026-10-12) ────────────
 // LongMemEval `knowledge-update` questions are the ones whose ground truth
 // involves an updated value (revision → slot-merge recall). The official KU
@@ -587,10 +660,12 @@ async function main() {
   if (packetPath) {
     try {
       const packetLines = (await readFile(packetPath, "utf8")).split("\n").filter(Boolean);
+      // Keep the FULL parsed row (not just the packet text): packet rows also
+      // carry QW1 slate_completeness records the summary below aggregates.
       packetsById = new Map(
         packetLines.map((l) => {
           const p = JSON.parse(l);
-          return [p.question_id, String(p.packet ?? "")];
+          return [p.question_id, p];
         }),
       );
       console.log(
@@ -662,7 +737,8 @@ async function main() {
     // One extra judge pass per judged miss (bounded by miss count): was the
     // needed evidence in the packet? Failures here must not corrupt the verdict.
     if (verdict === false && packetsById) {
-      const packet = packetsById.get(t.hyp.question_id) ?? "";
+      const prow = packetsById.get(t.hyp.question_id);
+      const packet = prow ? String(prow.packet ?? "") : "";
       if (packet) {
         try {
           const rawAttr = await callJudge({
@@ -804,6 +880,27 @@ async function main() {
     const supErrors = verdicts.filter((v) => v.supersession_error).length;
     if (supErrors > 0) {
       console.log(`  supersession probe errors: ${supErrors}`);
+    }
+  }
+
+  // Slate completeness (QW1, 2026-11-14): per-question gold-evidence admission
+  // from the packet rows written by run-longmemeval-engine.ts. Deliberately
+  // comma-separated "N label" wording — must not match the
+  // `type hits/total (pct%)` lines optimize-weights.ts parses.
+  if (packetsById) {
+    const sc = summarizeSlateCompleteness([...packetsById.values()]);
+    if (sc.probed > 0) {
+      const parts = [
+        `${sc.counts["all-evidence-admitted"] ?? 0} all-evidence-admitted`,
+        `${sc.counts["partial"] ?? 0} partial`,
+        `${sc.counts["window-overflow"] ?? 0} window-overflow`,
+        `${sc.counts["retrieval-miss"] ?? 0} retrieval-miss`,
+      ];
+      console.log(
+        `  slate completeness: ${parts.join(", ")} — exact gold-id questions: ${sc.exact}; answer-text approx: ${
+          sc.counts["approx-present"] ?? 0
+        } present, ${sc.counts["approx-absent"] ?? 0} absent`,
+      );
     }
   }
 

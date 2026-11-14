@@ -76,6 +76,9 @@ import {
   computeCompactionProxyMetrics,
   sumCompactionProxyMetrics,
 } from "./compaction-proxy-metrics.mjs";
+// Slate-completeness classifier (QW1, 2026-11-14): shared with the scorer so
+// the verdict vocabulary stays single-sourced across runner and aggregator.
+import { classifySlateCompleteness } from "./score-longmemeval.mjs";
 
 const HOME = os.homedir();
 const BATCH_TOKENS = 4000; // mirrors AFTER_TURN_COMPACTION_THRESHOLD_TOKENS
@@ -138,6 +141,9 @@ type LmeQuestion = {
   question_date: string;
   haystack_dates?: string[];
   haystack_sessions: LmeTurn[][];
+  /** QW1 (2026-11-14): LongMemEval gold-evidence haystack session indices
+   * (present on injection-type questions). Exact slate-completeness gold IDs. */
+  question_answer_injection_ids?: number[];
 };
 
 // ---- P0b: resolve the ablation config from env -----------------------------
@@ -355,6 +361,8 @@ type QResult = {
   answer_in_context: boolean;
   /** The full injected retrieval packet (memory section) — logged to packet-engine-*.jsonl so the scorer can attribute misses to retrieval vs reader. */
   packet: string;
+  /** QW1 (2026-11-14): gold-evidence admission decomposition for this packet. */
+  slate_completeness?: ReturnType<typeof classifySlateCompleteness>;
   retrieved: number;
   memory_chars: number;
   /** REMORY compaction proxy metrics over the replayed haystack log (QW2, 2026-10-09). */
@@ -404,6 +412,38 @@ async function ingestSessions(
     }
     await flush();
   }
+}
+
+// QW1 (2026-11-14): every session that still has retrievable facts in the
+// store (L2 chunk prose + typed facts, plus long-term typed provenance).
+// Admission-into-packet vs presence-here separates top-K window loss
+// (window-overflow) from compaction/consolidation loss (retrieval-miss).
+// L1 archive presence carries no signal — every haystack session is ingested.
+async function collectStoreSessions(storage: Storage): Promise<Set<string>> {
+  const sessions = new Set<string>();
+  for (const p of await storage.listL2ChunkPaths()) {
+    const doc = await storage.readL2ChunkAtPath(p);
+    if (!doc) {
+      continue;
+    }
+    for (const f of doc.frontmatter.facts) {
+      if (f.sessionId) {
+        sessions.add(f.sessionId);
+      }
+    }
+    for (const t of doc.frontmatter.typedFacts ?? []) {
+      if (t.sessionId) {
+        sessions.add(t.sessionId);
+      }
+    }
+  }
+  const ltt = await storage.readLongTermTyped();
+  for (const f of ltt.facts) {
+    if (f.provenance?.sessionId) {
+      sessions.add(f.provenance.sessionId);
+    }
+  }
+  return sessions;
 }
 
 async function runQuestion(
@@ -516,6 +556,21 @@ async function runQuestion(
       skillForgeDir: SKILLFORGE,
     });
     const memorySection = formatMemorySection(top.facts, { now: questionTime });
+    // QW1 (2026-11-14): slate completeness — which gold evidence sessions made
+    // it into the admitted packet, which survive in the store but missed the
+    // top-K window, which never survived compaction/consolidation at all.
+    const answerInContext = checkAnswerInContext(q.answer, memorySection);
+    const admittedSessions = new Set(
+      top.facts.map((r) => r.fact.sessionId).filter((s): s is string => typeof s === "string"),
+    );
+    const storeSessions = await collectStoreSessions(storage);
+    const goldSessions = (q.question_answer_injection_ids ?? []).map((i) => `s${i}`);
+    const slate = classifySlateCompleteness({
+      goldSessions,
+      admittedSessions,
+      storeSessions,
+      answerInContext,
+    });
     const userPrompt = `<memory>\n${memorySection || "(no facts retrieved)"}\n</memory>\n\nQuestion: ${q.question}`;
     const rawAnswer = await deps.caller({
       systemPrompt: ANSWER_SYSTEM_PROMPT,
@@ -531,8 +586,9 @@ async function runQuestion(
       hypothesis,
       ground_truth: String(q.answer),
       exact_hit: hypothesis.toLowerCase().includes(String(q.answer).toLowerCase()),
-      answer_in_context: checkAnswerInContext(q.answer, memorySection),
+      answer_in_context: answerInContext,
       packet: memorySection,
+      slate_completeness: slate,
       retrieved: top.facts.length,
       memory_chars: memorySection.length,
       proxy: computeCompactionProxyMetrics(q.haystack_sessions.flat() as never),
@@ -739,6 +795,7 @@ async function main(): Promise<void> {
           question_id: r.question_id,
           question_type: r.question_type,
           packet: r.packet,
+          slate_completeness: r.slate_completeness,
         }),
       )
       .join("\n") + "\n",

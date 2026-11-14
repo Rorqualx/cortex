@@ -4,14 +4,111 @@ import {
   buildEvalOutputLines,
   buildJudgeSpec,
   buildSupersessionPrompt,
+  classifySlateCompleteness,
   countTemporalPreserved,
   extractTemporalExpressions,
   parseAttribution,
   parseSupersession,
   pickStabilitySample,
+  summarizeSlateCompleteness,
   summarizeStabilityRuns,
   summarizeSupersession,
 } from "./score-longmemeval.mjs";
+
+// Slate completeness (QW1, 2026-11-14): gold-evidence admission per question —
+// all-evidence-admitted / partial / window-overflow / retrieval-miss, with an
+// approximate answer-text fallback when the oracle carries no injection IDs.
+
+describe("classifySlateCompleteness", () => {
+  it("all gold sessions admitted → all-evidence-admitted", () => {
+    const r = classifySlateCompleteness({
+      goldSessions: ["s3", "s7"],
+      admittedSessions: new Set(["s3", "s7", "s1"]),
+      storeSessions: new Set(["s0", "s1", "s3", "s7"]),
+      answerInContext: true,
+    });
+    expect(r.verdict).toBe("all-evidence-admitted");
+    expect(r.exact).toBe(true);
+    expect(r.admittedGold).toBe(2);
+    expect(r.inStoreGold).toBe(2);
+  });
+
+  it("subset admitted → partial", () => {
+    const r = classifySlateCompleteness({
+      goldSessions: ["s3", "s7"],
+      admittedSessions: new Set(["s3"]),
+      storeSessions: new Set(["s3", "s7"]),
+      answerInContext: false,
+    });
+    expect(r.verdict).toBe("partial");
+    expect(r.admittedGold).toBe(1);
+  });
+
+  it("none admitted but gold facts survive in store → window-overflow", () => {
+    const r = classifySlateCompleteness({
+      goldSessions: ["s3", "s7"],
+      admittedSessions: new Set(["s1"]),
+      storeSessions: new Set(["s1", "s3", "s7"]),
+      answerInContext: false,
+    });
+    expect(r.verdict).toBe("window-overflow");
+    expect(r.admittedGold).toBe(0);
+    expect(r.inStoreGold).toBe(2);
+  });
+
+  it("none admitted and no store facts from gold sessions → retrieval-miss", () => {
+    const r = classifySlateCompleteness({
+      goldSessions: ["s3"],
+      admittedSessions: new Set(["s1"]),
+      storeSessions: new Set(["s1"]),
+      answerInContext: false,
+    });
+    expect(r.verdict).toBe("retrieval-miss");
+    expect(r.inStoreGold).toBe(0);
+  });
+
+  it("no gold ids → approximate answer-text mode, labeled not exact", () => {
+    const present = classifySlateCompleteness({
+      goldSessions: [],
+      admittedSessions: new Set(),
+      storeSessions: new Set(),
+      answerInContext: true,
+    });
+    const absent = classifySlateCompleteness({
+      goldSessions: [],
+      admittedSessions: new Set(),
+      storeSessions: new Set(),
+      answerInContext: false,
+    });
+    expect(present.verdict).toBe("approx-present");
+    expect(absent.verdict).toBe("approx-absent");
+    expect(present.exact).toBe(false);
+  });
+});
+
+describe("summarizeSlateCompleteness", () => {
+  it("counts verdicts and splits exact vs approximate", () => {
+    const s = summarizeSlateCompleteness([
+      { slate_completeness: { verdict: "all-evidence-admitted", exact: true } },
+      { slate_completeness: { verdict: "retrieval-miss", exact: true } },
+      { slate_completeness: { verdict: "approx-present", exact: false } },
+      { question_id: "q-no-field" },
+    ]);
+    expect(s.probed).toBe(3);
+    expect(s.exact).toBe(2);
+    expect(s.approximate).toBe(1);
+    expect(s.counts["all-evidence-admitted"]).toBe(1);
+    expect(s.counts["retrieval-miss"]).toBe(1);
+  });
+
+  it("returns zeroed summary for empty input", () => {
+    const s = summarizeSlateCompleteness([]);
+    expect(s.probed).toBe(0);
+    expect(s.exact).toBe(0);
+    expect(s.approximate).toBe(0);
+    expect(s.counts).toEqual({});
+  });
+});
 
 // Temporal-expression preservation metric (QW2, 2026-08-25): deterministic
 // anchor extraction + survival counting. Guards the TEMPORAL prompt rule's

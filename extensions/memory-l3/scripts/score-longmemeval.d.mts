@@ -32,3 +32,32 @@ export declare function buildAttributionPrompt(
 export declare function parseAttribution(
   raw: string | null | undefined,
 ): "retrieval-miss" | "reader-miss" | null;
+
+// QW1 (2026-11-14): slate-completeness decomposition of LongMemEval accuracy.
+export type SlateCompletenessVerdict =
+  | "all-evidence-admitted"
+  | "partial"
+  | "retrieval-miss"
+  | "window-overflow"
+  | "approx-present"
+  | "approx-absent";
+export declare function classifySlateCompleteness(input: {
+  goldSessions: readonly string[];
+  admittedSessions: ReadonlySet<string>;
+  storeSessions: ReadonlySet<string>;
+  answerInContext: boolean;
+}): {
+  verdict: SlateCompletenessVerdict;
+  exact: boolean;
+  goldSessions: string[];
+  admittedGold: number;
+  inStoreGold: number;
+};
+export declare function summarizeSlateCompleteness(
+  rows: ReadonlyArray<{
+    slate_completeness?: {
+      verdict: string;
+      exact: boolean;
+    } | null;
+  }>,
+): { probed: number; exact: number; approximate: number; counts: Record<string, number> };
