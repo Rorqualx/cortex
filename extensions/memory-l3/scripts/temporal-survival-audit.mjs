@@ -8,6 +8,13 @@
 // structured temporal_aspect field (PROMPT_VERSION=20) makes the distinction
 // addressable; this metric verifies the wording actually survives.
 //
+// QW2 extension (2026-11-14, Axis-LoRA diagnostic): axis-counterfactual
+// EMBEDDING DRIFT — for surviving L3 fact texts, embed original vs
+// time-axis-perturbed copy (year+1, month swap, clock+1h) and report the
+// cosine-drift distribution. Axis-blind embeddings barely move when dates
+// swap — the retrieval-side root cause of temporal misses. Opt-in via
+// --drift-sample=N (embedding calls cost API quota); read-only either way.
+//
 // Read-only diagnostic: measures what fraction of explicit temporal anchors
 // (ISO dates/timestamps, slash dates, clock times, month-day references) in
 // PRE-compaction messages (`l1_archive/<chunkId>.jsonl`) survive into the
@@ -19,7 +26,8 @@
 //
 // Usage:
 //   node extensions/memory-l3/scripts/temporal-survival-audit.mjs \
-//     [--root=<l3 dir>] [--limit=N] [--verbose]
+//     [--root=<l3 dir>] [--limit=N] [--verbose] \
+//     [--drift-sample=N] [--embed-provider=<id>] [--embed-model=<name>]
 //
 // Root resolution: --root → <cwd>/.openclaw/l3 → ~/.openclaw/workspace/.openclaw/l3.
 // Output: survival table (overall + per category) and, with --verbose, a
@@ -30,6 +38,9 @@ import { readFile, readdir } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+// QW2 (2026-11-14): axis-counterfactual embedding drift helpers (pure,
+// side-effect-free module so tests import them directly).
+import { cosine, perturbTimeAxis, summarizeDrift } from "./axis-drift.mjs";
 
 // Temporal-anchor regexes — MIRRORED from src/compression/temporal.ts with
 // the `g` flag added for extraction (keep in sync; all run in linear time).
@@ -146,6 +157,12 @@ const argVal = (name) => {
 };
 const VERBOSE = args.includes("--verbose");
 const LIMIT = Number.parseInt(argVal("limit") ?? "0", 10);
+// QW2 (2026-11-14): opt-in axis-drift measurement. Provider resolution mirrors
+// the engine: --embed-provider → OPENCLAW_L3_EMBEDDING_PROVIDER → "openai".
+const DRIFT_SAMPLE = Number.parseInt(argVal("drift-sample") ?? "0", 10);
+const envEmbedProvider = process.env.OPENCLAW_L3_EMBEDDING_PROVIDER?.trim() || undefined;
+const EMBED_PROVIDER = argVal("embed-provider") ?? envEmbedProvider ?? "openai";
+const EMBED_MODEL = argVal("embed-model");
 
 async function resolveRoot() {
   const explicit = argVal("root");
@@ -190,6 +207,9 @@ let chunksWithAspects = 0;
 const chunkRows = [];
 let unpaired = 0;
 let chunksWithAnchors = 0;
+// QW2: post-compaction fact texts that carry a temporal anchor — the
+// population --drift-sample draws from (deterministic first-N by chunk order).
+const driftCandidates = [];
 
 for (const file of archiveFiles) {
   const chunkId = file.replace(/\.jsonl$/, "");
@@ -219,6 +239,28 @@ for (const file of archiveFiles) {
 
   const anchors = extractAnchors(pre);
   const post = postHaystack(row.frontmatter, row.body);
+  // QW2 (2026-11-14): collect surviving fact texts with ≥1 temporal anchor.
+  if (DRIFT_SAMPLE > 0 && driftCandidates.length < DRIFT_SAMPLE) {
+    try {
+      const fmDrift = JSON.parse(row.frontmatter);
+      for (const fact of fmDrift.facts ?? []) {
+        if (driftCandidates.length >= DRIFT_SAMPLE) {
+          break;
+        }
+        if (typeof fact?.text !== "string") {
+          continue;
+        }
+        for (const set of extractAnchors(fact.text).values()) {
+          if (set.size > 0) {
+            driftCandidates.push(fact.text);
+            break;
+          }
+        }
+      }
+    } catch {
+      // malformed frontmatter — the anchor table already reflects this chunk
+    }
+  }
   let chunkTotal = 0;
   let chunkSurvived = 0;
   for (const [category, set] of anchors) {
@@ -341,4 +383,73 @@ if (VERBOSE && chunkRows.length > 0) {
     .forEach((r) =>
       console.log(`  ${r.chunkId}  ${r.survived}/${r.total} = ${(100 * r.survival).toFixed(1)}%`),
     );
+}
+
+// ── QW2 (2026-11-14): axis-counterfactual embedding drift ──────────────────
+// Embed original vs time-axis-perturbed copies of surviving fact texts and
+// report the cosine-drift distribution. Never writes to the store; bounded
+// to --drift-sample facts. Degrades to a SKIPPED line on any failure so the
+// anchor/aspect tables above remain the primary output.
+if (DRIFT_SAMPLE > 0) {
+  console.log("");
+  try {
+    if (driftCandidates.length === 0) {
+      throw new Error("no surviving facts with temporal anchors to sample");
+    }
+    const { getMemoryEmbeddingProvider } =
+      await import("openclaw/plugin-sdk/memory-core-host-engine-embeddings");
+    const configPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
+    let config = {};
+    try {
+      config = JSON.parse(await readFile(configPath, "utf8"));
+    } catch {
+      console.log("  (no config at ~/.openclaw/openclaw.json — provider defaults apply)");
+    }
+    const adapter = getMemoryEmbeddingProvider(EMBED_PROVIDER, config);
+    if (!adapter) {
+      throw new Error(`no "${EMBED_PROVIDER}" embedding adapter found`);
+    }
+    const model = EMBED_MODEL || adapter.defaultModel;
+    const { provider } = await adapter.create({ config, model });
+    if (!provider) {
+      throw new Error(`provider "${EMBED_PROVIDER}" create() returned no provider`);
+    }
+    const originals = [];
+    const perturbed = [];
+    for (const fact of driftCandidates) {
+      const p = perturbTimeAxis(fact);
+      if (p !== fact) {
+        originals.push(fact);
+        perturbed.push(p);
+      }
+    }
+    if (originals.length === 0) {
+      throw new Error("no facts with a perturbable temporal anchor");
+    }
+    const [origVecs, pertVecs] = await Promise.all([
+      provider.embedBatch(originals),
+      provider.embedBatch(perturbed),
+    ]);
+    const drifts = [];
+    for (let i = 0; i < originals.length; i += 1) {
+      const c = cosine(origVecs[i], pertVecs[i]);
+      if (c !== null) {
+        drifts.push(1 - c);
+      }
+    }
+    const s = summarizeDrift(drifts);
+    const fmt = (v) => (v === null ? "n/a" : v.toFixed(4));
+    const skipped = driftCandidates.length - originals.length;
+    console.log(
+      `axis-drift (time-axis counterfactual; n=${s.n} facts embedded, provider=${EMBED_PROVIDER}, model=${model}${skipped > 0 ? `, ${skipped} skipped (no perturbable anchor)` : ""}):`,
+    );
+    console.log(
+      `  cosine drift: mean=${fmt(s.mean)} median=${fmt(s.median)} p90=${fmt(s.p90)} min=${fmt(s.min)} max=${fmt(s.max)}`,
+    );
+    console.log(
+      `  axis-blind facts (drift < 0.01): ${s.axisBlind} of ${s.n} — embeddings that barely move when dates swap (retrieval-side root cause of temporal misses; gates the pplx-embed-v2 swap decision)`,
+    );
+  } catch (e) {
+    console.log(`axis-drift: SKIPPED — ${e.message}`);
+  }
 }
