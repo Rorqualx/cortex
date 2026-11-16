@@ -512,8 +512,15 @@ export class HierarchicalL3Engine implements ContextEngine {
     }
     const caller = await this.resolveCaller();
     if (!caller) {
-      l3debug("afterTurn(): no caller resolved; skipping compaction");
-      return;
+      if (process.env.OPENCLAW_MEMORY_L3_RAW_ARCHIVAL === "1") {
+        // Zero-LLM fallback (2026-11-16): keep the L1→L2 write path model-free
+        // so the buffer stays bounded without a caller. compactSession sees the
+        // same env flag and takes its raw path (caller may be null there).
+        l3debug("afterTurn(): no caller resolved; falling back to zero-LLM raw archival");
+      } else {
+        l3debug("afterTurn(): no caller resolved; skipping compaction");
+        return;
+      }
     }
     l3debug(`afterTurn(): triggering compaction for sessionId=${params.sessionId}`);
     const now = Date.now();
@@ -712,7 +719,7 @@ export class HierarchicalL3Engine implements ContextEngine {
       return { ok: false, compacted: false, reason: "engine not bootstrapped" };
     }
     const caller = await this.resolveCaller();
-    if (!caller) {
+    if (!caller && process.env.OPENCLAW_MEMORY_L3_RAW_ARCHIVAL !== "1") {
       return {
         ok: false,
         compacted: false,

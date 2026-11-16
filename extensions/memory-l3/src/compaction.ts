@@ -791,7 +791,11 @@ export async function compactSession(params: {
   sessionId: string;
   buffer: IngestBuffer;
   storage: Storage;
-  caller: LlmCaller;
+  /**
+   * LLM caller for extraction. May be null ONLY in raw-archival mode, where
+   * the write path stays model-free (see rawArchival).
+   */
+  caller: LlmCaller | null;
   state: L3State;
   /** Override the wall clock (for deterministic regression tests). */
   now?: number;
@@ -827,6 +831,15 @@ export async function compactSession(params: {
    * OPENCLAW_MEMORY_L3_BUDGET_AWARE=1 env flag.
    */
   budgetAwareCompaction?: boolean;
+  /**
+   * Zero-LLM raw archival (Anathem, 2026-11-16): persist the buffer as a
+   * `raw` L2 chunk with NO extraction call — zero facts, zero dedupKeys,
+   * deterministic metadata only, full l1_archive provenance. Keeps the L1→L2
+   * write path model-free so the buffer stays bounded when no LlmCaller is
+   * available; a later consolidation epoch can distill raw chunks. Defaults
+   * to the OPENCLAW_MEMORY_L3_RAW_ARCHIVAL=1 env flag.
+   */
+  rawArchival?: boolean;
 }): Promise<CompactionResult> {
   const rawMessages = [...params.buffer.peek(params.sessionId)];
   // QW-3: Prune stale/duplicate/large tool outputs before extraction to save
@@ -853,15 +866,30 @@ export async function compactSession(params: {
     };
   }
 
+  const rawArchival = params.rawArchival ?? process.env.OPENCLAW_MEMORY_L3_RAW_ARCHIVAL === "1";
+
   const alreadyKnownSet = new Set(await readRecentDedupKeys(params.storage));
 
-  const { extracted, topicSegments } = await extractWithOptionalSegmentation({
-    messages,
-    caller: params.caller,
-    embeddingProvider: params.embeddingProvider,
-    segmentedCompaction: params.segmentedCompaction,
-    nativeCompaction: params.nativeCompaction,
-  });
+  // Raw archival skips extraction entirely (zero LLM spend): the chunk row
+  // carries only zero-model metadata and a `raw` marker; exact messages are
+  // preserved in the l1_archive JSONL below, so nothing is lost. Raw chunks
+  // stay inert for dedup (empty dedupKeys), fact retrieval, and consolidation
+  // candidate collection until a later epoch distills them.
+  let extraction: Awaited<ReturnType<typeof extractWithOptionalSegmentation>>;
+  if (rawArchival) {
+    extraction = { extracted: { facts: [], typedFacts: [], decisions: [], actions: [] } };
+  } else if (params.caller) {
+    extraction = await extractWithOptionalSegmentation({
+      messages,
+      caller: params.caller,
+      embeddingProvider: params.embeddingProvider,
+      segmentedCompaction: params.segmentedCompaction,
+      nativeCompaction: params.nativeCompaction,
+    });
+  } else {
+    throw new Error("compactSession: an LlmCaller is required unless rawArchival is enabled");
+  }
+  const { extracted, topicSegments } = extraction;
 
   const filtered = dropAlreadyKnown(extracted.facts, alreadyKnownSet);
   const deduped = dedupWithinChunk(filtered);
@@ -875,7 +903,7 @@ export async function compactSession(params: {
   const budgetAware =
     params.budgetAwareCompaction ?? process.env.OPENCLAW_MEMORY_L3_BUDGET_AWARE === "1";
   let budgeted: ExtractedFact[];
-  if (categoryBudget > 0 && budgetAware) {
+  if (categoryBudget > 0 && budgetAware && params.caller) {
     budgeted = await applyCategoryBudgetWithOperators({
       facts: deduped,
       maxTokensPerCategory: categoryBudget,
@@ -972,6 +1000,7 @@ export async function compactSession(params: {
     contextWindow: messages.length,
     topicSegments,
     deterministic,
+    raw: rawArchival || undefined,
   };
 
   await params.storage.writeL2Chunk(

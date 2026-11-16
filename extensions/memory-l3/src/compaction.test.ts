@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -267,6 +267,49 @@ describe("compactSession", () => {
     expect(doc?.frontmatter.deterministic?.filePaths.length).toBeGreaterThanOrEqual(1);
     expect(doc?.frontmatter.deterministic?.filePaths).toContain("/etc/passwd");
     expect(doc?.frontmatter.deterministic?.filePaths).toContain("/tmp/config.yaml");
+  });
+
+  it("persists a zero-LLM raw chunk with full l1_archive provenance (QW-2 2026-11-16)", async () => {
+    await storage.ensureLayout();
+    buffer.push("s1", userMsg("kubernetes rollout status check"));
+    buffer.push("s1", userMsg("gardening plan for the hoop house"));
+    const result = await compactSession({
+      sessionId: "s1",
+      buffer,
+      storage,
+      caller: null, // raw archival must never touch an LLM
+      state,
+      rawArchival: true,
+    });
+    expect(result.chunkId).not.toBeNull();
+    expect(result.factsAdded).toBe(0);
+    expect(result.typedFactsAdded).toBe(0);
+    expect(result.messagesIngested).toBe(2);
+    const doc = await storage.readL2Chunk(result.chunkId!, Date.now());
+    expect(doc?.frontmatter.raw).toBe(true);
+    expect(doc?.frontmatter.facts).toEqual([]);
+    expect(doc?.frontmatter.dedupKeys).toEqual([]); // inert for readRecentDedupKeys
+    expect(doc?.frontmatter.deterministic?.turnCount).toBe(2);
+    // Buffer drained — the L1 window stays bounded without an LLM.
+    expect(buffer.tokens("s1")).toBe(0);
+    // Exact messages preserved in the l1_archive JSONL (full provenance).
+    const archive = readFileSync(
+      path.join(tmpRoot, ".openclaw", "l3", "l1_archive", `${result.chunkId}.jsonl`),
+      "utf8",
+    )
+      .trim()
+      .split("\n");
+    expect(archive).toHaveLength(2);
+    expect(archive[0]).toContain("kubernetes rollout status check");
+    expect(archive[1]).toContain("gardening plan for the hoop house");
+  });
+
+  it("requires an LlmCaller when raw archival is disabled", async () => {
+    await storage.ensureLayout();
+    buffer.push("s1", userMsg("hello"));
+    await expect(
+      compactSession({ sessionId: "s1", buffer, storage, caller: null, state }),
+    ).rejects.toThrow(/LlmCaller is required/);
   });
 
   it("drops facts whose dedupKey is already in a recent chunk", async () => {

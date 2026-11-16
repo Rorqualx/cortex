@@ -315,6 +315,14 @@ export type L2ChunkFrontmatter = {
    * time span). Added in PROMPT_VERSION=12; absent on older chunks.
    */
   deterministic?: L2DeterministicExtraction;
+  /**
+   * Raw archival marker (zero-LLM L1→L2, 2026-11-16): the chunk was persisted
+   * WITHOUT LLM extraction to keep the write path model-free — zero facts,
+   * zero dedupKeys, full l1_archive provenance. Inert in dedup
+   * (readRecentDedupKeys), fact retrieval, and consolidation candidate
+   * collection until a later epoch distills it. Absent = normally distilled.
+   */
+  raw?: boolean;
 };
 
 /**
