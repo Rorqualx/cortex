@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { EPOCH_CHUNK_THRESHOLD, maybeWriteEpoch, REPRESENTATIVE_FACT_COUNT } from "./epoch.js";
+import {
+  EPOCH_CHUNK_THRESHOLD,
+  maybeWriteEpoch,
+  recordEpochPhases,
+  REPRESENTATIVE_FACT_COUNT,
+} from "./epoch.js";
 import { Storage } from "./storage.js";
 import { INITIAL_L3_STATE, type L2Fact, type L3State } from "./types.js";
 
@@ -104,5 +109,70 @@ describe("maybeWriteEpoch", () => {
     state.l2ChunkIndex = EPOCH_CHUNK_THRESHOLD * 2;
     const epochId = await maybeWriteEpoch({ storage, state, now: NOW });
     expect(epochId).toBe("epoch-0001");
+  });
+});
+
+describe("recordEpochPhases (ARCH-1)", () => {
+  it("round-trips phases while preserving prior frontmatter fields and the body", async () => {
+    for (let i = 0; i < EPOCH_CHUNK_THRESHOLD; i += 1) {
+      await writeChunk(`chunk-${i.toString().padStart(3, "0")}`, [fact(`f${i}`, 0.5)]);
+    }
+    state.l2ChunkIndex = EPOCH_CHUNK_THRESHOLD;
+    await maybeWriteEpoch({ storage, state, now: NOW });
+    const before = await storage.readL3Epoch("epoch-0000");
+    expect(before).not.toBeNull();
+    expect(before?.frontmatter.phases).toBeUndefined();
+
+    await recordEpochPhases({
+      storage,
+      epochId: "epoch-0000",
+      phases: {
+        nrem: { candidates: 2, promoted: 2, superseded: 0, reaffirmed: 1 },
+        rem: { edgesAdded: 1, newlyStale: 0, proseSuperseded: 0, durationMs: 0 },
+      },
+    });
+
+    const after = await storage.readL3Epoch("epoch-0000");
+    expect(after?.frontmatter.phases).toEqual({
+      nrem: { candidates: 2, promoted: 2, superseded: 0, reaffirmed: 1 },
+      rem: { edgesAdded: 1, newlyStale: 0, proseSuperseded: 0, durationMs: 0 },
+    });
+    // Every pre-existing frontmatter field identical.
+    const { phases: _afterPhases, ...afterRest } = after!.frontmatter;
+    expect(afterRest).toEqual(before!.frontmatter);
+    // Body byte-identical through the rewrite.
+    expect(after?.body).toBe(before?.body);
+  });
+
+  it("tolerates absence: legacy epochs read clean, missing ids are a no-op", async () => {
+    // Legacy-shape epoch doc (no phases key).
+    await storage.writeL3Epoch(
+      {
+        id: "epoch-0000",
+        agentId: "j-rorqual",
+        startChunkId: "chunk-000",
+        endChunkId: "chunk-003",
+        createdAt: NOW,
+        representativeFacts: [fact("f0", 0.5)],
+      },
+      "## Representative facts\n- legacy",
+    );
+    const doc = await storage.readL3Epoch("epoch-0000");
+    expect(doc?.frontmatter.phases).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(doc!.frontmatter, "phases")).toBe(false);
+
+    // Missing epoch id: no-op, no throw.
+    await expect(
+      recordEpochPhases({
+        storage,
+        epochId: "epoch-9999",
+        phases: {
+          nrem: { candidates: 0, promoted: 0, superseded: 0, reaffirmed: 0 },
+          rem: { edgesAdded: 0, newlyStale: 0, proseSuperseded: 0, durationMs: 0 },
+        },
+      }),
+    ).resolves.toBeUndefined();
+    const still = await storage.readL3Epoch("epoch-9999");
+    expect(still).toBeNull();
   });
 });

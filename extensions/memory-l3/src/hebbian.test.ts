@@ -8,10 +8,11 @@ import {
   extractEdgesFromRetrieval,
   hebbianBoost,
   hebbianCentrality,
+  hebbianOverPromoted,
   mergeEdges,
   edgeKey,
 } from "./hebbian.js";
-import type { L2Fact } from "./types.js";
+import type { L2Fact, LongTermTypedFact } from "./types.js";
 
 function makeFact(id: string, dedupKey: string): L2Fact {
   return {
@@ -333,5 +334,125 @@ describe("hebbian", () => {
       assert.strictEqual(edgeKey("b", "a"), "a::b");
       assert.strictEqual(edgeKey("a", "b"), "a::b");
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ARCH-1 two-phase sleep: hebbianOverPromoted (second writer into the
+// compaction-time edge-map funnel).
+// ---------------------------------------------------------------------------
+
+const promotedFact = (id: string, slot: string, value: string): LongTermTypedFact =>
+  ({
+    id,
+    slot,
+    value,
+    unit: null,
+    confidence: 0.9,
+    firstSeenAt: 0,
+    lastConfirmedAt: 0,
+    recallCount: 1,
+    sourceChunkIds: ["chunk-x"],
+    history: [],
+    validFrom: 0,
+    validUntil: null,
+    supersededBy: null,
+    archived: false,
+    archivedAt: null,
+  }) as unknown as LongTermTypedFact;
+
+const edgeMapStore = (initial: HebbianEdge[]) => {
+  let edges: unknown[] = [...initial];
+  let reads = 0;
+  let writes = 0;
+  return {
+    reads: () => reads,
+    writes: () => writes,
+    current: () => edges,
+    stub: {
+      readEdgeMap: async (): Promise<unknown[]> => {
+        reads += 1;
+        return [...edges];
+      },
+      writeEdgeMap: async (next: unknown[]): Promise<void> => {
+        writes += 1;
+        edges = [...next];
+      },
+    },
+  };
+};
+
+describe("hebbianOverPromoted (ARCH-1)", () => {
+  it("merges new edges into the existing map, keeping the pre-existing payload untouched", async () => {
+    const preExisting: HebbianEdge[] = [{ a: "k:one", b: "k:two", weight: 3 }];
+    const store = edgeMapStore(preExisting);
+    const added = await hebbianOverPromoted({
+      storage: store.stub,
+      promoted: [
+        promotedFact("ltt-a", "user:name", "Joe"),
+        promotedFact("ltt-b", "user:city", "Denver"),
+      ],
+    });
+    assert.ok(added >= 1);
+    const map = store.current() as HebbianEdge[];
+    const keys = new Set(map.map((e) => edgeKey(e.a, e.b)));
+    assert.ok(keys.has(edgeKey("k:one", "k:two")), "pre-existing key kept");
+    assert.ok(keys.has(edgeKey("ltt-a", "ltt-b")), "new promoted-fact key added");
+    const kept = map.find((e) => edgeKey(e.a, e.b) === edgeKey("k:one", "k:two"));
+    assert.equal(kept?.weight, 3, "pre-existing edge payload untouched");
+    assert.equal(store.writes(), 1);
+  });
+
+  it("dedups by edge key: same key as a seeded entry merges instead of duplicating", async () => {
+    const seeded: HebbianEdge[] = [{ a: "ltt-a", b: "ltt-b", weight: 2 }];
+    const store = edgeMapStore(seeded);
+    const added = await hebbianOverPromoted({
+      storage: store.stub,
+      promoted: [
+        promotedFact("ltt-a", "user:name", "Joe"),
+        promotedFact("ltt-b", "user:city", "Denver"),
+      ],
+    });
+    assert.equal(added, 1);
+    const map = store.current() as HebbianEdge[];
+    assert.equal(map.length, seeded.length, "map size unchanged vs seeded");
+    const merged = map.find((e) => edgeKey(e.a, e.b) === edgeKey("ltt-a", "ltt-b"));
+    assert.equal(merged?.weight, 3, "weight incremented deterministically via mergeEdges");
+  });
+
+  it("is non-fatal on storage error (sync throw and async reject)", async () => {
+    const syncThrow = {
+      readEdgeMap: (): Promise<unknown[]> => {
+        throw new Error("sync boom");
+      },
+      writeEdgeMap: async (): Promise<void> => {},
+    };
+    const out1 = await hebbianOverPromoted({
+      storage: syncThrow,
+      promoted: [promotedFact("ltt-a", "s", "v"), promotedFact("ltt-b", "s2", "v2")],
+    });
+    assert.equal(out1, 0);
+    const asyncReject = {
+      readEdgeMap: () => Promise.reject(new Error("async boom")),
+      writeEdgeMap: async (): Promise<void> => {},
+    };
+    const out2 = await hebbianOverPromoted({
+      storage: asyncReject,
+      promoted: [promotedFact("ltt-a", "s", "v"), promotedFact("ltt-b", "s2", "v2")],
+    });
+    assert.equal(out2, 0);
+  });
+
+  it("skips fewer than 2 facts without touching storage", async () => {
+    const store = edgeMapStore([]);
+    const empty = await hebbianOverPromoted({ storage: store.stub, promoted: [] });
+    const single = await hebbianOverPromoted({
+      storage: store.stub,
+      promoted: [promotedFact("ltt-a", "user:name", "Joe")],
+    });
+    assert.equal(empty, 0);
+    assert.equal(single, 0);
+    assert.equal(store.reads(), 0, "readEdgeMap never called");
+    assert.equal(store.writes(), 0, "writeEdgeMap never called");
   });
 });

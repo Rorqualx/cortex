@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   consolidateLongTermTyped,
+  DEFAULT_LONG_TERM_TYPED_CONFIG,
   derivePerishability,
   deriveVolatilityClass,
 } from "./longterm-typed.js";
@@ -1843,5 +1844,95 @@ describe("consolidateLongTermTyped", () => {
     });
     // stable +0.2, durable "name" +0.15, user +0.1 = 1.45, clamped to 1.2
     expect(pi).toBe(1.2);
+  });
+});
+
+describe("promotedFacts payload (ARCH-1)", () => {
+  it("parity with promotedCount; J-space cap demotion subtracts from the payload", async () => {
+    await writeChunkWithTyped(
+      "chunk-000000-a",
+      [
+        {
+          id: "tf-1",
+          slot: "user:phone",
+          value: "555-1234",
+          sourceSpan: "my phone is 555-1234",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+        {
+          id: "tf-2",
+          slot: "user:city",
+          value: "Denver",
+          sourceSpan: "I live in Denver",
+          unit: null,
+          confidence: 0.9,
+          createdAt: NOW,
+        },
+      ],
+      NOW,
+    );
+
+    const out = await consolidateLongTermTyped({ storage, agentId: "j-rorqual", now: NOW });
+    expect(out.promotedCount).toBe(2);
+    expect(out.promotedFacts).toHaveLength(2);
+    expect(out.promotedFacts.map((f) => f.slot).sort()).toEqual(["user:city", "user:phone"]);
+    for (const f of out.promotedFacts) {
+      expect(f.id).toBeTruthy();
+      expect(f.value).toBeTruthy();
+    }
+
+    // Fresh store; force the J-space cap to 1 so one promotion is demoted.
+    const tmp2 = mkdtempSync(path.join(os.tmpdir(), "memory-l3-longterm-typed-"));
+    const storage2 = new Storage(path.join(tmp2, ".openclaw", "l3"));
+    try {
+      // Write into storage2 directly (the file-level helper targets the
+      // global per-test storage).
+      await storage2.writeL2Chunk(
+        {
+          id: "chunk-000000-a",
+          agentId: "j-rorqual",
+          startTurnIndex: 0,
+          endTurnIndex: 1,
+          createdAt: NOW,
+          facts: [],
+          dedupKeys: [],
+          typedFacts: [
+            {
+              id: "tf-1",
+              slot: "user:phone",
+              value: "555-1234",
+              sourceSpan: "my phone is 555-1234",
+              unit: null,
+              confidence: 0.9,
+              createdAt: NOW,
+            },
+            {
+              id: "tf-2",
+              slot: "user:city",
+              value: "Denver",
+              sourceSpan: "I live in Denver",
+              unit: null,
+              confidence: 0.9,
+              createdAt: NOW,
+            },
+          ],
+        },
+        "",
+      );
+      const capped = await consolidateLongTermTyped({
+        storage: storage2,
+        agentId: "j-rorqual",
+        now: NOW,
+        config: { ...DEFAULT_LONG_TERM_TYPED_CONFIG, maxPromotePerEpoch: 1 },
+      });
+      expect(capped.promotedCount).toBe(1);
+      expect(capped.promotedFacts).toHaveLength(1);
+      const keptSlot = capped.promotedFacts[0]!.slot;
+      expect(["user:phone", "user:city"]).toContain(keptSlot);
+    } finally {
+      rmSync(tmp2, { recursive: true, force: true });
+    }
   });
 });
