@@ -160,6 +160,22 @@ export function tierForKind(kind: DelegationKind): "backbone" | "execution" {
 export type OperationClass = "read" | "write" | "synthesize";
 
 /**
+ * Delegation lane (QW4, 2026-11-17): where the delegated call originates.
+ * Orthogonal to kind — it selects the reasoning-effort DEFAULT for providers
+ * that accept one: cron lanes run low (fast, cheap, unattended), session
+ * lanes run high (interactive quality). Explicit `reasoningEffort` wins.
+ */
+export type DelegationLane = "cron" | "session";
+
+/** Per-lane reasoning-effort defaults (QW4). Currently consumed by deepseek. */
+export const LANE_DEFAULT_REASONING_EFFORT: Readonly<
+  Record<DelegationLane, "low" | "medium" | "high">
+> = {
+  cron: "low",
+  session: "high",
+};
+
+/**
  * Tier-default model per provider: backbone → strongest, execution → fastest.
  * Used when PREFERRED doesn't have an explicit per-kind entry (e.g. vision
  * needs the -v variant regardless of tier, so it stays explicit).
@@ -277,11 +293,26 @@ export type RouteRequest = {
    * kind-only routing, exactly today's behavior.
    */
   opClass?: OperationClass | undefined;
+  /**
+   * QW4 (2026-11-17): delegation lane. Selects a per-lane reasoning-effort
+   * default (cron=low, session=high) surfaced on the resolved Route; callers
+   * forward it into provider params (DeepSeek emits `reasoning_effort`).
+   * Absent = no effort hint (provider docs default).
+   */
+  lane?: DelegationLane | undefined;
+  /** Explicit reasoning-effort override; wins over the lane default. */
+  reasoningEffort?: "low" | "medium" | "high" | undefined;
 };
 
 export type Route = {
   primary: Candidate;
   fallbacks: Candidate[];
+  /**
+   * Resolved reasoning-effort hint (QW4): explicit override, else the lane
+   * default. Undefined when neither is set — providers then apply their own
+   * documented default (DeepSeek: "high").
+   */
+  reasoningEffort?: "low" | "medium" | "high" | undefined;
 };
 
 /**
@@ -454,5 +485,16 @@ export function resolveRoute(req: RouteRequest): Route {
     }
   }
 
-  return { primary, fallbacks };
+  return { primary, fallbacks, reasoningEffort: resolveReasoningEffort(req) };
+}
+
+/**
+ * QW4: explicit `reasoningEffort` wins; else the lane default; else undefined
+ * (provider docs default). Kept provider-agnostic — non-supporting providers
+ * simply ignore the hint.
+ */
+function resolveReasoningEffort(
+  req: Pick<RouteRequest, "reasoningEffort" | "lane">,
+): "low" | "medium" | "high" | undefined {
+  return req.reasoningEffort ?? (req.lane ? LANE_DEFAULT_REASONING_EFFORT[req.lane] : undefined);
 }

@@ -376,3 +376,31 @@ describe("operation-class routing (QW-D)", () => {
     }
   });
 });
+
+describe("resolveRoute reasoning-effort lane defaults (QW4)", () => {
+  it("cron lane defaults to low effort", () => {
+    expect(resolveRoute({ kind: "code", cfg: FULL, lane: "cron" }).reasoningEffort).toBe("low");
+  });
+
+  it("session lane defaults to high effort", () => {
+    expect(resolveRoute({ kind: "code", cfg: FULL, lane: "session" }).reasoningEffort).toBe("high");
+  });
+
+  it("explicit reasoningEffort wins over the lane default", () => {
+    expect(
+      resolveRoute({ kind: "code", cfg: FULL, lane: "session", reasoningEffort: "low" })
+        .reasoningEffort,
+    ).toBe("low");
+  });
+
+  it("no lane and no override leaves the hint undefined (provider docs default)", () => {
+    expect(resolveRoute({ kind: "code", cfg: FULL }).reasoningEffort).toBeUndefined();
+  });
+
+  it("lane does not disturb the provider/model chain", () => {
+    const withLane = resolveRoute({ kind: "code", cfg: FULL, lane: "cron" });
+    const withoutLane = resolveRoute({ kind: "code", cfg: FULL });
+    expect(withLane.primary).toEqual(withoutLane.primary);
+    expect(withLane.fallbacks).toEqual(withoutLane.fallbacks);
+  });
+});

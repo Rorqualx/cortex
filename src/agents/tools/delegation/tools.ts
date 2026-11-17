@@ -220,6 +220,7 @@ async function runSingleShot(
         images,
         maxOutputTokens,
         thinking,
+        reasoningEffort: route.reasoningEffort,
         format: "markdown",
         model: modelId,
       });

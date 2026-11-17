@@ -2,8 +2,9 @@
 //
 // Quirks absorbed here:
 //   - body.thinking = {type:"enabled"} (same shape as Z.ai). Optional sibling
-//     `reasoning_effort` is left at the docs default ("high") — bump if a tool
-//     wants harder reasoning.
+//     `reasoning_effort` (low|medium|high) is emitted when the caller sets
+//     `reasoningEffort` — never on non-reasoning calls; unset = docs default
+//     ("high").
 //   - Temperature is a no-op when thinking is enabled (per DeepSeek docs).
 //     We send 0.3 only when thinking is OFF (or pass an explicit override
 //     either way); omit the field entirely under thinking-with-no-override.
@@ -28,6 +29,7 @@ import type {
   LlmChatParams,
   LlmClient,
   LlmConfig,
+  LlmReasoningEffort,
 } from "./types.js";
 import { LlmError } from "./types.js";
 
@@ -140,6 +142,17 @@ function applyTemperature(
   if (!thinking) body["temperature"] = 0.3;
 }
 
+// Emit `reasoning_effort` ONLY on reasoning calls (thinking on) — the field
+// is a sibling of body.thinking; sending it on non-reasoning calls is
+// undefined behavior and deliberately avoided.
+function applyReasoningEffort(
+  body: Record<string, unknown>,
+  thinking: boolean,
+  effort: LlmReasoningEffort | undefined,
+): void {
+  if (thinking && effort) body["reasoning_effort"] = effort;
+}
+
 function buildRequestBody(params: LlmCallParams): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model: params.model,
@@ -150,6 +163,7 @@ function buildRequestBody(params: LlmCallParams): Record<string, unknown> {
   applyTemperature(body, params.thinking, params.temperature);
   if (params.thinking) {
     body["thinking"] = { type: "enabled" };
+    applyReasoningEffort(body, params.thinking, params.reasoningEffort);
   }
   // Structured json_object mode parallels zai. DeepSeek's mode requires the
   // word "json" in the prompt — the textual formatHint already includes "JSON".
@@ -169,6 +183,7 @@ function buildChatRequestBody(params: LlmChatParams): Record<string, unknown> {
   applyTemperature(body, params.thinking, params.temperature);
   if (params.thinking) {
     body["thinking"] = { type: "enabled" };
+    applyReasoningEffort(body, params.thinking, params.reasoningEffort);
   }
   if (params.tools && params.tools.length > 0) {
     body["tools"] = params.tools;

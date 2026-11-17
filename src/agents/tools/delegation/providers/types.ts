@@ -51,6 +51,13 @@ export type ChatMessage = {
 
 export type LlmFormat = "text" | "json" | "markdown";
 
+/**
+ * Reasoning-effort hint for providers that accept it alongside thinking
+ * (DeepSeek: top-level `reasoning_effort`, docs default "high"). Only emitted
+ * on reasoning calls; providers without the field ignore it.
+ */
+export type LlmReasoningEffort = "low" | "medium" | "high";
+
 export type ToolDef = {
   type: "function";
   function: {
@@ -68,6 +75,9 @@ export type LlmCallParams = {
   maxOutputTokens: number;
   // undefined = let the provider apply its default. See module-level note.
   temperature?: number | undefined;
+  // Optional reasoning-effort hint (DeepSeek `reasoning_effort`). Only sent
+  // when thinking is on; undefined = provider docs default.
+  reasoningEffort?: LlmReasoningEffort | undefined;
   thinking: boolean;
   format: LlmFormat;
   model: string;
@@ -77,6 +87,9 @@ export type LlmChatParams = {
   messages: ChatMessage[];
   maxOutputTokens: number;
   temperature?: number | undefined;
+  // Optional reasoning-effort hint (DeepSeek `reasoning_effort`). Only sent
+  // when thinking is on; undefined = provider docs default.
+  reasoningEffort?: LlmReasoningEffort | undefined;
   thinking: boolean;
   model: string;
   tools?: readonly ToolDef[] | undefined;
