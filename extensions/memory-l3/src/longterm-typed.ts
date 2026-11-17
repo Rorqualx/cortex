@@ -321,8 +321,16 @@ function shouldSkipStableMaintenance(fact: LongTermTypedFact, now: number): bool
 }
 
 export type ConsolidateLongTermTypedOutput = {
+  /** Typed candidates considered this pass (all slots in the candidate map). */
+  candidateCount: number;
   /** Slots that didn't exist in the canonical view and were added. */
   promotedCount: number;
+  /**
+   * Facts newly promoted this pass, reflecting FINAL promotions (J-space
+   * cap demotions subtracted). Payload carries the full fact so callers
+   * can form edges or telemetry without re-reading the store.
+   */
+  promotedFacts: LongTermTypedFact[];
   /** Slots whose value changed; previous value moved into history. */
   supersededCount: number;
   /** Slots that already existed with the same value; recall counters bumped. */
@@ -390,6 +398,8 @@ export async function consolidateLongTermTyped(params: {
   let unarchivedCount = 0;
   /** Slots newly promoted this epoch, with candidate fact IDs for retrieval-signal lookup. */
   const newSlotIds: Array<{ slot: string; candidateFactIds: string[] }> = [];
+  /** Newly promoted facts by slot — payload survives only if the J-space cap keeps them. */
+  const newlyPromoted = new Map<string, LongTermTypedFact>();
 
   for (const candidate of candidates.values()) {
     if (candidate.recallCount < config.minRecallCount) {
@@ -407,7 +417,9 @@ export async function consolidateLongTermTyped(params: {
       continue;
     }
     if (!prior) {
-      merged.set(candidate.slot, promote(candidate, params.sessionId, params.modelId));
+      const promotedFact = promote(candidate, params.sessionId, params.modelId);
+      merged.set(candidate.slot, promotedFact);
+      newlyPromoted.set(candidate.slot, promotedFact);
       promotedCount += 1;
       newSlotIds.push({
         slot: candidate.slot,
@@ -461,6 +473,7 @@ export async function consolidateLongTermTyped(params: {
       if (!keep.has(entry.slot)) {
         merged.delete(entry.slot);
         promotedCount -= 1;
+        newlyPromoted.delete(entry.slot);
       }
     }
   }
@@ -495,7 +508,9 @@ export async function consolidateLongTermTyped(params: {
   await params.storage.writeLongTermTyped(frontmatter, formatBody(ordered));
 
   return {
+    candidateCount: candidates.size,
     promotedCount,
+    promotedFacts: [...newlyPromoted.values()],
     supersededCount,
     reaffirmedCount,
     archivedCount,

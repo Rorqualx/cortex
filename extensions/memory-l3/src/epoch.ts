@@ -1,5 +1,5 @@
 import type { Storage } from "./storage.js";
-import type { L2Fact, L3EpochFrontmatter, L3State } from "./types.js";
+import type { L2Fact, L3EpochFrontmatter, L3EpochPhases, L3State } from "./types.js";
 
 export const EPOCH_CHUNK_THRESHOLD = 4;
 export const REPRESENTATIVE_FACT_COUNT = 8;
@@ -14,7 +14,7 @@ export const REPRESENTATIVE_FACT_COUNT = 8;
  * epoch's representative set. Retrieval (stage 8 polish) blends these with
  * a small ε weight so older-but-important facts still surface for queries
  * that match the epoch theme.
- * 
+ *
  * NOTE: Eviction policy analysis (2026-07-04):
  * Epoch-based consolidation avoids per-chunk eviction policies entirely. This is
  * appropriate for L2 tier which manages consolidation, not cache eviction. For
@@ -91,4 +91,27 @@ function formatEpochBody(facts: ReadonlyArray<L2Fact>, chunkCount: number): stri
       ? `## Representative facts\n${facts.map((f) => `- [${f.importance.toFixed(2)}] ${f.text}`).join("\n")}`
       : "## Representative facts\n(none)";
   return `${factSection}\n\n## Coverage\nDigest of ${chunkCount} L2 chunk(s).`;
+}
+
+/**
+ * ARCH-1 two-phase sleep: record NREM/REM phase telemetry onto an existing
+ * epoch digest. Spread-merges `phases` into the stored frontmatter while
+ * preserving every other field and the body byte-for-byte (writeL3Epoch is
+ * rewrite-in-place, idempotent on the PK). Tolerates a missing epoch doc
+ * (no-op) so a drifted id can never fail consolidation.
+ */
+export async function recordEpochPhases(params: {
+  storage: Storage;
+  epochId: string;
+  phases: L3EpochPhases;
+}): Promise<void> {
+  const doc = await params.storage.readL3Epoch(params.epochId);
+  if (!doc) {
+    if (process.env.OPENCLAW_MEMORY_L3_DEBUG === "1") {
+      console.error(`[memory-l3/epoch] recordEpochPhases: no epoch ${params.epochId}`);
+    }
+    return;
+  }
+  const frontmatter: L3EpochFrontmatter = { ...doc.frontmatter, phases: params.phases };
+  await params.storage.writeL3Epoch(frontmatter, doc.body);
 }

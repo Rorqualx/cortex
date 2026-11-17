@@ -10,7 +10,7 @@
  * across chunks strengthens the edge, while single-chunk edges stay weak.
  */
 
-import type { L2Fact } from "./types.js";
+import type { L2Fact, LongTermTypedFact } from "./types.js";
 
 export type HebbianEdge = {
   /** First fact dedupKey (sorted so a < b). */
@@ -159,6 +159,54 @@ export function mergeEdges(
  * Build a lookup map from dedupKey → list of edges touching that key.
  * Used during retrieval to find a fact's neighbors.
  */
+/**
+ * ARCH-1 two-phase sleep: form Hebbian edges over facts promoted into the
+ * long-term typed tier during epoch consolidation. A second writer into the
+ * same edge map the compaction-time writer uses — `mergeEdges` dedups by
+ * key, so compaction-time edges are preserved and weights only grow.
+ * Non-fatal by contract: storage failures are swallowed and logged (debug
+ * gated), never aborting consolidation. Returns the number of new edges
+ * added (0 for fewer than 2 promoted facts or on failure).
+ */
+export async function hebbianOverPromoted(params: {
+  storage: {
+    readEdgeMap(): Promise<unknown[]>;
+    writeEdgeMap(edges: unknown[]): Promise<void>;
+  };
+  promoted: ReadonlyArray<LongTermTypedFact>;
+}): Promise<number> {
+  if (params.promoted.length < 2) {
+    return 0;
+  }
+  try {
+    // Map promoted typed facts onto the L2Fact shape extractEdges expects.
+    // dedupKey = the typed fact's own id, so edges link the canonical
+    // long-term entries rather than their transient L2 sources.
+    const facts: L2Fact[] = params.promoted.map((f) => ({
+      id: f.id,
+      text: `${f.slot}: ${f.value}`,
+      importance: f.confidence,
+      createdAt: f.lastConfirmedAt,
+      dedupKey: f.id,
+    }));
+    const newEdges = extractEdges(facts);
+    if (newEdges.length === 0) {
+      return 0;
+    }
+    const existingEdges = (await params.storage.readEdgeMap()) as HebbianEdge[];
+    const merged = mergeEdges(existingEdges, newEdges);
+    await params.storage.writeEdgeMap(merged);
+    return newEdges.length;
+  } catch (err) {
+    if (process.env.OPENCLAW_MEMORY_L3_DEBUG === "1") {
+      console.error(
+        `[memory-l3/hebbian] promoted-facts edge pass failed: ${(err as Error).message}`,
+      );
+    }
+    return 0;
+  }
+}
+
 export function buildEdgeLookup(edges: ReadonlyArray<HebbianEdge>): Map<string, HebbianEdge[]> {
   const map = new Map<string, HebbianEdge[]>();
   for (const edge of edges) {
