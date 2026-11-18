@@ -38,6 +38,13 @@ import {
   tokenize,
 } from "./scoring.js";
 
+// ARCH-2 (REFACT-inspired adaptive fact granularity, arXiv:2507.15147):
+// env opt-ins read once at module scope. Call-site resolution order is
+// explicit retrievalConfig flag > env var > false, so the engine needs no
+// config change to arm the eval harness.
+const ENV_ADAPTIVE_DETAIL = process.env.OPENCLAW_MEMORY_L3_ADAPTIVE_DETAIL === "1";
+const ENV_FACT_PROVENANCE = process.env.OPENCLAW_MEMORY_L3_FACT_PROVENANCE === "1";
+
 // ---------------------------------------------------------------------------
 // SCM Query-Intent Router (arXiv:2607.19096 — Structured Contextual Memory)
 // ---------------------------------------------------------------------------
@@ -332,6 +339,25 @@ export type RetrievalConfig = {
    * 2000 for a 2K-token budget.
    */
   maxInjectedTokens?: number;
+  /**
+   * ARCH-2 (REFACT-inspired, arXiv:2507.15147): when true and the resolved
+   * query intent is "factual" (routed mode only — every other mode resolves
+   * to "synthesis", where this flag is a no-op), prose facts are trimmed to
+   * their first clause (guarded: head clauses under 6 words fall back to the
+   * first sentence) so exact-answer lookups spend fewer context tokens.
+   * Typed/longterm-typed facts are never altered. Default false — OFF is
+   * byte-identical output (the input array is returned by reference).
+   * Enable via config or env OPENCLAW_MEMORY_L3_ADAPTIVE_DETAIL=1.
+   */
+  adaptiveFactDetail?: boolean;
+  /**
+   * ARCH-2: when true and the resolved query intent is "synthesis", prose
+   * facts gain a " (source: <chunkId>)" suffix so synthesized answers can
+   * cite the evidence chunk. Typed/longterm-typed facts are never altered.
+   * Default false — OFF is byte-identical output. Enable via config or env
+   * OPENCLAW_MEMORY_L3_FACT_PROVENANCE=1.
+   */
+  includeFactProvenance?: boolean;
 };
 
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
@@ -1673,7 +1699,10 @@ export async function retrieveTopK(params: {
   // defaulting to "factual" would silently truncate every prose fact to its
   // first sentence on the default retrieval path.
   const intent: QueryIntent = retConfig.mode === "routed" ? queryIntent : "synthesis";
-  const compressedFacts = compressFactsForResult(finalFacts, intent);
+  const compressedFacts = compressFactsForResult(finalFacts, intent, {
+    adaptiveFactDetail: retConfig.adaptiveFactDetail ?? ENV_ADAPTIVE_DETAIL,
+    includeFactProvenance: retConfig.includeFactProvenance ?? ENV_FACT_PROVENANCE,
+  });
 
   // Token-budget guard: trim lowest-score facts to stay within budget.
   // Prevents the Information Abundance Paradox — flooding context with too
@@ -1724,44 +1753,109 @@ function trimToTokenBudget(facts: RetrievedFact[], maxTokens: number): Retrieved
 }
 
 /**
- * REFACT-style adaptive fact compression: trim fact text based on query
- * intent so the caller receives the appropriate level of detail.
+ * Options for REFACT-style adaptive fact compression (ARCH-2). Both flags
+ * default to false; when both resolve false the function returns its input
+ * array by reference — the OFF contract is byte-identical output.
+ */
+export type AdaptiveFactDetailOpts = {
+  /**
+   * Trim prose facts to their first clause for factual-intent queries
+   * (routed mode only). Head clauses under 6 words fall back to the first
+   * sentence. Typed/longterm-typed facts are never altered.
+   */
+  adaptiveFactDetail?: boolean;
+  /**
+   * Append a " (source: <chunkId>)" provenance suffix to prose facts for
+   * synthesis-intent queries. Typed/longterm-typed facts are never altered.
+   */
+  includeFactProvenance?: boolean;
+};
+
+/**
+ * REFACT-style adaptive fact compression (arXiv:2507.15147, ARCH-2): adapt
+ * fact text detail to query intent so the caller receives the appropriate
+ * level of detail without wasting context budget.
  *
- * - **factual**: typed/longterm-typed facts are already concise
- *   ("slot = value"); trim L2 prose to the first sentence only.
- * - **multihop**: keep typed facts full (they connect entities);
- *   condense prose facts to the first 2 sentences.
- * - **synthesis**: keep prose facts full (they carry narrative context);
- *   typed facts are already one-liners — no further compression.
+ * - **factual** + `adaptiveFactDetail`: prose facts trimmed to their first
+ *   clause (6-word guard, first-sentence fallback). Typed facts untouched.
+ * - **synthesis** + `includeFactProvenance`: prose facts gain a
+ *   " (source: <chunkId>)" suffix. Typed facts untouched.
+ * - **multihop**: both flags are defined as no-ops (connector facts should
+ *   keep their full text).
+ * - Both flags OFF (the default): the input array is returned **by
+ *   reference** — no compression, byte-identical output.
  *
  * This is a pure output-formatting layer. Internal processing (Hebbian
- * boosting, edge extraction, signal recording) always sees the full text.
+ * boosting, edge extraction, signal recording) always sees the full text,
+ * and compression runs BEFORE trimToTokenBudget so suffix tokens are
+ * budget-counted.
  */
-function compressFactsForResult(facts: RetrievedFact[], intent: QueryIntent): RetrievedFact[] {
-  if (intent === "synthesis") {
-    // Prose is the hero; typed facts are already compact. No compression needed.
+export function compressFactsForResult(
+  facts: RetrievedFact[],
+  intent: QueryIntent,
+  opts: AdaptiveFactDetailOpts = {},
+): RetrievedFact[] {
+  const adaptiveDetail = opts.adaptiveFactDetail ?? false;
+  const includeProvenance = opts.includeFactProvenance ?? false;
+  // OFF contract: no flags → return the input array itself (byte-identity).
+  if (!adaptiveDetail && !includeProvenance) {
     return facts;
   }
 
   const typedTiers = new Set<string>(["typed", "longterm-typed"]);
 
-  return facts.map((rf) => {
-    // Typed facts: already "slot = value" — keep as-is for all intents.
-    if (typedTiers.has(rf.tier)) {
-      return rf;
-    }
+  // Factual intent: first-clause trim on prose only.
+  if (adaptiveDetail && intent === "factual") {
+    return facts.map((rf) => {
+      if (typedTiers.has(rf.tier)) {
+        return rf;
+      }
+      const compressedText = truncateToFirstClause(rf.fact.text);
+      if (compressedText === rf.fact.text) {
+        return rf; // Guarded fallback left the text unchanged.
+      }
+      return {
+        ...rf,
+        fact: { ...rf.fact, text: compressedText },
+      };
+    });
+  }
 
-    // Prose facts: compress based on intent.
-    const maxSentences = intent === "factual" ? 1 : 2; // multihop → 2
-    const compressedText = truncateToSentences(rf.fact.text, maxSentences);
-    if (compressedText === rf.fact.text) {
-      return rf; // No change — text was already short enough
+  // Synthesis intent: opt-in provenance suffix on prose only.
+  if (includeProvenance && intent === "synthesis") {
+    return facts.map((rf) => {
+      if (typedTiers.has(rf.tier)) {
+        return rf;
+      }
+      return {
+        ...rf,
+        fact: { ...rf.fact, text: `${rf.fact.text} (source: ${rf.chunkId})` },
+      };
+    });
+  }
+
+  // Multihop (and any other intent): both flags are no-ops — full text kept.
+  return facts;
+}
+
+/**
+ * Trim text to its first comma-delimited clause when that head clause is at
+ * least `minClauseWords` words long; otherwise fall back to the first
+ * sentence (truncateToSentences(text, 1)). Returns the input unchanged when
+ * neither produces a shorter string. The word guard prevents degenerate
+ * fragments — "He moved, recently, to Denver." must not collapse to the
+ * 2-word stub "He moved …".
+ */
+export function truncateToFirstClause(text: string, minClauseWords = 6): string {
+  const commaIndex = text.indexOf(",");
+  if (commaIndex > 0) {
+    const head = text.slice(0, commaIndex).trim();
+    const headWords = head.length === 0 ? 0 : head.split(/\s+/).length;
+    if (headWords >= minClauseWords) {
+      return `${head} …`;
     }
-    return {
-      ...rf,
-      fact: { ...rf.fact, text: compressedText },
-    };
-  });
+  }
+  return truncateToSentences(text, 1);
 }
 
 /**

@@ -1704,7 +1704,7 @@ describe("REFACT-style adaptive fact compression", () => {
     mode: "routed" as const,
   };
 
-  it("compresses prose facts to 1 sentence for factual queries in routed mode", async () => {
+  it("keeps prose byte-identical flags-off; trims with adaptiveFactDetail in routed mode", async () => {
     // Write a chunk with a multi-sentence prose fact
     await writeChunk(
       "chunk-prose",
@@ -1721,21 +1721,38 @@ describe("REFACT-style adaptive fact compression", () => {
       [],
     );
 
-    const { facts } = await retrieveTopK({
+    // ARCH-2 OFF contract: no flags → intent compression is inert; prose
+    // passes through byte-identical (supersedes the unconditional trim).
+    const off = await retrieveTopK({
       query: "server port",
       storage,
       topK: 5,
       now: NOW,
-      retrievalConfig: routedConfig, // triggers intent classification → factual
+      retrievalConfig: routedConfig, // routed → intent classification → factual
     });
+    expect(off.facts.length).toBeGreaterThan(0);
+    const offFact = off.facts.find((f) => f.fact.dedupKey === "prose-1");
+    expect(offFact).toBeDefined();
+    expect(offFact!.fact.text).toBe(
+      "The server runs on port 3000. It was configured last week. The config file is at /etc/server.conf.",
+    );
 
-    expect(facts.length).toBeGreaterThan(0);
-    const proseFact = facts.find((f) => f.fact.dedupKey === "prose-1");
-    expect(proseFact).toBeDefined();
+    // ARCH-2 opt-in: adaptiveFactDetail trims factual prose (fixture has no
+    // comma → first-sentence fallback) to one sentence + ellipsis.
+    const on = await retrieveTopK({
+      query: "server port",
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: { ...routedConfig, adaptiveFactDetail: true },
+    });
+    expect(on.facts.length).toBeGreaterThan(0);
+    const onFact = on.facts.find((f) => f.fact.dedupKey === "prose-1");
+    expect(onFact).toBeDefined();
     // Should be compressed to first sentence + ellipsis
-    expect(proseFact!.fact.text).toMatch(/port 3000/);
-    expect(proseFact!.fact.text).not.toMatch(/configured last week/i);
-    expect(proseFact!.fact.text.endsWith("…")).toBe(true);
+    expect(onFact!.fact.text).toMatch(/port 3000/);
+    expect(onFact!.fact.text).not.toMatch(/configured last week/i);
+    expect(onFact!.fact.text.endsWith("…")).toBe(true);
   });
 
   it("keeps typed facts uncompressed for factual queries", async () => {
