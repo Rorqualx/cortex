@@ -713,3 +713,294 @@ describe("consolidateLongTerm — G3 retrieval reaffirms durability", () => {
     expect(r.archivedCount).toBe(1);
   });
 });
+
+describe("factualPendingGate (2fce2122)", () => {
+  const gateOn: LongTermConfig = { ...DEFAULT_LONG_TERM_CONFIG, factualPendingGate: true };
+
+  it("G1: flag OFF: promote is byte-identical (factual -> confirmed)", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [fact("f1", "user is named Joe", 0.9, NOW, "user:name")],
+      NOW,
+    );
+    const r = await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+    expect(r.promotedCount).toBe(1);
+    const lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.status).toBe("confirmed");
+    expect(lt.facts[0]!.sourceChunkIds).toEqual(["chunk-000000-a"]);
+  });
+
+  it("G2: flag OFF: reaffirm is byte-identical incl. plan re-pend", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1", "user plans to visit Japan", 0.9, NOW, "plan:japan"),
+          modality: "plan" as const,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+    await writeChunk(
+      "chunk-000001-b",
+      [
+        {
+          ...fact("f2", "user booked the Japan trip", 0.9, NOW, "plan:japan"),
+          modality: "fact" as const,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+    let lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.status).toBe("confirmed");
+    // Regression preserved: once the confirming chunk is gone, a later
+    // plan-only sighting re-pends the fact (the aggregated candidate
+    // modality regresses back to plan-only evidence).
+    const confirming = (await storage.listL2ChunkPaths()).find((p) => p.includes("chunk-000001-b"));
+    expect(confirming).toBeDefined();
+    await storage.deleteL2Chunk(confirming!);
+    await writeChunk(
+      "chunk-000002-c",
+      [
+        {
+          ...fact("f3", "user plans another Japan trip", 0.9, NOW, "plan:japan"),
+          modality: "plan" as const,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+    lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.status).toBe("pending");
+  });
+
+  it("G3: flag ON: single-source factual -> pending", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1", "user is named Joe", 0.9, NOW, "user:name"),
+          modality: "fact" as const,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      longTermConfig: gateOn,
+    });
+    const lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.status).toBe("pending");
+  });
+
+  it("G4: flag ON: 2 distinct chunks in one pass -> confirmed", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1", "user is named Joe", 0.9, NOW, "user:name"),
+          modality: "fact" as const,
+        },
+      ],
+      NOW,
+    );
+    await writeChunk(
+      "chunk-000001-b",
+      [
+        {
+          ...fact("f2", "user is named Joe", 0.9, NOW, "user:name"),
+          modality: "fact" as const,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      longTermConfig: gateOn,
+    });
+    const lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.sourceChunkIds.length).toBe(2);
+    expect(lt.facts[0]!.status).toBe("confirmed");
+  });
+
+  it("G5: flag ON: same-chunk re-sighting stays pending", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1", "user is named Joe", 0.9, NOW, "user:name"),
+          modality: "fact" as const,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      longTermConfig: gateOn,
+    });
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1b", "user is named Joe", 0.9, NOW + 1000, "user:name"),
+          modality: "fact" as const,
+        },
+      ],
+      NOW + 1000,
+    );
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW + 1000,
+      longTermConfig: gateOn,
+    });
+    const lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.status).toBe("pending");
+  });
+
+  it("G6: plan modality: pending under BOTH flags", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1", "user might switch to zsh", 0.9, NOW, "plan:zsh"),
+          modality: "plan" as const,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+    let lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.status).toBe("pending");
+    await writeChunk(
+      "chunk-000001-b",
+      [
+        {
+          ...fact("f2", "user might switch to fish", 0.9, NOW, "plan:fish"),
+          modality: "plan" as const,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      longTermConfig: gateOn,
+    });
+    lt = await storage.readLongTerm();
+    expect(lt.facts.find((f) => f.dedupKey === "plan:fish")!.status).toBe("pending");
+  });
+
+  it("G7: correction modality: confirmed under BOTH flags", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1", "user corrected the server IP to 10.0.0.5", 0.9, NOW, "fix:ip"),
+          modality: "correction" as const,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      longTermConfig: gateOn,
+    });
+    const lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.status).toBe("confirmed");
+  });
+
+  it("G8: flag ON: confirmed-ancestor stickiness via same-chunk rewrite", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1", "user is named Joe", 0.9, NOW, "user:name"),
+          modality: "fact" as const,
+        },
+      ],
+      NOW,
+    );
+    await consolidateLongTerm({ storage, agentId: "j-rorqual", now: NOW });
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1b", "user is named Joe", 0.9, NOW + 1000, "user:name"),
+          modality: "fact" as const,
+        },
+      ],
+      NOW + 1000,
+    );
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW + 1000,
+      longTermConfig: gateOn,
+    });
+    const lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.status).toBe("confirmed");
+  });
+
+  it("G9: flag ON: pending factual expires at 30d cap", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [
+        {
+          ...fact("f1", "user is named Joe", 0.9, NOW - 35 * MS_PER_DAY, "user:name"),
+          modality: "fact" as const,
+        },
+      ],
+      NOW - 35 * MS_PER_DAY,
+    );
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW - 35 * MS_PER_DAY,
+      longTermConfig: gateOn,
+    });
+    let lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.status).toBe("pending");
+    // Drop the source chunk so the fact is no longer promotable — the
+    // archival sweep skips keys that still have live candidates (same
+    // recipe as the plan-expiry test above).
+    await storage.deleteL2Chunk((await storage.listL2ChunkPaths())[0]!);
+    const r = await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      longTermConfig: gateOn,
+    });
+    expect(r.archivedCount).toBe(1);
+    lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.archived).toBe(true);
+    expect(lt.facts[0]!.status).toBe("expired");
+  });
+
+  it("G10: undefined modality treated as fact (pre-v18 shape)", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [fact("f1", "user is named Joe", 0.9, NOW, "user:name")],
+      NOW,
+    );
+    await consolidateLongTerm({
+      storage,
+      agentId: "j-rorqual",
+      now: NOW,
+      longTermConfig: gateOn,
+    });
+    const lt = await storage.readLongTerm();
+    expect(lt.facts[0]!.status).toBe("pending");
+  });
+});

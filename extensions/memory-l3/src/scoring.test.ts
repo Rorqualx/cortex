@@ -1631,3 +1631,45 @@ describe("QW-3 (TEMPS): scoreFact + composite fusion", () => {
     expect(signals.temporalAlignment).toBe(0);
   });
 });
+
+describe("factualPendingGate down-weight (2fce2122)", () => {
+  it("S1: pending status x0.5 in combined reliability", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const base = {
+      id: "f1",
+      text: "user prefers tabs over spaces",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+    };
+    const queryTokens = tokenize("tabs spaces");
+    const signals = scoreFact({
+      queryTokens,
+      fact: { ...base, status: "pending" as const },
+      now: Date.now(),
+      config,
+    });
+    expect(signals.reliability).toBe(0.5);
+  });
+
+  it("S2: absent/confirmed status: composite unchanged", () => {
+    const config = DEFAULT_SCORING_CONFIG;
+    const base = {
+      id: "f1",
+      text: "user prefers tabs over spaces",
+      importance: 0.5,
+      createdAt: Date.now(),
+      dedupKey: "k:1",
+    };
+    const queryTokens = tokenize("tabs spaces");
+    const absent = scoreFact({ queryTokens, fact: { ...base }, now: Date.now(), config });
+    const confirmed = scoreFact({
+      queryTokens,
+      fact: { ...base, status: "confirmed" as const },
+      now: Date.now(),
+      config,
+    });
+    expect(confirmed.reliability).toBe(absent.reliability);
+    expect(absent.reliability).toBe(1);
+  });
+});

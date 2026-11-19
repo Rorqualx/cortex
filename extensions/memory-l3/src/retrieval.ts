@@ -1816,6 +1816,9 @@ function longTermAsL2Fact(lt: LongTermFact): L2Fact {
     createdAt: lt.lastConfirmedAt,
     dedupKey: lt.dedupKey,
     polarity: lt.polarity,
+    // Speculation gate: carry lifecycle status through to retrieval-side
+    // scoring (absent on facts predating the gate — stays absent here).
+    ...(lt.status ? { status: lt.status } : {}),
   };
 }
 

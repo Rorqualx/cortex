@@ -531,6 +531,13 @@ export function buildCorpusStats(factTexts: ReadonlyArray<string>): CorpusStats 
   };
 }
 
+/**
+ * Speculation gate (factualPendingGate, 2026-11-19): a pending fact's
+ * reliability is halved — mirrors `tentative` in certaintyToReliability.
+ * Absent or confirmed status leaves the composite unchanged (no migration).
+ */
+export const PENDING_RELIABILITY = 0.5;
+
 export function scoreFact(params: {
   queryTokens: Set<string>;
   /** Raw query text for entity-overlap scoring. Required when useEntityScoring is true. */
@@ -601,7 +608,10 @@ export function scoreFact(params: {
   // low-trust source cannot hide behind a high-certainty extraction.
   const certaintyReliability = params.reliability ?? certaintyToReliability(params.fact.certainty);
   const trustReliability = sourceTrustToReliability(params.sourceTrust);
-  const combinedReliability = Math.min(certaintyReliability, trustReliability);
+  // Speculation gate: pending facts are down-weighted but never hidden —
+  // a third conservative min term (absent/confirmed ⇒ 1 ⇒ no change).
+  const statusReliability = params.fact.status === "pending" ? PENDING_RELIABILITY : 1;
+  const combinedReliability = Math.min(certaintyReliability, trustReliability, statusReliability);
   const signals: Signals = {
     lexical,
     bm25,

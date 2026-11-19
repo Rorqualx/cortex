@@ -12,7 +12,13 @@ import { adjustImportance } from "./entities.js";
 import type { LlmCaller } from "./llm.js";
 import { DEFAULT_FSRS_PARAMS, nearDuplicateSimilarity, tokenize } from "./scoring.js";
 import type { Storage } from "./storage.js";
-import type { LongTermFact, LongTermFrontmatter, RetrievalSignal } from "./types.js";
+import type {
+  FactModality,
+  FactStatus,
+  LongTermFact,
+  LongTermFrontmatter,
+  RetrievalSignal,
+} from "./types.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DEBUG_ENABLED = process.env.OPENCLAW_MEMORY_L3_DEBUG === "1";
@@ -77,6 +83,12 @@ export type LongTermConfig = {
    * Default 30 days (half the regular archival window).
    */
   pendingPlanExpiryMs: number;
+  /**
+   * Speculation gate for factual claims: single-source facts land "pending"
+   * until a second distinct chunk corroborates. Default false = legacy
+   * behavior (facts land confirmed instantly).
+   */
+  factualPendingGate?: boolean;
 };
 
 export const DEFAULT_LONG_TERM_CONFIG: LongTermConfig = {
@@ -87,6 +99,7 @@ export const DEFAULT_LONG_TERM_CONFIG: LongTermConfig = {
   retrievalStabilityEnabled: false,
   retrievalStabilityMaxRecall: 10,
   pendingPlanExpiryMs: 30 * MS_PER_DAY,
+  factualPendingGate: false,
 };
 
 export type ConsolidationOutput = {
@@ -193,14 +206,15 @@ export async function consolidateLongTerm(params: {
 
   for (const candidate of promotable) {
     const prior = merged.get(candidate.dedupKey);
+    const gate = longTermConfig.factualPendingGate === true;
     if (!prior) {
-      const fact = promote(candidate);
+      const fact = promote(candidate, gate);
       pendingFacts.set(candidate.dedupKey, fact);
       factsNeedingEmbedding.push({ dedupKey: candidate.dedupKey, text: candidate.text });
       promotedCount += 1;
       continue;
     }
-    const reaffirmed = reaffirm(prior, candidate);
+    const reaffirmed = reaffirm(prior, candidate, gate);
     if (prior.archived && !reaffirmed.archived) {
       unarchivedCount += 1;
     } else {
@@ -492,7 +506,25 @@ export async function consolidateLongTerm(params: {
   };
 }
 
-function promote(candidate: ConsolidationCandidate): LongTermFact {
+/**
+ * Speculation gate predicate (factualPendingGate, 2026-11-19): with the
+ * gate OFF, returns exactly today's modality rule (plan → pending, else
+ * confirmed). With the gate ON, single-source factual claims land pending
+ * until a second distinct chunk corroborates (>= 2 sourceChunkIds);
+ * correction stays confirmed; plan lane is untouched.
+ */
+function gateStatus(
+  modality: FactModality | undefined,
+  distinctChunkCount: number,
+  flag: boolean,
+): FactStatus {
+  if (!flag) return modality === "plan" ? "pending" : "confirmed";
+  if (modality === "plan") return "pending";
+  if (modality === "correction") return "confirmed";
+  return distinctChunkCount >= 2 ? "confirmed" : "pending";
+}
+
+function promote(candidate: ConsolidationCandidate, gate: boolean): LongTermFact {
   return {
     id: `lt-${randomUUID().slice(0, 8)}`,
     text: candidate.text,
@@ -506,14 +538,19 @@ function promote(candidate: ConsolidationCandidate): LongTermFact {
     archivedAt: null,
     supersededBy: null,
     // Speculation gate: plans land pending — an intention is not yet memory.
-    status: candidate.modality === "plan" ? "pending" : "confirmed",
+    // With factualPendingGate, single-source facts land pending too.
+    status: gateStatus(candidate.modality, candidate.sourceChunkIds.length, gate),
   };
 }
 
 /** Revision trail cap: keeps frontmatter bounded for facts whose text churns. */
 const FACT_HISTORY_LIMIT = 5;
 
-function reaffirm(prior: LongTermFact, candidate: ConsolidationCandidate): LongTermFact {
+function reaffirm(
+  prior: LongTermFact,
+  candidate: ConsolidationCandidate,
+  gate: boolean,
+): LongTermFact {
   const merged = mergeChunkIds(prior.sourceChunkIds, candidate.sourceChunkIds);
   // EvoMem-style revision trail: when reaffirmation rewrites the canonical
   // text, keep the superseded text (mirrors LongTermTypedFact.history) so
@@ -544,7 +581,16 @@ function reaffirm(prior: LongTermFact, candidate: ConsolidationCandidate): LongT
     // Speculation gate: a confirming (non-plan) occurrence flips a pending
     // plan to confirmed; a still-plan occurrence keeps it pending (and can
     // re-pend a fact whose latest evidence regressed to plan-only).
-    status: candidate.modality === "plan" ? "pending" : "confirmed",
+    // With the gate OFF this is byte-identical to the legacy rule. With the
+    // gate ON, a confirmed ancestor is sticky (corroboration cannot demote
+    // a settled fact back to pending).
+    status: !gate
+      ? candidate.modality === "plan"
+        ? "pending"
+        : "confirmed"
+      : prior.status === "confirmed"
+        ? "confirmed"
+        : gateStatus(candidate.modality, merged.length, gate),
   };
 }
 

@@ -2567,3 +2567,100 @@ describe("retrieveTopK evidence-conditioned drill (QW-C)", () => {
     expect(result.drillDepth).toBeUndefined();
   });
 });
+
+describe("factualPendingGate passthrough (2fce2122)", () => {
+  it("R1: longTermAsL2Fact carries status when present", async () => {
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "alpha topic", importance: 0.6, createdAt: NOW, dedupKey: "k:alpha" },
+    ]);
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "lt-pending",
+            text: "user prefers tabs over spaces",
+            dedupKey: "user_pref:tabs",
+            importance: 0.8,
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 1,
+            sourceChunkIds: ["chunk-a"],
+            archived: false,
+            archivedAt: null,
+            status: "pending" as const,
+          },
+          {
+            id: "lt-legacy",
+            text: "user prefers vim over emacs",
+            dedupKey: "user_pref:vim",
+            importance: 0.8,
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 1,
+            sourceChunkIds: ["chunk-b"],
+            archived: false,
+            archivedAt: null,
+          },
+        ],
+      },
+      "",
+    );
+
+    const { facts } = await retrieveTopK({
+      query: "tabs vs spaces",
+      storage,
+      topK: 10,
+      now: NOW,
+      retrievalConfig: {
+        ...DEFAULT_RETRIEVAL_CONFIG,
+        useEpochFirst: false,
+      },
+    });
+    const pending = facts.find((r) => r.fact.id === "lt-pending");
+    const legacy = facts.find((r) => r.fact.id === "lt-legacy");
+    expect(pending?.fact.status).toBe("pending");
+    expect(legacy?.fact.status).toBeUndefined();
+  });
+
+  it("R2: pending fact admitted at load (never filtered)", async () => {
+    await writeChunk("chunk-000000-x", [
+      { id: "f1", text: "alpha topic", importance: 0.6, createdAt: NOW, dedupKey: "k:alpha" },
+    ]);
+    await storage.writeLongTerm(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "lt-pending",
+            text: "user prefers tabs over spaces",
+            dedupKey: "user_pref:tabs",
+            importance: 0.8,
+            firstSeenAt: NOW - 10 * 86400000,
+            lastConfirmedAt: NOW,
+            recallCount: 1,
+            sourceChunkIds: ["chunk-a"],
+            archived: false,
+            archivedAt: null,
+            status: "pending" as const,
+          },
+        ],
+      },
+      "",
+    );
+
+    const { facts } = await retrieveTopK({
+      query: "tabs vs spaces",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+    const hit = facts.find((r) => r.fact.id === "lt-pending");
+    expect(hit).toBeDefined();
+    expect(hit?.fact.status).toBe("pending");
+  });
+});
