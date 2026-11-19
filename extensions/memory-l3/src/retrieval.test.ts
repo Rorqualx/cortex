@@ -12,6 +12,7 @@ import {
   getIntentScoringPreset,
   heuristicReformulate,
   intentAdmitsSuperseded,
+  DEFAULT_RETRIEVAL_CONFIG,
   retrieveTopK,
   type RetrievedFact,
   SUPERSEDED_REMISSION_PENALTY,
@@ -1830,6 +1831,73 @@ describe("REFACT-style adaptive fact compression", () => {
     const proseFact = facts.find((f) => f.fact.dedupKey === "default-1");
     expect(proseFact).toBeDefined();
     expect(proseFact!.fact.text).toBe(longText);
+  });
+});
+
+describe("DEFAULT_RETRIEVAL_CONFIG evidence budget (QW1 2026-11-19)", () => {
+  it("defaults to submodular selection with a 2K token budget", () => {
+    expect(DEFAULT_RETRIEVAL_CONFIG.useSubmodularSelect).toBe(true);
+    expect(DEFAULT_RETRIEVAL_CONFIG.submodularTokenBudget).toBe(2000);
+  });
+
+  it("default config retrieves facts via submodular packing", async () => {
+    await writeChunk("chunk-budget", [
+      {
+        id: "b1",
+        text: "rust tokio runtime config",
+        importance: 0.8,
+        createdAt: NOW,
+        dedupKey: "k:b1",
+      },
+      {
+        id: "b2",
+        text: "rust tracing subscriber setup",
+        importance: 0.7,
+        createdAt: NOW,
+        dedupKey: "k:b2",
+      },
+    ]);
+    const { facts } = await retrieveTopK({
+      query: "rust tokio runtime",
+      storage,
+      topK: 5,
+      now: NOW,
+      // No retrievalConfig -> DEFAULT_RETRIEVAL_CONFIG (submodular armed).
+    });
+    expect(facts.length).toBeGreaterThan(0);
+    expect(facts[0]!.fact.text).toContain("tokio");
+  });
+
+  it("env OPENCLAW_MEMORY_L3_SUBMODULAR=0 falls back to legacy top-K slice", async () => {
+    process.env.OPENCLAW_MEMORY_L3_SUBMODULAR = "0";
+    try {
+      await writeChunk("chunk-kill", [
+        {
+          id: "k1",
+          text: "rust tokio runtime config",
+          importance: 0.8,
+          createdAt: NOW,
+          dedupKey: "k:k1",
+        },
+        {
+          id: "k2",
+          text: "rust tracing subscriber setup",
+          importance: 0.7,
+          createdAt: NOW,
+          dedupKey: "k:k2",
+        },
+      ]);
+      const { facts } = await retrieveTopK({
+        query: "rust tokio runtime",
+        storage,
+        topK: 5,
+        now: NOW,
+      });
+      expect(facts.length).toBeGreaterThan(0);
+      expect(facts[0]!.fact.text).toContain("tokio");
+    } finally {
+      delete process.env.OPENCLAW_MEMORY_L3_SUBMODULAR;
+    }
   });
 });
 

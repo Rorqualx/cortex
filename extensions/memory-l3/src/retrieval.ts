@@ -238,7 +238,8 @@ export type RetrievalConfig = {
   /**
    * When true, replace greedy top-K sort+slice with a budgeted submodular
    * selector that optimises for relevance + diversity + query-token coverage.
-   * Default false (gated for ablation evaluation).
+   * Default true (2026-11-19, MIRIX-2.0 evidence-budget: read cost stops
+   * growing with store size). Ablate with env OPENCLAW_MEMORY_L3_SUBMODULAR=0.
    */
   useSubmodularSelect: boolean;
   /** Weight of diversity term in submodular objective (0–1). Default 0.3. */
@@ -247,7 +248,7 @@ export type RetrievalConfig = {
   submodularCoverageWeight: number;
   /**
    * Token budget for submodular packing. When null, falls back to raw topK
-   * count (legacy budget mode). Default null.
+   * count (legacy budget mode). Default 2000 (evidence-budget cap per query).
    */
   submodularTokenBudget: number | null;
   /**
@@ -337,10 +338,10 @@ export type RetrievalConfig = {
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   useEpochFirst: true,
   epochExpandTopN: 3,
-  useSubmodularSelect: false,
+  useSubmodularSelect: true,
   submodularDiversityWeight: 0.3,
   submodularCoverageWeight: 0.3,
-  submodularTokenBudget: null,
+  submodularTokenBudget: 2000,
   mode: "blended",
   enableMemoryCritique: false,
   reformulationPasses: 0,
@@ -1293,8 +1294,12 @@ export async function retrieveTopK(params: {
     });
   }
 
+  // Env kill-switch for ablation (same convention as QUERY_REFORMULATION /
+  // EVIDENCE_DRILL arms, but inverted: default ON, env "0" disables).
+  const submodularArmed =
+    retConfig.useSubmodularSelect && process.env.OPENCLAW_MEMORY_L3_SUBMODULAR !== "0";
   let result: RetrievedFact[];
-  if (retConfig.useSubmodularSelect) {
+  if (submodularArmed) {
     result = submodularSelect(
       scored,
       queryTokens,
