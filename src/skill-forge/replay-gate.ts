@@ -102,6 +102,13 @@ export type LlmReplayGateResult =
       stepScores?: StepScore[];
       /** Final-reply-vs-actions consistency check result from the step-rubric lane. */
       consistency?: "PASS" | "FAIL";
+      /**
+       * ARCH-1: per-capture reliability weights behind the merged successScore,
+       * copied from the candidate when the detector emitted them (flag ON).
+       */
+      trajectoryWeights?: Array<{ captureDir: string; reliability: number }>;
+      /** ARCH-1: single-capture reliability weight, when the detector emitted it (flag ON). */
+      trajectoryReliability?: number;
     }
   | { status: "skipped"; reason: string }
   | { status: "failed"; reason: string };
@@ -281,6 +288,32 @@ export function parseStepRubricJudgeResponse(raw: string): ParsedStepRubricRespo
   };
 }
 
+/**
+ * ARCH-1: copy the detector's optional trajectory-reliability fields from a
+ * candidate, so judge results expose the weights behind the merged score.
+ * Absent fields stay absent (type-only pass-through otherwise).
+ */
+function candidateTrajectoryFields(candidate: Candidate): {
+  trajectoryWeights?: Array<{ captureDir: string; reliability: number }>;
+  trajectoryReliability?: number;
+} {
+  const source = candidate as {
+    trajectoryWeights?: Array<{ captureDir: string; reliability: number }>;
+    trajectoryReliability?: number;
+  };
+  const fields: {
+    trajectoryWeights?: Array<{ captureDir: string; reliability: number }>;
+    trajectoryReliability?: number;
+  } = {};
+  if (source.trajectoryWeights) {
+    fields.trajectoryWeights = source.trajectoryWeights;
+  }
+  if (typeof source.trajectoryReliability === "number") {
+    fields.trajectoryReliability = source.trajectoryReliability;
+  }
+  return fields;
+}
+
 export async function judgeSkillCandidateWithLlm(params: {
   candidate: Candidate;
   draftedBody: string;
@@ -299,6 +332,7 @@ export async function judgeSkillCandidateWithLlm(params: {
   if (!parsed.ok) {
     return { status: "failed", reason: parsed.reason };
   }
+  const trajectory = candidateTrajectoryFields(params.candidate);
   return {
     status: "ran",
     verdict: parsed.verdict,
@@ -306,6 +340,10 @@ export async function judgeSkillCandidateWithLlm(params: {
     provider: completion.provider,
     modelId: completion.modelId,
     ...(parsed.overfittingRisk ? { overfittingRisk: parsed.overfittingRisk } : {}),
+    ...(trajectory.trajectoryWeights ? { trajectoryWeights: trajectory.trajectoryWeights } : {}),
+    ...(trajectory.trajectoryReliability !== undefined
+      ? { trajectoryReliability: trajectory.trajectoryReliability }
+      : {}),
   };
 }
 
@@ -334,6 +372,7 @@ export async function judgeSkillCandidateWithStepRubric(params: {
     return { status: "failed", reason: parsed.reason };
   }
   const enforced = applyStepRubricDowngrade(parsed);
+  const trajectory = candidateTrajectoryFields(params.candidate);
   return {
     status: "ran",
     verdict: enforced.verdict,
@@ -344,6 +383,10 @@ export async function judgeSkillCandidateWithStepRubric(params: {
     stepScores: parsed.stepScores,
     consistency: parsed.consistency,
     ...(parsed.overfittingRisk ? { overfittingRisk: parsed.overfittingRisk } : {}),
+    ...(trajectory.trajectoryWeights ? { trajectoryWeights: trajectory.trajectoryWeights } : {}),
+    ...(trajectory.trajectoryReliability !== undefined
+      ? { trajectoryReliability: trajectory.trajectoryReliability }
+      : {}),
   };
 }
 

@@ -3,6 +3,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import type { TrajectoryEvent } from "../trajectory/types.js";
 import { resolveSkillForgeCandidatesDir } from "./paths.js";
+import { computeTrajectoryReliability, weightedMean } from "./trajectory-reliability.js";
 
 export const REPETITION_THRESHOLD = 3;
 export const ERROR_RECOVERY_LOOKAHEAD = 10;
@@ -29,6 +30,11 @@ export type RepetitionCandidate = {
   occurrences: number;
   successScore: number;
   /**
+   * ARCH-1: per-capture reliability weights behind this cluster merge,
+   * emitted only when the trajectory-reliability flag is ON.
+   */
+  trajectoryWeights?: Array<{ captureDir: string; reliability: number }>;
+  /**
    * Short excerpts of observed failures in related captures (failed cluster
    * members, tool errors, frustrated user messages). Optional DATA for the
    * distiller's contrastive Do/Don't pass; absent when every observed run was
@@ -46,6 +52,8 @@ export type ErrorRecoveryCandidate = {
   recoveringTool: string;
   rationale: string;
   successScore: number;
+  /** ARCH-1: capture reliability weight, emitted only when the flag is ON. */
+  trajectoryReliability?: number;
   /** Observed failure excerpts from the source capture (see extractFailureExcerpts). */
   failureExcerpts?: string[];
 };
@@ -59,6 +67,8 @@ export type ExplicitCandidate = {
   promptExcerpt: string;
   rationale: string;
   successScore: number;
+  /** ARCH-1: capture reliability weight, emitted only when the flag is ON. */
+  trajectoryReliability?: number;
   /** Observed failure excerpts from the source capture (see extractFailureExcerpts). */
   failureExcerpts?: string[];
 };
@@ -331,6 +341,14 @@ export type DetectorInput = {
   captureDirs: string[];
 };
 
+/**
+ * ARCH-1 flag (house pattern, module-scope const): when "1", the tool-shape
+ * cluster merge replaces the binary allClean ? 1 : 0.5 collapse with the
+ * reliability-weighted mean Σ(rᵢ·sᵢ)/Σrᵢ and emits `trajectoryWeights`.
+ * Default OFF ⇒ candidate output is byte-identical to the pre-ARCH-1 detector.
+ */
+const TRAJECTORY_RELIABILITY_FLAG = process.env.OPENCLAW_SKILL_FORGE_TRAJECTORY_RELIABILITY === "1";
+
 export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
   type PerCapture = {
     captureDir: string;
@@ -338,6 +356,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
     toolSequence: string[];
     toolShapeHash: string;
     successScore: number;
+    reliability: number;
     failureExcerpts: string[];
   };
   const perCapture: PerCapture[] = [];
@@ -352,12 +371,18 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
     const toolShapeHash = hashToolSequence(toolSequence);
     const successScore = computeSuccessScore(events);
     const failureExcerpts = extractFailureExcerpts(events);
+    // ARCH-1: outcome-certain base (1.0) — the outcome tier stays in the
+    // value dimension (successScore above); only trajectory pathology
+    // (doom-loop / steering / overrun — probe Q1–Q3, absent across the
+    // real corpus today) degrades the evidence weight.
+    const reliability = computeTrajectoryReliability({ successScore: 1 });
     perCapture.push({
       captureDir,
       events,
       toolSequence,
       toolShapeHash,
       successScore,
+      reliability,
       failureExcerpts,
     });
 
@@ -373,6 +398,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         recoveringTool: motif.recoveringTool,
         rationale: `Recovered from ${motif.failingTool} failure by calling ${motif.recoveringTool}`,
         successScore,
+        ...(TRAJECTORY_RELIABILITY_FLAG ? { trajectoryReliability: reliability } : {}),
         ...(failureExcerpts.length > 0 ? { failureExcerpts } : {}),
       });
     }
@@ -387,6 +413,7 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         promptExcerpt: match.promptExcerpt,
         rationale: `User explicitly asked: "${match.matchedPhrase}"`,
         successScore,
+        ...(TRAJECTORY_RELIABILITY_FLAG ? { trajectoryReliability: reliability } : {}),
         ...(failureExcerpts.length > 0 ? { failureExcerpts } : {}),
       });
     }
@@ -446,6 +473,26 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
             .flatMap((member) => member.failureExcerpts),
         ),
       ].slice(0, MAX_FAILURE_EXCERPTS_PER_CANDIDATE);
+      // ARCH-1: flag ON ⇒ reliability-weighted mean of member outcome scores
+      // replaces the binary collapse. Lane-invariant on the real {0.5, 1}
+      // domain: all-clean ⇒ exactly 1, all-tainted ⇒ exactly 0.5, mixed ⇒
+      // [0.5, 1) — no promoter flips. Flag OFF ⇒ byte-identical to before.
+      const trajectoryWeights = TRAJECTORY_RELIABILITY_FLAG
+        ? members.map((member) => ({
+            captureDir: member.captureDir,
+            reliability: member.reliability,
+          }))
+        : undefined;
+      const mergedSuccessScore = TRAJECTORY_RELIABILITY_FLAG
+        ? weightedMean(
+            members.map((member) => ({
+              value: member.successScore,
+              weight: member.reliability,
+            })),
+          )
+        : allClean
+          ? 1
+          : 0.5;
       candidates.push({
         lane: "tool-shape",
         candidateId: hash,
@@ -453,7 +500,8 @@ export async function runDetector(input: DetectorInput): Promise<Candidate[]> {
         toolSequence: first.toolSequence,
         captureDirs: members.map((member) => member.captureDir),
         occurrences: members.length,
-        successScore: allClean ? 1 : 0.5,
+        successScore: mergedSuccessScore,
+        ...(trajectoryWeights ? { trajectoryWeights } : {}),
         ...(failureExcerpts.length > 0 ? { failureExcerpts } : {}),
       });
     }
