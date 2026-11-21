@@ -1,0 +1,25 @@
+{
+  "_comment": "PROBE THROWAWAY (2026-11-20 spike). Real variant curation happens at implement stage. Baseline-first law: index 0 must be a baseline. Synthetic short texts stand in for the full v20 consts so the loader/dryRun lane can be validated without LLM spend.",
+  "variants": [
+    {
+      "id": "v20-baseline",
+      "target": "extract",
+      "systemPrompt": "BASELINE-STANDIN You are a memory extraction assistant. (probe stand-in for EXTRACT_SYSTEM_PROMPT v20)"
+    },
+    {
+      "id": "v21-temporal-first",
+      "target": "extract",
+      "systemPrompt": "BASELINE-STANDIN + TEMPORAL/ASPECT rules hoisted to top of rule list. (probe stand-in)"
+    },
+    {
+      "id": "v20-native-baseline",
+      "target": "native",
+      "systemPrompt": "NATIVE-BASELINE-STANDIN You are a memory extraction assistant. (probe stand-in for EXTRACT_SYSTEM_PROMPT_NATIVE v20)"
+    },
+    {
+      "id": "v21-native-tighter",
+      "target": "native",
+      "systemPrompt": "NATIVE-BASELINE-STANDIN + tighter compact-notation instruction. (probe stand-in)"
+    }
+  ]
+}
