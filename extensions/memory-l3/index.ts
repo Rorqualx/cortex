@@ -2,6 +2,7 @@ import { registerContextEngine } from "openclaw/plugin-sdk/memory-core-engine-ru
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { createHierarchicalL3Engine } from "./src/engine.js";
 import { createForgettingCandidatesTool, createMemoryInsightsTool } from "./src/insights.js";
+import { createMemoryGrepTool } from "./src/memory-grep.js";
 
 export default definePluginEntry({
   id: "memory-l3",
@@ -16,5 +17,9 @@ export default definePluginEntry({
     // SAFE_READ_ONLY_TOOLS; without this the tool never exists and both entries
     // are dead.
     api.registerTool((ctx) => createForgettingCandidatesTool(ctx));
+    // memory_grep is the GrepMem-style lossless recall fallback (read-only,
+    // bounded regex over l1_archive + memory/*.md) — also allowlisted in
+    // SAFE_READ_ONLY_TOOLS alongside its siblings.
+    api.registerTool((ctx) => createMemoryGrepTool(ctx));
   },
 });

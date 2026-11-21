@@ -75,6 +75,7 @@ const SAFE_READ_ONLY_TOOLS = [
   "memory_get",
   "memory_insights",
   "memory_forgetting",
+  "memory_grep",
   "memory_reports",
 ] as const;
 
