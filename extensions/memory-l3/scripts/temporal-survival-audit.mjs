@@ -8,6 +8,14 @@
 // structured temporal_aspect field (PROMPT_VERSION=20) makes the distinction
 // addressable; this metric verifies the wording actually survives.
 //
+// QW1 extension (2026-11-21, Sleeping Agent attribution slice): the unweighted
+// survival number is dominated by ambient/system timestamps (log lines, tool
+// payloads) that summarization SHOULD drop. This slice splits the pre-side by
+// speaker role — anchors originating in user/assistant content vs ambient
+// (system/tool/other) content — so the conversational survival rate is
+// readable on its own. Answers "did the preservation clause ever work?"
+// separately from "is the headline number just ambient-noise dilution?".
+//
 // Read-only diagnostic: measures what fraction of explicit temporal anchors
 // (ISO dates/timestamps, slash dates, clock times, month-day references) in
 // PRE-compaction messages (`l1_archive/<chunkId>.jsonl`) survive into the
@@ -190,6 +198,11 @@ let chunksWithAspects = 0;
 const chunkRows = [];
 let unpaired = 0;
 let chunksWithAnchors = 0;
+// QW1: speaker-role attribution. Anchors counted per origin side; an anchor
+// appearing in both sides counts once in each side's total (documented — the
+// sides measure independent exposure, not a partition of the combined set).
+const ROLE_SIDES = ["conversational", "ambient"];
+const roleStats = new Map(ROLE_SIDES.map((s) => [s, { survived: 0, total: 0 }]));
 
 for (const file of archiveFiles) {
   const chunkId = file.replace(/\.jsonl$/, "");
@@ -199,18 +212,36 @@ for (const file of archiveFiles) {
     continue;
   }
   let pre = "";
+  let preConversational = "";
+  let preAmbient = "";
   try {
     const raw = await readFile(path.join(archiveDir, file), "utf8");
-    pre = raw
+    const texts = raw
       .split(/\r?\n/)
       .filter((l) => l.trim().length > 0)
       .map((l) => {
         try {
-          return messageText(JSON.parse(l));
+          const record = JSON.parse(l);
+          return {
+            role: typeof record?.role === "string" ? record.role : "",
+            text: messageText(record),
+          };
         } catch {
-          return "";
+          return { role: "", text: "" };
         }
-      })
+      });
+    pre = texts.map((t) => t.text).join("\n");
+    // user/assistant = conversational; everything else (system, tool, unknown)
+    // = ambient. Roles lowercased defensively; prefixed roles (e.g.
+    // "tool_result") classify as ambient.
+    const isConversational = (r) => r === "user" || r === "assistant";
+    preConversational = texts
+      .filter((t) => isConversational(t.role.toLowerCase()))
+      .map((t) => t.text)
+      .join("\n");
+    preAmbient = texts
+      .filter((t) => !isConversational(t.role.toLowerCase()))
+      .map((t) => t.text)
       .join("\n");
   } catch {
     unpaired += 1;
@@ -218,6 +249,8 @@ for (const file of archiveFiles) {
   }
 
   const anchors = extractAnchors(pre);
+  const anchorsConversational = extractAnchors(preConversational);
+  const anchorsAmbient = extractAnchors(preAmbient);
   const post = postHaystack(row.frontmatter, row.body);
   let chunkTotal = 0;
   let chunkSurvived = 0;
@@ -266,6 +299,22 @@ for (const file of archiveFiles) {
   if (chunkAspectTotal > 0) {
     chunksWithAspects += 1;
   }
+  // QW1: speaker-role attribution — same substring-survival check, split by
+  // which side of the conversation exposed the anchor pre-compaction.
+  for (const [side, sideAnchors] of [
+    ["conversational", anchorsConversational],
+    ["ambient", anchorsAmbient],
+  ]) {
+    const rs = roleStats.get(side);
+    for (const set of sideAnchors.values()) {
+      for (const anchor of set) {
+        rs.total += 1;
+        if (post.includes(anchor)) {
+          rs.survived += 1;
+        }
+      }
+    }
+  }
 }
 db.close();
 
@@ -297,6 +346,19 @@ console.log("");
 console.log(
   `OVERALL: ${survivedAll}/${totalAll} distinct temporal anchors survived = ${pct(survivedAll, totalAll) ?? "n/a"}`,
 );
+
+// QW1 speaker-role attribution table: conversational (user/assistant) vs
+// ambient (system/tool) anchor survival. Reads like: "of anchors the human
+// conversation actually exposed, how many survived compaction?" — the
+// number the preservation clause is accountable for.
+console.log("");
+console.log("pre-anchor origin   survived/total  survival");
+for (const side of ROLE_SIDES) {
+  const rs = roleStats.get(side);
+  console.log(
+    `${side.padEnd(19)} ${String(rs.survived).padStart(4)}/${String(rs.total).padEnd(6)}    ${pct(rs.survived, rs.total) ?? "n/a"}`,
+  );
+}
 
 // QW-A aspectual-flattening table (matched-pair verb-form survival).
 let aspectTotalAll = 0;
