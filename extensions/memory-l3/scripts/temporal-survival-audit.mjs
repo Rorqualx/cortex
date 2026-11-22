@@ -71,6 +71,28 @@ const ASPECT_CATEGORIES = [
   { name: "expired", re: EXPIRED_RE, capture: 0 },
 ];
 
+// Loss-taxonomy regexes (QW3, 2026-11-22 — Sleeping-Agent loss taxonomy,
+// arXiv:2608.11775): matched-pair survival of the three detail classes most
+// frequently lost under compression. All patterns run in linear time (no
+// nested quantifiers) and mirror src/compression/loss-taxonomy.ts.
+// Quantities: number + unit (compact "250ms" or spaced "4 TB"), pair = the
+// whole matched string. Trailing lookahead instead of \b — \b never holds
+// after "%". Mirrors src/compression/loss-taxonomy.ts.
+const QUANTITY_RE =
+  /\b\d+(?:\.\d+)?\s*(?:tb|gb|mb|kb|b|km|mi|m|cm|ft|in|kg|g|ms|s|h|hr|hrs|min|days?|weeks?|months?|years?|usd|eur|gbp|dollars|cents|%|x)(?![a-z0-9])/gi;
+// Negations: pair = the negation marker itself.
+const NEGATION_RE =
+  /\b(?:not|never|no longer|cannot|can't|don't|doesn't|didn't|won't|wouldn't|isn't|aren't|wasn't|weren't|hasn't|haven't|hadn't)\b/gi;
+// Entity–attribute bindings: proper-noun possessor + attribute, pair = the
+// whole phrase ("Huey's disk") — losing the binding reattaches the value.
+const ENTITY_BINDING_RE = /\b[A-Z][A-Za-z0-9]*'s\s+[A-Za-z][a-zA-Z0-9-]+/g;
+
+const LOSS_CATEGORIES = [
+  { name: "quantity", re: QUANTITY_RE, capture: 0 },
+  { name: "negation", re: NEGATION_RE, capture: 0 },
+  { name: "entity-binding", re: ENTITY_BINDING_RE, capture: 0 },
+];
+
 /** Extract { category → Set<anchor> } from text. Later categories run on text
  * masked of earlier matches so e.g. the clock time inside an ISO timestamp is
  * not double-counted. */
@@ -98,6 +120,22 @@ function extractAspectForms(text) {
     const forms = new Set();
     for (const m of text.matchAll(re)) {
       const form = (capture === 1 ? m[1] : m[0]).trim().toLowerCase();
+      if (form) forms.add(form);
+    }
+    byCategory.set(name, forms);
+  }
+  return byCategory;
+}
+
+/** Extract { category → Set<form> } loss-taxonomy forms (QW3): quantities,
+ * negation markers, and entity–attribute bindings. Whole-match pairs,
+ * lowercased so case drift alone never counts as loss. Exported for tests. */
+export function extractLossForms(text) {
+  const byCategory = new Map();
+  for (const { name, re } of LOSS_CATEGORIES) {
+    const forms = new Set();
+    for (const m of text.matchAll(re)) {
+      const form = m[0].trim().toLowerCase();
       if (form) forms.add(form);
     }
     byCategory.set(name, forms);
@@ -228,6 +266,9 @@ async function main() {
   const aspectStats = new Map(
     ASPECT_CATEGORIES.map(({ name }) => [name, { survived: 0, total: 0 }]),
   );
+  // QW3: loss-taxonomy stats, same shape (matched-pair survival per class).
+  const lossStats = new Map(LOSS_CATEGORIES.map(({ name }) => [name, { survived: 0, total: 0 }]));
+  let chunksWithLossForms = 0;
   // QW1: within-chunk order fidelity of surviving anchor pairs.
   let orderPairs = 0;
   let orderInversions = 0;
@@ -322,6 +363,25 @@ async function main() {
     if (chunkAspectTotal > 0) {
       chunksWithAspects += 1;
     }
+    // QW3: loss-taxonomy matched-pair survival — quantities (with unit),
+    // negation markers, and entity–attribute bindings. Survival = the exact
+    // form appears in the distilled output; a rounded quantity, dropped
+    // negation, or reattached binding counts as LOST.
+    const lossForms = extractLossForms(pre);
+    let chunkLossTotal = 0;
+    for (const [category, forms] of lossForms) {
+      const s = lossStats.get(category);
+      for (const form of forms) {
+        s.total += 1;
+        chunkLossTotal += 1;
+        if (postLower.includes(form)) {
+          s.survived += 1;
+        }
+      }
+    }
+    if (chunkLossTotal > 0) {
+      chunksWithLossForms += 1;
+    }
   }
   db.close();
 
@@ -386,6 +446,31 @@ async function main() {
   }
   console.log(
     `ASPECT OVERALL: ${aspectSurvivedAll}/${aspectTotalAll} aspectual forms survived = ${pct(aspectSurvivedAll, aspectTotalAll) ?? "n/a"} — lost forms = aspectual flattening (progressive/habitual wording rewritten under compaction)`,
+  );
+
+  // QW3 loss-taxonomy table (matched-pair survival of bindings/quantities/
+  // negations, 2026-11-22).
+  let lossTotalAll = 0;
+  let lossSurvivedAll = 0;
+  const perLoss = [];
+  for (const { name } of LOSS_CATEGORIES) {
+    const s = lossStats.get(name);
+    lossTotalAll += s.total;
+    lossSurvivedAll += s.survived;
+    perLoss.push({ category: name, survived: s.survived, total: s.total });
+  }
+  console.log("");
+  console.log(
+    `loss-taxonomy survival (matched-pair; chunks with loss forms: ${chunksWithLossForms}):`,
+  );
+  console.log("class          survived/total  survival");
+  for (const c of perLoss) {
+    console.log(
+      `${c.category.padEnd(14)} ${String(c.survived).padStart(4)}/${String(c.total).padEnd(6)}    ${pct(c.survived, c.total) ?? "n/a"}`,
+    );
+  }
+  console.log(
+    `LOSS OVERALL: ${lossSurvivedAll}/${lossTotalAll} loss-taxonomy forms survived = ${pct(lossSurvivedAll, lossTotalAll) ?? "n/a"} — lost forms = corrupted memory (reattached bindings, rounded quantities, inverted negations)`,
   );
 
   if (overall !== null) {

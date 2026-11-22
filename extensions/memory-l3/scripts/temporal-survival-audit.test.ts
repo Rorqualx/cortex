@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countOrderInversions } from "./temporal-survival-audit.mjs";
+import { countOrderInversions, extractLossForms } from "./temporal-survival-audit.mjs";
 
 // QW1 order-fidelity pass (2026-11-22, arXiv:2609.36457): pure unit tests
 // over the within-chunk anchor-pair comparison — preserved order, inversions,
@@ -49,5 +49,28 @@ describe("countOrderInversions", () => {
       pairs: 0,
       inversions: 0,
     });
+  });
+});
+
+describe("extractLossForms", () => {
+  it("extracts quantities, negations, and entity bindings", () => {
+    const forms = extractLossForms(
+      "Huey's disk is 4 TB but is not backed up; waited 250ms and never timed out",
+    );
+    expect(forms.get("quantity")).toEqual(new Set(["4 tb", "250ms"]));
+    expect(forms.get("negation")).toEqual(new Set(["not", "never"]));
+    expect(forms.get("entity-binding")).toEqual(new Set(["huey's disk"]));
+  });
+
+  it("lowercases forms so case drift alone never counts as loss", () => {
+    const forms = extractLossForms("Maria's Laptop");
+    expect(forms.get("entity-binding")).toEqual(new Set(["maria's laptop"]));
+  });
+
+  it("returns empty sets for text with no loss forms", () => {
+    const forms = extractLossForms("plain affirmative sentence");
+    expect(forms.get("quantity")).toEqual(new Set());
+    expect(forms.get("negation")).toEqual(new Set());
+    expect(forms.get("entity-binding")).toEqual(new Set());
   });
 });

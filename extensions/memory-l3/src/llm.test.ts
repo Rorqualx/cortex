@@ -366,9 +366,11 @@ describe("extractFacts", () => {
     expect(result.typedFacts[0]!.slot).toBe("user:phone");
     expect(caller).toHaveBeenCalledOnce();
     const call = caller.mock.calls[0]![0];
-    expect(call.systemPrompt).toContain("PROMPT_VERSION=20");
+    expect(call.systemPrompt).toContain("PROMPT_VERSION=21");
     // QW1 (2026-08-16): extraction prompts must demand verbatim temporal expressions.
     expect(call.systemPrompt).toContain("TEMPORAL");
+    // QW3 (2026-11-22): loss-taxonomy classes must survive extraction.
+    expect(call.systemPrompt).toContain("LOSS-TAXONOMY");
     // QW-1 (2026-10-07): AgentMemGate speculation gate — fact|plan|correction modality.
     expect(call.systemPrompt).toContain("MODALITY");
     // QW2 (2026-10-05): LAPSE verb-aspect preservation guard.
