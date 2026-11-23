@@ -198,6 +198,7 @@ describe("runForgePipeline — step-rubric routing for borderline candidates", (
 
     const outcomeCalls: string[] = [];
     const rubricCalls: string[] = [];
+    const evidenceCalls: string[] = [];
     const result = await runForgePipeline({
       env: env(),
       useLlmReplay: true,
@@ -224,14 +225,43 @@ describe("runForgePipeline — step-rubric routing for borderline candidates", (
           consistency: "PASS",
         };
       },
+      judgeEvidenceSupport: async ({ candidate }) => {
+        evidenceCalls.push(candidate.lane);
+        return {
+          status: "ran",
+          verdict: "SAFE_NEUTRAL",
+          rationale: "evidence-support judge",
+          provider: "test",
+          modelId: "test-model",
+          judgeMode: "evidence-support",
+          evidenceSupport: "UNSUPPORTED",
+        };
+      },
     });
 
     expect(result.drafted).toHaveLength(2);
     // Only the tainted error-recovery candidate paid the step-rubric cost.
     expect(rubricCalls).toEqual(["error-recovery"]);
     expect(outcomeCalls).toEqual(["explicit"]);
+    // QW-C: the advisory evidence-support lane runs for EVERY judged target
+    // (candidate order is not guaranteed — assert membership, not order).
+    expect(evidenceCalls).toHaveLength(2);
+    expect(evidenceCalls).toEqual(expect.arrayContaining(["error-recovery", "explicit"]));
     const byMode = new Map(result.llmReplay?.judged.map((j) => [j.judgeMode, j.gate]));
     expect(byMode.get("step-rubric")).toMatchObject({ status: "ran", verdict: "SAFE_NEUTRAL" });
     expect(byMode.get("outcome")).toMatchObject({ status: "ran", verdict: "SAFE_USEFUL" });
+    // QW-C advisory contract: the UNSUPPORTED rating is recorded on every
+    // judged entry but never gates — the outcome lane's SAFE_USEFUL verdict
+    // stands untouched despite the ungrounded-evidence rating.
+    for (const entry of result.llmReplay?.judged ?? []) {
+      expect(entry.evidenceSupportGate).toMatchObject({
+        status: "ran",
+        judgeMode: "evidence-support",
+        evidenceSupport: "UNSUPPORTED",
+      });
+    }
+    expect(result.llmReplay?.judged.find((j) => j.judgeMode === "outcome")?.gate).toMatchObject({
+      verdict: "SAFE_USEFUL",
+    });
   });
 });
