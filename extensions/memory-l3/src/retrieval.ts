@@ -1058,6 +1058,9 @@ export async function retrieveTopK(params: {
       ...(item.fact.validity ? { validity: item.fact.validity } : {}),
       nowMs: now,
       ...(degree > 0 ? { centrality: Math.min(1, degree / centralityMaxDegree) } : {}),
+      // QW-A (2026-11-23): consult the stored provenance quote before
+      // full-strength demotion — quote-backed facts earn a partial shield.
+      ...(item.fact.provenanceQuote ? { provenanceQuote: item.fact.provenanceQuote } : {}),
     });
     // QW1 (2026-10-08, RD-Forget): re-admitted superseded facts are
     // rank-penalized, not banned — the current value outranks the stale one

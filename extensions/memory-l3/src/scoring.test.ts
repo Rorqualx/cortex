@@ -13,9 +13,11 @@ import {
   parseQueryTimeRange,
   rankByScore,
   recencyScore,
+  resetStaleDemotionStats,
   rrfFuse,
   scoreFact,
   sourceTrustToReliability,
+  STALE_DEMOTION_STATS,
   staleDemotionMultiplier,
   temporalAlignmentScore,
   tokenize,
@@ -980,6 +982,89 @@ describe("staleDemotionMultiplier", () => {
         config: DEFAULT_SCORING_CONFIG,
       }),
     ).toBe(0.5);
+  });
+
+  it("QW-A (2026-11-23): stored provenance quote shields stale demotion", () => {
+    // recallCount=0, age past threshold, factor=0.5, shield=0.25:
+    // 0.5 + (1-0.5)*0.25 = 0.625 — quote-backed facts keep more score.
+    const result = staleDemotionMultiplier({
+      recallCount: 0,
+      ageMs: 21 * DAY,
+      config: DEFAULT_SCORING_CONFIG,
+      provenanceQuote: "User said the pi-hole lives at 192.168.50.128",
+    });
+    expect(result).toBeCloseTo(0.625, 6);
+    // Shield stacks conservatively on top of centrality attenuation:
+    // base 0.5 → CATD (0.5×1.0) → 0.75 → shield → 0.75 + 0.25*0.25 = 0.8125
+    const centrality = staleDemotionMultiplier({
+      recallCount: 0,
+      ageMs: 21 * DAY,
+      config: DEFAULT_SCORING_CONFIG,
+      centrality: 1.0,
+      provenanceQuote: "quote",
+    });
+    expect(centrality).toBeCloseTo(0.8125, 6);
+  });
+
+  it("QW-A: staleProvenanceShield=0 disables the shield (pure RMM behavior)", () => {
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 21 * DAY,
+        config: { ...DEFAULT_SCORING_CONFIG, staleProvenanceShield: 0 },
+        provenanceQuote: "quote",
+      }),
+    ).toBe(0.5);
+  });
+
+  it("QW-A: LAPSE window-closed facts are never shielded by a quote", () => {
+    const now = 1_800_000_000_000;
+    expect(
+      staleDemotionMultiplier({
+        recallCount: 0,
+        ageMs: 999 * DAY,
+        config: DEFAULT_SCORING_CONFIG,
+        validity: { kind: "time-bounded" as const, validThrough: now - DAY },
+        nowMs: now,
+        provenanceQuote: "quote",
+      }),
+    ).toBe(0.5);
+  });
+
+  it("QW-A: debug counters track demotion-eligibility vs provenance presence", () => {
+    resetStaleDemotionStats();
+    // Eligible without a quote — counted, not shielded.
+    staleDemotionMultiplier({ recallCount: 0, ageMs: 21 * DAY, config: DEFAULT_SCORING_CONFIG });
+    expect(STALE_DEMOTION_STATS.eligible).toBe(1);
+    expect(STALE_DEMOTION_STATS.withProvenance).toBe(0);
+    expect(STALE_DEMOTION_STATS.shielded).toBe(0);
+    // Eligible with a quote — counted and shielded.
+    staleDemotionMultiplier({
+      recallCount: 0,
+      ageMs: 21 * DAY,
+      config: DEFAULT_SCORING_CONFIG,
+      provenanceQuote: "quote",
+    });
+    expect(STALE_DEMOTION_STATS.eligible).toBe(2);
+    expect(STALE_DEMOTION_STATS.withProvenance).toBe(1);
+    expect(STALE_DEMOTION_STATS.shielded).toBe(1);
+    // Non-eligible paths (young fact, stable recall, expired validity)
+    // never touch the counters.
+    staleDemotionMultiplier({
+      recallCount: 0,
+      ageMs: 1 * DAY,
+      config: DEFAULT_SCORING_CONFIG,
+      provenanceQuote: "q",
+    });
+    staleDemotionMultiplier({
+      recallCount: 3,
+      ageMs: 999 * DAY,
+      config: DEFAULT_SCORING_CONFIG,
+      provenanceQuote: "q",
+    });
+    expect(STALE_DEMOTION_STATS.eligible).toBe(2);
+    resetStaleDemotionStats();
+    expect(STALE_DEMOTION_STATS).toEqual({ eligible: 0, withProvenance: 0, shielded: 0 });
   });
 
   it("QW-2 (LAPSE): window-closed time-bounded facts demote regardless of recall/centrality", () => {
