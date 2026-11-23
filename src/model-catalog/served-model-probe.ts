@@ -11,7 +11,68 @@
 import { isRecord } from "../utils.js";
 
 /** One probe result: the requested id and the model id the provider actually served. */
-export type ServedModelObservation = { requested: string; served: string };
+export type ServedModelObservation = {
+  requested: string;
+  served: string;
+  /** QW5 (2026-11-22, report-only): tolerant identity classification of the
+   * served id against the requested id — "match" (same identity, cosmetic
+   * drift aside) or "silent-swap" (a different model answered the name). */
+  identityClass?: Exclude<ServedIdentityClass, "unknown">;
+};
+
+/**
+ * Served-identity classification (QW5, 2026-11-22 — DeepSeek V4-flash→
+ * V4.1-Flash-1017 class of silent swaps). Report-only first: consumers flag,
+ * auto-repair comes later once tolerances prove out in the wild.
+ *
+ * - "match" — served id IS the pinned identity (tolerant of case, separators,
+ *   provider prefixes, @variants, and date/alias decorations);
+ * - "silent-swap" — the name resolved but a DIFFERENT model identity answered
+ *   (deepseek-v4-flash → deepseek-v4.1-flash-1017);
+ * - "unknown" — no served id observed.
+ */
+export type ServedIdentityClass = "match" | "silent-swap" | "unknown";
+
+/**
+ * Tolerant identity normalization for provider↔pin comparison: drop provider
+ * prefixes ("zai/glm-5.2"), @variants ("glm-5.2@free"), date/alias decorations
+ * ("-2024-08-06", "-0731"-style MMDD snapshots, "-latest"), then fold case +
+ * separators so cosmetic drift never flags. Version digits are deliberately
+ * NOT folded — "v4" vs "v4.1" stays a difference.
+ */
+export function normalizeServedIdentity(id: string): string {
+  let s = id.trim().toLowerCase();
+  const slash = s.lastIndexOf("/");
+  if (slash >= 0) {
+    s = s.slice(slash + 1);
+  }
+  s = s.split("@")[0] ?? s;
+  // Up to two passes: decorations can stack ("-2024-08-06-latest").
+  for (let i = 0; i < 2; i++) {
+    s = s
+      .replace(/-(?:latest|preview|stable)$/, "")
+      .replace(/-\d{4}-\d{2}-\d{2}$/, "")
+      .replace(/-\d{8}$/, "")
+      .replace(/-(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])$/, "");
+  }
+  return s.replace(/[\s_.-]+/g, "");
+}
+
+/** Classify a served id against the pinned/requested id (see ServedIdentityClass). */
+export function classifyServedIdentity(params: {
+  pinned: string;
+  served: string | null | undefined;
+}): ServedIdentityClass {
+  if (!params.served) {
+    return "unknown";
+  }
+  const a = normalizeServedIdentity(params.pinned);
+  const b = normalizeServedIdentity(params.served);
+  if (!a || !b) {
+    return "unknown";
+  }
+  return a === b ? "match" : "silent-swap";
+}
 
 const DEFAULT_PROBE_TIMEOUT_MS = 15_000;
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -153,7 +214,16 @@ export async function probeServedModels(params: {
       ...(params.fetchFn ? { fetchFn: params.fetchFn } : {}),
     });
     if (served) {
-      observations.push({ requested, served });
+      observations.push({
+        requested,
+        served,
+        // QW5 report-only: tolerant classification beside the raw pair —
+        // cosmetic drift stays "match", a true identity change flags.
+        identityClass:
+          classifyServedIdentity({ pinned: requested, served }) === "match"
+            ? "match"
+            : "silent-swap",
+      });
     }
   }
   return observations;

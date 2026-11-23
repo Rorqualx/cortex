@@ -5,13 +5,17 @@
  *   1. Error signals  — does it contain error/exception keywords?
  *   2. Uniqueness     — how many unique values does it carry vs. the dataset?
  *   3. Position       — start and end items are more informative than the middle.
- *   4. Temporal anchor — does it carry dates/times? Temporal grounding drives
- *      later retrieval, so anchored items are preferentially retained when
- *      sampling (deterministic counterpart of the memory-l3 temporal rule).
+ *   4. Temporal / loss-taxonomy anchor — does it carry dates/times, or the
+ *      loss-taxonomy classes (entity–attribute bindings, quantities,
+ *      negations)? Temporal grounding and loss-prone details drive later
+ *      retrieval, so anchored items are preferentially retained when sampling
+ *      (deterministic counterpart of the memory-l3 temporal + loss-taxonomy
+ *      rules).
  *
  * Scores are normalised to [0, 1].
  */
 
+import { hasLossTaxonomyAnchor } from "./loss-taxonomy.js";
 import { hasTemporalAnchor } from "./temporal.js";
 
 const ERROR_KEYWORDS = [
@@ -60,11 +64,14 @@ export function scoreItem(
   });
   const errorScore = hasError ? 1 : 0;
 
-  // 2b. Temporal anchor (0 or 1) — items carrying explicit dates/times are
-  //     preferentially retained when sampling (temporal grounding survives
-  //     compression and drives later retrieval).
-  const hasTemporal = values.some((v) => typeof v === "string" && hasTemporalAnchor(v));
-  const temporalScore = hasTemporal ? 1 : 0;
+  // 2b. Temporal / loss-taxonomy anchor (0 or 1) — items carrying explicit
+  //     dates/times (temporal grounding) or loss-taxonomy details (bindings,
+  //     quantities, negations) are preferentially retained when sampling:
+  //     both classes are hard to reconstruct later and drive later retrieval.
+  const hasAnchor = values.some(
+    (v) => typeof v === "string" && (hasTemporalAnchor(v) || hasLossTaxonomyAnchor(v)),
+  );
+  const anchorScore = hasAnchor ? 1 : 0;
 
   // 2. Uniqueness (0–1) — fraction of this item's fields that have low-unique-ratio
   //    Items with high-entropy fields are more informative to keep.
@@ -85,8 +92,8 @@ export function scoreItem(
   const posScore = positionalScore(index, total);
 
   // Weighted combination: errors dominate, then uniqueness, then position,
-  // with a small temporal-anchor preference.
-  return 0.45 * errorScore + 0.3 * uniquenessScore + 0.15 * posScore + 0.1 * temporalScore;
+  // with a small temporal/loss-taxonomy anchor preference.
+  return 0.45 * errorScore + 0.3 * uniquenessScore + 0.15 * posScore + 0.1 * anchorScore;
 }
 
 /**

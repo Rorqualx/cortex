@@ -1,6 +1,7 @@
 // Covers the served-model probe: captures response.model, dedups, best-effort.
 import { describe, expect, it, vi } from "vitest";
 import {
+  classifyServedIdentity,
   countReasoningTokens,
   probeNoThinkCompliance,
   probeServedModel,
@@ -93,8 +94,8 @@ describe("probeServedModels", () => {
       fetchFn: fetchFn as unknown as typeof fetch,
     });
     expect(obs).toEqual([
-      { requested: "glm-5.1", served: "glm-5.2" },
-      { requested: "glm-4.6", served: "glm-4.6" },
+      { requested: "glm-5.1", served: "glm-5.2", identityClass: "silent-swap" },
+      { requested: "glm-4.6", served: "glm-4.6", identityClass: "match" },
     ]);
     expect(fetchFn).toHaveBeenCalledTimes(2);
   });
@@ -110,7 +111,47 @@ describe("probeServedModels", () => {
       modelIds: ["bad", "good"],
       fetchFn: fetchFn as unknown as typeof fetch,
     });
-    expect(obs).toEqual([{ requested: "good", served: "good-v2" }]);
+    expect(obs).toEqual([{ requested: "good", served: "good-v2", identityClass: "silent-swap" }]);
+  });
+});
+
+describe("classifyServedIdentity (QW5 2026-11-22, report-only)", () => {
+  it("matches cosmetic drift: case, separators, provider prefix, @variant", () => {
+    expect(classifyServedIdentity({ pinned: "GLM-5.1", served: "glm-5.1" })).toBe("match");
+    expect(classifyServedIdentity({ pinned: "glm-5.1", served: "glm_5_1" })).toBe("match");
+    expect(classifyServedIdentity({ pinned: "glm-5.1", served: "zai/glm-5.1" })).toBe("match");
+    expect(classifyServedIdentity({ pinned: "glm-5.1", served: "glm-5.1@free" })).toBe("match");
+  });
+
+  it("matches date/alias decorations on the same identity", () => {
+    expect(classifyServedIdentity({ pinned: "gpt-4o", served: "gpt-4o-2024-08-06" })).toBe("match");
+    expect(classifyServedIdentity({ pinned: "gpt-4o", served: "gpt-4o-20240806" })).toBe("match");
+    // MMDD snapshot suffix (DeepSeek-style "-0731" = July 31): same model.
+    expect(
+      classifyServedIdentity({ pinned: "deepseek-v4-flash", served: "DeepSeek-V4-Flash-0731" }),
+    ).toBe("match");
+    expect(classifyServedIdentity({ pinned: "glm-5.2", served: "glm-5.2-latest" })).toBe("match");
+  });
+
+  it("flags the live silent-swap case: version drift under a stable alias", () => {
+    // DeepSeek V4-flash → V4.1-Flash-1017 (arXiv:2611.19752 finding #11).
+    expect(
+      classifyServedIdentity({ pinned: "deepseek-v4-flash", served: "deepseek-v4.1-flash-1017" }),
+    ).toBe("silent-swap");
+    expect(classifyServedIdentity({ pinned: "glm-5.1", served: "glm-5.2" })).toBe("silent-swap");
+  });
+
+  it("does not strip non-date 4-digit suffixes (real ids stay distinct)", () => {
+    // "1234" is not a valid MMDD (day 34) → kept → different identity.
+    expect(classifyServedIdentity({ pinned: "model-a", served: "model-a-1234" })).toBe(
+      "silent-swap",
+    );
+  });
+
+  it("returns unknown when no served id is available", () => {
+    expect(classifyServedIdentity({ pinned: "glm-5.1", served: null })).toBe("unknown");
+    expect(classifyServedIdentity({ pinned: "glm-5.1", served: undefined })).toBe("unknown");
+    expect(classifyServedIdentity({ pinned: "", served: "glm-5.1" })).toBe("unknown");
   });
 });
 

@@ -14,10 +14,14 @@
  *  - Forward references — messages referenced by later messages score higher
  *  - Temporal anchors — messages carrying explicit dates/times score higher
  *    (temporal grounding is hard to reconstruct and drives later retrieval)
+ *  - Loss-taxonomy anchors — messages carrying entity–attribute bindings,
+ *    quantities with units, or negations score higher (their loss corrupts
+ *    memory: reattached values, rounded numbers, inverted meaning)
  *
  * Rough token estimate: 1 token ≈ 4 chars (English text average).
  */
 import type { AgentMessage } from "../agents/runtime/index.js";
+import { hasLossTaxonomyAnchor } from "./loss-taxonomy.js";
 import { hasTemporalAnchor } from "./temporal.js";
 import type { CompressionConfig } from "./types.js";
 
@@ -169,6 +173,13 @@ function scoreMessageForRetention(
   // reconstruct later — prefer keeping them at the margin (F8 residual).
   if (hasTemporalAnchor(text)) {
     score += 10;
+  }
+
+  // Loss-taxonomy bonus (2026-11-22, arXiv:2608.11775): bindings/quantities/
+  // negations are hard to reconstruct and losing them corrupts memory — keep
+  // them at the margin (smaller than temporal: these classes are denser).
+  if (hasLossTaxonomyAnchor(text)) {
+    score += 5;
   }
 
   return score;
