@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { FactCertainty, FactModality, FactValidity, TemporalAspect } from "./types.js";
 
@@ -467,13 +468,83 @@ export type ExtractedActionItem = {
   sourceSpan: string;
 };
 
+// ── ARCH-3 Phase 1 (2026-11-23): extract-prompt env-file override seam ──────
+// Offline prompt-optimization seam (design doc memory/reports/lab/2026-11-18_35f86110.md):
+// ZENBRAIN_EXTRACT_PROMPT_OVERRIDE=<path> + ZENBRAIN_EXTRACT_PROMPT_TARGET=extract|native
+// lets optimize-extract-prompt.ts evaluate prompt variants through the REAL
+// extractFacts/extractFactsNative lanes without touching the constants. Absent
+// env ⇒ byte-identical const, zero fs. Unreadable/empty file or bad target ⇒
+// throws (fail-loud: a misconfigured harness must never silently run baseline).
+// PROMPT_VERSION stays 20 — adopting a winner as v21 is a separate operator
+// action from the harness recommendation JSON, never automated.
+
+type ExtractPromptOverride = { path: string; target: "extract" | "native"; text: string };
+let extractPromptOverrideCache: ExtractPromptOverride | undefined;
+
+function readExtractPromptOverride(overridePath: string, target: "extract" | "native"): string {
+  let text: string;
+  try {
+    text = readFileSync(overridePath, "utf8");
+  } catch (error) {
+    throw new Error(
+      `ZENBRAIN_EXTRACT_PROMPT_OVERRIDE unreadable (${overridePath}): ${
+        error instanceof Error ? error.message : "unknown"
+      }`,
+    );
+  }
+  if (!text.trim()) {
+    throw new Error(`ZENBRAIN_EXTRACT_PROMPT_OVERRIDE file is empty (${overridePath})`);
+  }
+  return text;
+}
+
+/**
+ * Resolve the extraction system prompt for a lane, honoring the env-file
+ * override seam. Default (env absent): the versioned constant, byte-identical.
+ */
+export function resolveExtractSystemPrompt(target: "extract" | "native"): string {
+  const fallback = target === "extract" ? EXTRACT_SYSTEM_PROMPT : EXTRACT_SYSTEM_PROMPT_NATIVE;
+  const overridePath = process.env.ZENBRAIN_EXTRACT_PROMPT_OVERRIDE?.trim();
+  if (!overridePath) {
+    return fallback;
+  }
+  const envTarget = (process.env.ZENBRAIN_EXTRACT_PROMPT_TARGET ?? "extract").trim();
+  if (envTarget !== "extract" && envTarget !== "native") {
+    throw new Error(
+      `ZENBRAIN_EXTRACT_PROMPT_TARGET must be "extract" or "native", got: "${envTarget}"`,
+    );
+  }
+  if (envTarget !== target) {
+    // Surgical arming: only the targeted lane uses the override; the other
+    // lane keeps its constant.
+    return fallback;
+  }
+  if (
+    !extractPromptOverrideCache ||
+    extractPromptOverrideCache.path !== overridePath ||
+    extractPromptOverrideCache.target !== envTarget
+  ) {
+    extractPromptOverrideCache = {
+      path: overridePath,
+      target: envTarget,
+      text: readExtractPromptOverride(overridePath, envTarget),
+    };
+  }
+  return extractPromptOverrideCache.text;
+}
+
+/** Test hook: clear the module-level override cache (env-mutating tests). */
+export function __resetExtractPromptOverrideForTests(): void {
+  extractPromptOverrideCache = undefined;
+}
+
 export async function extractFacts(params: {
   messages: ReadonlyArray<AgentMessage>;
   caller: LlmCaller;
 }): Promise<ExtractResult> {
   const userPrompt = buildExtractUserPrompt(params.messages);
   const raw = await params.caller({
-    systemPrompt: EXTRACT_SYSTEM_PROMPT,
+    systemPrompt: resolveExtractSystemPrompt("extract"),
     userPrompt,
     thinking: false,
   });
@@ -486,7 +557,7 @@ export async function extractFactsNative(params: {
 }): Promise<ExtractResult> {
   const userPrompt = buildExtractUserPrompt(params.messages);
   const raw = await params.caller({
-    systemPrompt: EXTRACT_SYSTEM_PROMPT_NATIVE,
+    systemPrompt: resolveExtractSystemPrompt("native"),
     userPrompt,
     thinking: false,
   });
