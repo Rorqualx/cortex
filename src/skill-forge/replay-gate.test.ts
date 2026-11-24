@@ -148,6 +148,15 @@ describe("SKILL_FORGE_LLM_JUDGE_SYSTEM", () => {
     expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/PRINCIPLE ARTICULATION/u);
     expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/transferable principle/u);
   });
+
+  // QW7 (2026-11-24, Finding 7 sub-item): guard the SFT failure mode —
+  // distilled skills that quietly shorten/truncate the reasoning chain the
+  // source trajectory needed. Prompt-rubric item 7 + step-rubric rule.
+  it("includes reasoning-chain regression criterion", () => {
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/REASONING-CHAIN REGRESSION/u);
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/reasoning-chain regression/u);
+    expect(SKILL_FORGE_LLM_JUDGE_SYSTEM).toMatch(/cap the verdict at SAFE_NEUTRAL/u);
+  });
 });
 
 // Process-oriented parse fixtures: rationales that cite process-quality reasons
@@ -213,6 +222,12 @@ describe("SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM", () => {
     expect(SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM).toMatch(/STEPS:/u);
     expect(SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM).toMatch(/CONSISTENCY:/u);
     expect(SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM).toMatch(/forbids SAFE_USEFUL/u);
+  });
+
+  it("includes the reasoning-chain truncation rule (QW7)", () => {
+    expect(SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM).toMatch(/REASONING-CHAIN:/u);
+    expect(SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM).toMatch(/score a step PARTIAL/u);
+    expect(SKILL_FORGE_STEP_RUBRIC_JUDGE_SYSTEM).toMatch(/regression, not compression/u);
   });
 });
 
