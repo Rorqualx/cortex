@@ -18,6 +18,7 @@ import { resolveSkillForgeSessionsDir } from "./paths.js";
 import { promoteStagedSkill, type PromotionResult } from "./promoter.js";
 import {
   isBorderlineCandidate,
+  judgeSkillCandidateWithEvidenceSupport,
   judgeSkillCandidateWithLlm,
   judgeSkillCandidateWithStepRubric,
   type LlmReplayGateResult,
@@ -50,6 +51,12 @@ export type PipelineRunInput = {
   judgeSkill?: typeof judgeSkillCandidateWithLlm;
   /** Injectable step-rubric judge for borderline candidates (tests); defaults to the runtime judge. */
   judgeStepRubric?: typeof judgeSkillCandidateWithStepRubric;
+  /**
+   * Injectable evidence-support judge (tests); defaults to the runtime judge.
+   * QW-C (2026-11-23): ADVISORY ONLY — the rating is recorded on the judged
+   * entry but never gates promotion (mirrors the security-judge rollout).
+   */
+  judgeEvidenceSupport?: typeof judgeSkillCandidateWithEvidenceSupport;
 };
 
 /** Embedding clustering lane outcome. `disabled` unless `useEmbedding` was set. */
@@ -66,6 +73,12 @@ export type LlmReplayLaneResult = {
     gate: LlmReplayGateResult;
     /** Which judge mode ran: borderline candidates get the step-rubric lane (QW4). */
     judgeMode: "outcome" | "step-rubric";
+    /**
+     * QW-C (2026-11-23): advisory evidence-support lane result — does the
+     * cited session trace actually support the claimed skill win? Recorded
+     * for audit; never gates promotion (enforcement is a later, deliberate step).
+     */
+    evidenceSupportGate?: LlmReplayGateResult;
   }>;
 };
 
@@ -263,6 +276,8 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
   if (input.useLlmReplay) {
     const outcomeJudge = input.judgeSkill ?? judgeSkillCandidateWithLlm;
     const stepRubricJudge = input.judgeStepRubric ?? judgeSkillCandidateWithStepRubric;
+    const evidenceSupportJudge =
+      input.judgeEvidenceSupport ?? judgeSkillCandidateWithEvidenceSupport;
     const judged: LlmReplayLaneResult["judged"] = [];
     for (const target of judgeTargets) {
       const draftedBody = await readDraftedBody(target.draft);
@@ -278,10 +293,22 @@ export async function runForgePipeline(input: PipelineRunInput = {}): Promise<Pi
             draftedBody,
             ...(input.agentId ? { agentId: input.agentId } : {}),
           });
+      // QW-C (2026-11-23): evidence-support advisory lane — does the cited
+      // session trace actually support the claimed skill win? AstronautBench
+      // shows success scores diverge from evidence-groundedness. ADVISORY
+      // ONLY, mirroring the security-judge rollout pattern: the rating is
+      // recorded for audit and enforcement is a deliberate later step after
+      // one advisory cycle; a skipped/failed lane never breaks promotion.
+      const evidenceSupportGate = await evidenceSupportJudge({
+        candidate: target.candidate,
+        draftedBody,
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+      });
       judged.push({
         name: target.draft.name,
         gate,
         judgeMode: borderline ? "step-rubric" : "outcome",
+        evidenceSupportGate,
       });
     }
     llmReplay = { status: "ran", judged };

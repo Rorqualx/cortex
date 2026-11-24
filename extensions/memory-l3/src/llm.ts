@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { FactCertainty, FactModality, FactValidity, TemporalAspect } from "./types.js";
 
@@ -228,6 +229,12 @@ export function createAnthropicCaller(config: AnthropicCallerConfig): LlmCaller 
   };
 }
 
+// PROMPT_VERSION = 21 — adds LOSS-TAXONOMY rule (Sleeping-Agent loss
+// taxonomy, arXiv:2608.11775): entity–attribute bindings, quantities/units,
+// and negations are the three detail classes most frequently lost under
+// compression — each must survive extraction verbatim. Losing a binding
+// reattaches a value to the wrong subject, losing a quantity rounds away a
+// precise value, losing a negation inverts the meaning.
 // PROMPT_VERSION = 20 — adds TEMPORAL_ASPECT structured field (QW-A, LAPSE
 // Finding 2 delta): typed facts with a verbal value now emit temporal_aspect
 // (progressive|habitual|stative|event|expired) so the aspect distinction the
@@ -285,10 +292,11 @@ Failure-pattern signals to watch for:
 - Incorrect assumptions that led to wasted work
 - Commands that failed and had to be rolled back
 
-Rules (PROMPT_VERSION=20):
+Rules (PROMPT_VERSION=21):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - PERSIST: persist only unambiguous, durable facts — statements that remain true across future sessions (identity, preferences, decisions, infrastructure, verified knowledge). Do NOT persist transient/changing state ("currently", "right now", in-progress task status, session-scoped values) or ambiguous statements (unclear referent, hedged wording, unresolved questions) as confirmed facts: skip them entirely when they are pure session context, otherwise emit with certainty "tentative" AND importance ≤0.4 so the verification bar holds them until re-observed. Erroneous persistence is worse than delayed persistence.
 - TEMPORAL: preserve dates and times verbatim; do not abbreviate or drop temporal expressions (keep "2026-08-16", "9:00 AM MT", "every Tuesday", "last week" exactly as stated) — temporal anchors drive later retrieval.
+- LOSS-TAXONOMY: preserve the three highest-loss detail classes verbatim — (1) entity–attribute BINDINGS: a value stays attached to the entity it was stated about ("Huey's disk is 4 TB", never "a disk is 4 TB" or "Huey's disk is large"); never reattach a value to a different subject; (2) QUANTITIES: numbers with units (counts, sizes, durations, versions, prices) stay exact — never round, drop the unit, or alter digits; (3) NEGATIONS: explicit "not/never/no longer/cannot" statements keep the negation in the fact text — dropping a negation inverts the meaning.
 - VALIDITY: preserve the time-bounded vs. standing distinction. Keep the temporal qualifier verbatim inside the fact text ("since 2026-06", "currently", "until March", "expires 2027-01") — never drop it or rewrite a bounded statement into an unqualified standing one. Typed facts whose value is explicitly time-bounded ("until ...", "through ...", "expires ...") must additionally emit "validity": { "kind": "time-bounded", "validThrough": "<end date as YYYY-MM-DD or YYYY-MM, or null when no explicit end date>" }; standing facts omit validity entirely.
 - APPLICABILITY: typed facts whose value only holds within a scope — a specific host, device, project, or environment — must emit "applicability": ["<scope>"] with 1-3 short scope tokens taken VERBATIM from the conversation (e.g. ["duckie"], ["work-laptop", "office"]). Facts that hold everywhere omit applicability entirely. Never invent scope tokens: each token must appear in the sourceSpan or the surrounding conversation.
 - ASPECT: preserve verb aspect exactly as stated — keep the distinction between ongoing ("is migrating"), habitual ("runs every Tuesday"), and completed ("migrated") actions; never flatten ongoing/habitual forms into completed ones.
@@ -349,10 +357,11 @@ const EXTRACT_SYSTEM_PROMPT_NATIVE = `You are a memory extraction assistant. Rea
 
 Failure-pattern signals: repeated tool errors (doom loop), irrelevant search results followed by re-query (dead-end), approaches tried then abandoned, incorrect assumptions causing wasted work, commands that failed and were rolled back.
 
-Rules (PROMPT_VERSION=20-NATIVE):
+Rules (PROMPT_VERSION=21-NATIVE):
 - IMPORTANCE: 0.0-1.0 score for retrieval ranking. User preferences/decisions/identity facts get 0.7+; one-off context 0.3-0.5; trivia 0.1-0.3.
 - PERSIST: persist only unambiguous, durable facts (true across future sessions: identity, preferences, decisions, infrastructure, verified knowledge). Transient/changing state ("currently", in-progress status, session-scoped values) and ambiguous statements (unclear referent, hedged wording, unresolved questions) must NOT be persisted as confirmed — skip when pure session context, else certainty "tentative" + importance ≤0.4 for the verification bar. Erroneous persistence is worse than delayed persistence.
 - TEMPORAL: dates and times must stay verbatim even under compression — never abbreviate or drop temporal expressions ("2026-08-16", "9:00 AM MT", "every Tuesday", "last week"); temporal anchors drive later retrieval.
+- LOSS-TAXONOMY: bindings/quantities/negations survive verbatim — entity–attribute bindings stay attached to their subject (never reattach a value); numbers + units stay exact (no rounding, no unit drop, no digit drift); negations ("not", "never", "no longer") stay in the fact text — dropping one inverts the meaning.
 - VALIDITY: keep the time-bounded vs. standing distinction — temporal qualifiers ("since 2026-06", "currently", "until March") stay verbatim in fact text; typed facts with an explicit end emit "validity": { "kind": "time-bounded", "validThrough": "YYYY-MM-DD | YYYY-MM | null" }; standing facts omit validity.
 - APPLICABILITY: typed facts true only within a scope (host/device/project/environment) emit "applicability": ["<scope>"] — 1-3 short tokens VERBATIM from the sourceSpan or conversation (e.g. ["duckie"]); universal facts omit it; never invent scope tokens.
 - ASPECT: verb aspect survives compression — ongoing ("is migrating"), habitual ("runs every Tuesday"), completed ("migrated") stay distinct; never flatten progressive/habitual into completed.
@@ -467,13 +476,83 @@ export type ExtractedActionItem = {
   sourceSpan: string;
 };
 
+// ── ARCH-3 Phase 1 (2026-11-23): extract-prompt env-file override seam ──────
+// Offline prompt-optimization seam (design doc memory/reports/lab/2026-11-18_35f86110.md):
+// ZENBRAIN_EXTRACT_PROMPT_OVERRIDE=<path> + ZENBRAIN_EXTRACT_PROMPT_TARGET=extract|native
+// lets optimize-extract-prompt.ts evaluate prompt variants through the REAL
+// extractFacts/extractFactsNative lanes without touching the constants. Absent
+// env ⇒ byte-identical const, zero fs. Unreadable/empty file or bad target ⇒
+// throws (fail-loud: a misconfigured harness must never silently run baseline).
+// PROMPT_VERSION stays 20 — adopting a winner as v21 is a separate operator
+// action from the harness recommendation JSON, never automated.
+
+type ExtractPromptOverride = { path: string; target: "extract" | "native"; text: string };
+let extractPromptOverrideCache: ExtractPromptOverride | undefined;
+
+function readExtractPromptOverride(overridePath: string, target: "extract" | "native"): string {
+  let text: string;
+  try {
+    text = readFileSync(overridePath, "utf8");
+  } catch (error) {
+    throw new Error(
+      `ZENBRAIN_EXTRACT_PROMPT_OVERRIDE unreadable (${overridePath}): ${
+        error instanceof Error ? error.message : "unknown"
+      }`,
+    );
+  }
+  if (!text.trim()) {
+    throw new Error(`ZENBRAIN_EXTRACT_PROMPT_OVERRIDE file is empty (${overridePath})`);
+  }
+  return text;
+}
+
+/**
+ * Resolve the extraction system prompt for a lane, honoring the env-file
+ * override seam. Default (env absent): the versioned constant, byte-identical.
+ */
+export function resolveExtractSystemPrompt(target: "extract" | "native"): string {
+  const fallback = target === "extract" ? EXTRACT_SYSTEM_PROMPT : EXTRACT_SYSTEM_PROMPT_NATIVE;
+  const overridePath = process.env.ZENBRAIN_EXTRACT_PROMPT_OVERRIDE?.trim();
+  if (!overridePath) {
+    return fallback;
+  }
+  const envTarget = (process.env.ZENBRAIN_EXTRACT_PROMPT_TARGET ?? "extract").trim();
+  if (envTarget !== "extract" && envTarget !== "native") {
+    throw new Error(
+      `ZENBRAIN_EXTRACT_PROMPT_TARGET must be "extract" or "native", got: "${envTarget}"`,
+    );
+  }
+  if (envTarget !== target) {
+    // Surgical arming: only the targeted lane uses the override; the other
+    // lane keeps its constant.
+    return fallback;
+  }
+  if (
+    !extractPromptOverrideCache ||
+    extractPromptOverrideCache.path !== overridePath ||
+    extractPromptOverrideCache.target !== envTarget
+  ) {
+    extractPromptOverrideCache = {
+      path: overridePath,
+      target: envTarget,
+      text: readExtractPromptOverride(overridePath, envTarget),
+    };
+  }
+  return extractPromptOverrideCache.text;
+}
+
+/** Test hook: clear the module-level override cache (env-mutating tests). */
+export function __resetExtractPromptOverrideForTests(): void {
+  extractPromptOverrideCache = undefined;
+}
+
 export async function extractFacts(params: {
   messages: ReadonlyArray<AgentMessage>;
   caller: LlmCaller;
 }): Promise<ExtractResult> {
   const userPrompt = buildExtractUserPrompt(params.messages);
   const raw = await params.caller({
-    systemPrompt: EXTRACT_SYSTEM_PROMPT,
+    systemPrompt: resolveExtractSystemPrompt("extract"),
     userPrompt,
     thinking: false,
   });
@@ -486,7 +565,7 @@ export async function extractFactsNative(params: {
 }): Promise<ExtractResult> {
   const userPrompt = buildExtractUserPrompt(params.messages);
   const raw = await params.caller({
-    systemPrompt: EXTRACT_SYSTEM_PROMPT_NATIVE,
+    systemPrompt: resolveExtractSystemPrompt("native"),
     userPrompt,
     thinking: false,
   });

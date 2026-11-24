@@ -127,6 +127,16 @@ export type ScoringConfig = {
    * load-bearing for recall purposes.
    */
   staleCentralityMaxDegree?: number;
+  /**
+   * How much a stored provenance quote attenuates the stale demotion
+   * penalty (QW-A 2026-11-23, Catastrophic Remembering — arXiv:2607.19873).
+   * Aged zero-recall facts whose verbatim evidence quote is recorded keep
+   * part of their score: the quote makes re-verification cheap, so a
+   * full-strength demotion discards latent reasoning that is expensive to
+   * reconstruct. The multiplier lerps toward 1.0 proportionally to the
+   * shield. 0 disables (pure recall/centrality behavior). Default 0.25.
+   */
+  staleProvenanceShield?: number;
   /** TEMPS (temporal-fusion ranking): weight of the temporal-alignment
    * signal — interval overlap between a time-scoped query ("what did we do in
    * March 2026", "since June", "last week") and the fact's temporal footprint
@@ -175,6 +185,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   staleZeroRecallDemotion: 0.5,
   staleCentralityAttenuation: 0.5,
   staleCentralityMaxDegree: 6,
+  staleProvenanceShield: 0.25,
   weightTemporalAlignment: 0.05,
   corpusSizeBm25Threshold: 50_000,
   corpusSizeBm25ScaleFactor: 1.5,
@@ -671,6 +682,16 @@ export function staleDemotionMultiplier(params: {
   validity?: FactValidity;
   /** Wall-clock now (ms) for the window-closed check; defaults to Date.now(). */
   nowMs?: number;
+  /**
+   * QW-A (2026-11-23, Catastrophic Remembering — arXiv:2607.19873):
+   * verbatim provenance quote backing the fact, when recorded. An aged
+   * low-recall fact with a stored quote keeps part of its score — the
+   * evidence trail makes re-verification cheap, so deleting (fully
+   * demoting) it discards recoverable latent reasoning. Attenuated by
+   * `config.staleProvenanceShield`. Window-closed (LAPSE) facts are never
+   * shielded: a stored quote cannot resurrect an expired value.
+   */
+  provenanceQuote?: string;
 }): number {
   const thresholdDays = params.config.staleZeroRecallAgeDays ?? 21;
   const factor = params.config.staleZeroRecallDemotion ?? 0.5;
@@ -701,10 +722,57 @@ export function staleDemotionMultiplier(params: {
   // of recallCount.
   const attenuation = params.config.staleCentralityAttenuation ?? 0.5;
   const centrality = Math.max(0, Math.min(1, params.centrality ?? 0));
-  if (attenuation <= 0 || centrality <= 0) {
-    return base;
+  let multiplier = base;
+  if (attenuation > 0 && centrality > 0) {
+    multiplier += (1 - multiplier) * Math.min(1, attenuation * centrality);
   }
-  return base + (1 - base) * Math.min(1, attenuation * centrality);
+
+  // QW-A (2026-11-23) provenance→demotion loop: consult the stored quote
+  // before finishing a full-strength demotion. Presence of the verbatim
+  // evidence span earns a partial reprieve — the debug counters below
+  // measure demotion-eligibility vs provenance presence so a future
+  // judge-backed "still-needed" check can target exactly the
+  // quote-present-but-zero-recall population.
+  STALE_DEMOTION_STATS.eligible += 1;
+  const shield = Math.max(0, Math.min(1, params.config.staleProvenanceShield ?? 0.25));
+  const quote = typeof params.provenanceQuote === "string" ? params.provenanceQuote.trim() : "";
+  if (quote.length > 0) {
+    STALE_DEMOTION_STATS.withProvenance += 1;
+    if (shield > 0 && multiplier < 1) {
+      const before = multiplier;
+      multiplier += (1 - multiplier) * shield;
+      if (multiplier > before) STALE_DEMOTION_STATS.shielded += 1;
+    }
+  }
+  return multiplier;
+}
+
+/**
+ * Debug counters for the stale-utility demotion path (QW-A 2026-11-23).
+ * `eligible` counts facts that reached the demotion path (aged, low
+ * recall); `withProvenance` the subset carrying a stored evidence quote;
+ * `shielded` the subset whose demotion the provenance shield attenuated.
+ * Read by audits/scripts to prove demotion-eligibility vs provenance
+ * presence before wiring a judge-backed still-needed check.
+ */
+export type StaleDemotionStats = {
+  eligible: number;
+  withProvenance: number;
+  shielded: number;
+};
+
+/** Module-level mutable debug counters — reset via resetStaleDemotionStats(). */
+export const STALE_DEMOTION_STATS: StaleDemotionStats = {
+  eligible: 0,
+  withProvenance: 0,
+  shielded: 0,
+};
+
+/** Zero the stale-demotion debug counters (test/audit hygiene). */
+export function resetStaleDemotionStats(): void {
+  STALE_DEMOTION_STATS.eligible = 0;
+  STALE_DEMOTION_STATS.withProvenance = 0;
+  STALE_DEMOTION_STATS.shielded = 0;
 }
 
 // ---------------------------------------------------------------------------

@@ -39,4 +39,6 @@ export const SKILL_FORGE_JUDGE_AUDIT_SPEC_CORE = {
 // Bump when any judge prompt changes (scorer templates, judge-audit rubric).
 // Both the scorer (H1 stamp) and judge-audit stamp this single constant;
 // the skill-forge mirror carries its own copy pinned by the sync test.
-export const JUDGE_PROMPT_REVISION = "v1";
+// v2 (2026-11-23): skill-forge surface gained the evidence-support judge
+// lane prompt (QW-C); canonical memory-l3 prompts unchanged.
+export const JUDGE_PROMPT_REVISION = "v2";

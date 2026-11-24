@@ -1,4 +1,5 @@
 import type { LlmCaller } from "./llm.js";
+import { logPromotionDecisions, type PromotionDecisionRecord } from "./promotion-decision-log.js";
 import { summarizeChunkUse } from "./retrieval-use-store.js";
 import type { Storage } from "./storage.js";
 import type { FactCertainty, FactModality, L2Fact, LongTermFact } from "./types.js";
@@ -202,9 +203,22 @@ export function passesPromotionThresholds(
   candidate: ConsolidationCandidate,
   config: ConsolidationConfig = DEFAULT_CONSOLIDATION_CONFIG,
 ): boolean {
+  return evaluatePromotionDecision(candidate, config).promoted;
+}
+
+/**
+ * Threshold verdict with a machine-readable reason (2026-11-22 quick-win,
+ * OPD-precursor, arXiv:2611.14009). Same logic as `passesPromotionThresholds`,
+ * plus the first failing (or passing) gate so the on-policy decision log can
+ * record WHY each candidate promoted or was blocked.
+ */
+export function evaluatePromotionDecision(
+  candidate: ConsolidationCandidate,
+  config: ConsolidationConfig = DEFAULT_CONSOLIDATION_CONFIG,
+): { promoted: boolean; reason: PromotionDecisionRecord["reason"] } {
   const tentative = candidate.certainty === "tentative";
   if (!tentative && candidate.importance >= config.highImportancePassthrough) {
-    return true;
+    return { promoted: true, reason: "high_importance_passthrough" };
   }
   const minRecallCount = tentative ? config.tentativeMinRecallCount : config.minRecallCount;
   const minDayspanMs = tentative ? config.tentativeMinDayspanMs : config.minDayspanMs;
@@ -212,15 +226,15 @@ export function passesPromotionThresholds(
   // most one distinct-chunk recall (see RETRIEVAL_USE_RECALL_CREDIT_CAP).
   const useCredit = Math.min(candidate.retrievalUseCount ?? 0, RETRIEVAL_USE_RECALL_CREDIT_CAP);
   if (candidate.recallCount + useCredit < minRecallCount) {
-    return false;
+    return { promoted: false, reason: "below_min_recall_count" };
   }
   if (candidate.lastConfirmedAt - candidate.firstSeenAt < minDayspanMs) {
-    return false;
+    return { promoted: false, reason: "below_min_dayspan" };
   }
   if (candidate.importance < config.minImportance) {
-    return false;
+    return { promoted: false, reason: "below_min_importance" };
   }
-  return true;
+  return { promoted: true, reason: "promoted_thresholds" };
 }
 
 /**
@@ -435,9 +449,33 @@ export async function selectPromotable(
   config: ConsolidationConfig = DEFAULT_CONSOLIDATION_CONFIG,
 ): Promise<ConsolidationCandidate[]> {
   const candidates = await aggregateCandidates(storage);
-  return joinRetrievalUseCounts(candidates, storage.root).filter((c) =>
-    passesPromotionThresholds(c, config),
-  );
+  const stamped = joinRetrievalUseCounts(candidates, storage.root);
+  // On-policy decision log (2026-11-22): record every candidate's verdict
+  // + features, not just the winners, so future analysis sees blocked
+  // candidates too. Write-only telemetry — failures must not block selection.
+  try {
+    logPromotionDecisions({
+      decisions: stamped.map((c) => {
+        const { promoted, reason } = evaluatePromotionDecision(c, config);
+        return {
+          dedupKey: c.dedupKey,
+          verdict: promoted ? ("promote" as const) : ("blocked" as const),
+          reason,
+          recallCount: c.recallCount,
+          importance: c.importance,
+          dayspanMs: c.lastConfirmedAt - c.firstSeenAt,
+          certainty: c.certainty,
+          modality: c.modality ?? "fact",
+          retrievalUseCount: c.retrievalUseCount ?? 0,
+          sourceChunkCount: c.sourceChunkIds.length,
+        };
+      }),
+      dir: storage.root,
+    });
+  } catch {
+    // Telemetry outage degrades to unlogged selection.
+  }
+  return stamped.filter((c) => evaluatePromotionDecision(c, config).promoted);
 }
 
 /**

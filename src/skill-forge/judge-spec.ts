@@ -28,4 +28,6 @@ export const SKILL_FORGE_JUDGE_AUDIT_SPEC_CORE = {
 
 // Mirror copy of the canonical JUDGE_PROMPT_REVISION — pinned equal by the
 // sync test; bump both together when any judge prompt changes.
-export const JUDGE_PROMPT_REVISION = "v1";
+// v2 (2026-11-23): QW-C added the evidence-support judge lane prompt
+// (SKILL_FORGE_EVIDENCE_SUPPORT_JUDGE_SYSTEM) to the skill-forge surface.
+export const JUDGE_PROMPT_REVISION = "v2";

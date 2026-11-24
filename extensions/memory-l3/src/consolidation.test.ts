@@ -1,17 +1,21 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   aggregateCandidates,
   type ConsolidationConfig,
   DEFAULT_CONSOLIDATION_CONFIG,
+  evaluatePromotionDecision,
   joinRetrievalUseCounts,
   passesPromotionThresholds,
   runVerificationGate,
   selectPromotable,
+  type ConsolidationCandidate,
 } from "./consolidation.js";
 import { consolidateLongTermTyped } from "./longterm-typed.js";
+import { closePromotionDecisionLogForTest } from "./promotion-decision-log.js";
 import { closeRetrievalUseStoreForTest, recordRetrievalUses } from "./retrieval-use-store.js";
 import { Storage } from "./storage.js";
 import type { L2Fact, TypedFact } from "./types.js";
@@ -29,6 +33,7 @@ beforeEach(() => {
 
 afterEach(() => {
   closeRetrievalUseStoreForTest();
+  closePromotionDecisionLogForTest();
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
@@ -422,6 +427,122 @@ describe("selectPromotable", () => {
     const result = await selectPromotable(storage);
     const keys = result.map((r) => r.dedupKey).toSorted();
     expect(keys).toEqual(["user:identity", "user_pref:tabs"]);
+  });
+
+  it("logs every candidate's verdict + features to the promotion-decisions sidecar", async () => {
+    await writeChunk(
+      "chunk-000000-a",
+      [fact("f1", "identity fact", 0.9, NOW, "user:identity")],
+      NOW,
+    );
+    await writeChunk("chunk-000001-b", [fact("f2", "trivia", 0.5, NOW, "trivia:1")], NOW);
+
+    await selectPromotable(storage);
+
+    const db = new DatabaseSync(path.join(storage.root, "promotion-decisions.sqlite"));
+    try {
+      const rows = db
+        .prepare(
+          "SELECT dedup_key, verdict, reason, recall_count, importance FROM promotion_decisions ORDER BY dedup_key",
+        )
+        .all() as Array<{
+        dedup_key: string;
+        verdict: string;
+        reason: string;
+        recall_count: number;
+        importance: number;
+      }>;
+      expect(rows).toEqual([
+        {
+          dedup_key: "trivia:1",
+          verdict: "blocked",
+          reason: "below_min_recall_count",
+          recall_count: 1,
+          importance: 0.5,
+        },
+        {
+          dedup_key: "user:identity",
+          verdict: "promote",
+          reason: "high_importance_passthrough",
+          recall_count: 1,
+          importance: 0.9,
+        },
+      ]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("evaluatePromotionDecision", () => {
+  const baseCfg: ConsolidationConfig = DEFAULT_CONSOLIDATION_CONFIG;
+
+  const candidate = (overrides: Partial<ConsolidationCandidate>): ConsolidationCandidate => ({
+    dedupKey: "k:1",
+    text: "candidate",
+    importance: 0.7,
+    recallCount: 2,
+    firstSeenAt: NOW - 5 * MS_PER_DAY,
+    lastConfirmedAt: NOW,
+    sourceChunkIds: ["chunk-a", "chunk-b"],
+    certainty: "confirmed",
+    modality: "fact",
+    ...overrides,
+  });
+
+  it("reports the high-importance shortcut with its reason", () => {
+    expect(
+      evaluatePromotionDecision(candidate({ importance: 0.9, recallCount: 1 }), baseCfg),
+    ).toEqual({ promoted: true, reason: "high_importance_passthrough" });
+  });
+
+  it("does not grant the shortcut to tentative facts", () => {
+    const decision = evaluatePromotionDecision(
+      candidate({ importance: 0.9, recallCount: 1, certainty: "tentative" }),
+      baseCfg,
+    );
+    expect(decision.promoted).toBe(false);
+    expect(decision.reason).toBe("below_min_recall_count");
+  });
+
+  it("names the first failing gate for blocked candidates", () => {
+    expect(evaluatePromotionDecision(candidate({ recallCount: 1 }), baseCfg)).toEqual({
+      promoted: false,
+      reason: "below_min_recall_count",
+    });
+    expect(
+      evaluatePromotionDecision(
+        candidate({ firstSeenAt: NOW - MS_PER_DAY, recallCount: 3 }),
+        baseCfg,
+      ),
+    ).toEqual({ promoted: false, reason: "below_min_dayspan" });
+    expect(evaluatePromotionDecision(candidate({ importance: 0.4 }), baseCfg)).toEqual({
+      promoted: false,
+      reason: "below_min_importance",
+    });
+  });
+
+  it("reports promoted_thresholds when all bars clear without the shortcut", () => {
+    expect(evaluatePromotionDecision(candidate({}), baseCfg)).toEqual({
+      promoted: true,
+      reason: "promoted_thresholds",
+    });
+  });
+
+  it("agrees with passesPromotionThresholds on every verdict", () => {
+    const variants = [
+      candidate({}),
+      candidate({ importance: 0.9, recallCount: 1 }),
+      candidate({ recallCount: 1 }),
+      candidate({ importance: 0.4 }),
+      candidate({ firstSeenAt: NOW - MS_PER_DAY, recallCount: 3 }),
+      candidate({ certainty: "tentative", recallCount: 2 }),
+    ];
+    for (const v of variants) {
+      expect(evaluatePromotionDecision(v, baseCfg).promoted).toBe(
+        passesPromotionThresholds(v, baseCfg),
+      );
+    }
   });
 });
 

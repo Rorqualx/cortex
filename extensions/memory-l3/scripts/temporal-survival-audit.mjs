@@ -8,6 +8,14 @@
 // structured temporal_aspect field (PROMPT_VERSION=20) makes the distinction
 // addressable; this metric verifies the wording actually survives.
 //
+// QW1 extension (2026-11-22, arXiv:2609.36457): ORDER FIDELITY — for anchor
+// pairs that survive within the SAME post-chunk, compare relative order
+// pre vs post compaction; report the inversion rate beside survival.
+//
+// QW3 extension (2026-11-22, Sleeping-Agent loss taxonomy): matched-pair
+// survival of the detail classes most frequently lost under compression —
+// quantities (with units), negation markers, entity–attribute bindings.
+//
 // QW2 extension (2026-11-24, Finding 1 residual): adds the paper's core
 // measurements for the GIST-ABSTRACTION path, which the L1→L2 extraction
 // slice could not see. (1) Pre/post EXPRESSION-COUNT check: occurrence-level
@@ -45,7 +53,7 @@ import { readFile, readdir } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
 
 // Temporal-anchor regexes — MIRRORED from src/compression/temporal.ts with
 // the `g` flag added for extraction (keep in sync; all run in linear time).
@@ -69,6 +77,22 @@ const HABITUAL_RE =
 // Expired-state markers; pair = the marker itself ("used to", "no longer").
 const EXPIRED_RE = /\b(?:used to|no longer|stopped|formerly)\b/gi;
 
+// Loss-taxonomy regexes (QW3, 2026-11-22 — Sleeping-Agent loss taxonomy,
+// arXiv:2608.11775): matched-pair survival of the three detail classes most
+// frequently lost under compression. All patterns run in linear time (no
+// nested quantifiers) and mirror src/compression/loss-taxonomy.ts.
+// Quantities: number + unit (compact "250ms" or spaced "4 TB"), pair = the
+// whole matched string. Trailing lookahead instead of \b — \b never holds
+// after "%". Mirrors src/compression/loss-taxonomy.ts.
+const QUANTITY_RE =
+  /\b\d+(?:\.\d+)?\s*(?:tb|gb|mb|kb|b|km|mi|m|cm|ft|in|kg|g|ms|s|h|hr|hrs|min|days?|weeks?|months?|years?|usd|eur|gbp|dollars|cents|%|x)(?![a-z0-9])/gi;
+// Negations: pair = the negation marker itself.
+const NEGATION_RE =
+  /\b(?:not|never|no longer|cannot|can't|don't|doesn't|didn't|won't|wouldn't|isn't|aren't|wasn't|weren't|hasn't|haven't|hadn't)\b/gi;
+// Entity–attribute bindings: proper-noun possessor + attribute, pair = the
+// whole phrase ("Huey's disk") — losing the binding reattaches the value.
+const ENTITY_BINDING_RE = /\b[A-Z][A-Za-z0-9]*'s\s+[A-Za-z][a-zA-Z0-9-]+/g;
+
 const CATEGORIES = [
   { name: "iso-date", re: ISO_DATE_RE },
   { name: "slash-date", re: SLASH_DATE_RE },
@@ -80,6 +104,12 @@ const ASPECT_CATEGORIES = [
   { name: "progressive", re: PROGRESSIVE_RE, capture: 1 },
   { name: "habitual", re: HABITUAL_RE, capture: 0 },
   { name: "expired", re: EXPIRED_RE, capture: 0 },
+];
+
+const LOSS_CATEGORIES = [
+  { name: "quantity", re: QUANTITY_RE, capture: 0 },
+  { name: "negation", re: NEGATION_RE, capture: 0 },
+  { name: "entity-binding", re: ENTITY_BINDING_RE, capture: 0 },
 ];
 
 /** Extract { category → Set<anchor> } from text. Later categories run on text
@@ -135,6 +165,56 @@ export function extractAspectForms(text) {
     byCategory.set(name, forms);
   }
   return byCategory;
+}
+
+/** Extract { category → Set<form> } loss-taxonomy forms (QW3): quantities,
+ * negation markers, and entity–attribute bindings. Whole-match pairs,
+ * lowercased so case drift alone never counts as loss. Exported for tests. */
+export function extractLossForms(text) {
+  const byCategory = new Map();
+  for (const { name, re } of LOSS_CATEGORIES) {
+    const forms = new Set();
+    for (const m of text.matchAll(re)) {
+      const form = m[0].trim().toLowerCase();
+      if (form) forms.add(form);
+    }
+    byCategory.set(name, forms);
+  }
+  return byCategory;
+}
+
+// QW1 (2026-11-22, arXiv:2609.36457): cap on anchors entering the pairwise
+// order comparison — pairs grow O(n²) and pathological chunks (logs dumps
+// full of clock times) would otherwise dominate the audit.
+const MAX_ORDER_ANCHORS = 20;
+
+/** Order fidelity (QW1): given the anchors that SURVIVED into the same
+ * post-chunk, compare their relative order pre vs post. Returns the number
+ * of comparable pairs and how many flipped. Cross-chunk ordering is
+ * deliberately not measured (ambiguous — chunk merge order is not temporal
+ * order); each chunk contributes only within-chunk pairs. */
+export function countOrderInversions(anchors, preText, postText) {
+  const positions = [];
+  for (const anchor of anchors) {
+    const preIdx = preText.indexOf(anchor);
+    const postIdx = postText.indexOf(anchor);
+    if (preIdx < 0 || postIdx < 0) continue; // not a surviving pair
+    positions.push({ anchor, preIdx, postIdx });
+  }
+  positions.sort((a, b) => a.preIdx - b.preIdx);
+  const bounded = positions.slice(0, MAX_ORDER_ANCHORS);
+  let pairs = 0;
+  let inversions = 0;
+  for (let i = 0; i < bounded.length; i++) {
+    for (let j = i + 1; j < bounded.length; j++) {
+      pairs += 1;
+      // Sorted by preIdx, so i precedes j pre-compaction; an inversion is
+      // j surfacing BEFORE i post-compaction. Tied postIdx (one anchor a
+      // substring of another at the same spot) counts as preserved.
+      if (bounded[j].postIdx < bounded[i].postIdx) inversions += 1;
+    }
+  }
+  return { pairs, inversions };
 }
 
 /** Flatten an l1-archive message record to plain text (role + content blocks). */
@@ -255,6 +335,13 @@ async function main() {
   const aspectStats = new Map(
     ASPECT_CATEGORIES.map(({ name }) => [name, { survived: 0, total: 0 }]),
   );
+  // QW3: loss-taxonomy stats, same shape (matched-pair survival per class).
+  const lossStats = new Map(LOSS_CATEGORIES.map(({ name }) => [name, { survived: 0, total: 0 }]));
+  let chunksWithLossForms = 0;
+  // QW1: within-chunk order fidelity of surviving anchor pairs.
+  let orderPairs = 0;
+  let orderInversions = 0;
+  let chunksWithOrderPairs = 0;
   // QW2: operator-slice survival — pre anchors found in each fact partition.
   const OPERATOR_SLICES = ["plain", "merged", "abstract"];
   const sliceStats = new Map(OPERATOR_SLICES.map((s) => [s, { survived: 0, total: 0 }]));
@@ -297,6 +384,7 @@ async function main() {
     const post = postHaystack(row.frontmatter, row.body);
     let chunkTotal = 0;
     let chunkSurvived = 0;
+    const survivingAnchors = [];
     for (const [category, set] of anchors) {
       const s = stats.get(category);
       for (const anchor of set) {
@@ -308,8 +396,17 @@ async function main() {
         if (post.includes(anchor)) {
           s.survived += 1;
           chunkSurvived += 1;
+          survivingAnchors.push(anchor);
         }
       }
+    }
+    // QW1: relative order of surviving anchors, pre vs post (within-chunk
+    // pairs only — cross-chunk order is not measured).
+    const order = countOrderInversions(survivingAnchors, pre, post);
+    orderPairs += order.pairs;
+    orderInversions += order.inversions;
+    if (order.pairs > 0) {
+      chunksWithOrderPairs += 1;
     }
     if (chunkTotal > 0) {
       chunksWithAnchors += 1;
@@ -341,6 +438,25 @@ async function main() {
     }
     if (chunkAspectTotal > 0) {
       chunksWithAspects += 1;
+    }
+    // QW3: loss-taxonomy matched-pair survival — quantities (with unit),
+    // negation markers, and entity–attribute bindings. Survival = the exact
+    // form appears in the distilled output; a rounded quantity, dropped
+    // negation, or reattached binding counts as LOST.
+    const lossForms = extractLossForms(pre);
+    let chunkLossTotal = 0;
+    for (const [category, forms] of lossForms) {
+      const s = lossStats.get(category);
+      for (const form of forms) {
+        s.total += 1;
+        chunkLossTotal += 1;
+        if (postLower.includes(form)) {
+          s.survived += 1;
+        }
+      }
+    }
+    if (chunkLossTotal > 0) {
+      chunksWithLossForms += 1;
     }
 
     // QW2 (2026-11-24): pre/post expression counts (occurrence-level density).
@@ -401,6 +517,16 @@ async function main() {
     `OVERALL: ${survivedAll}/${totalAll} distinct temporal anchors survived = ${pct(survivedAll, totalAll) ?? "n/a"}`,
   );
 
+  // QW1 order-fidelity table (2026-11-22, arXiv:2609.36457): within-chunk
+  // pairs of surviving anchors whose relative order flipped under compaction.
+  console.log("");
+  console.log(
+    `order fidelity (within-chunk surviving pairs; chunks with pairs: ${chunksWithOrderPairs}):`,
+  );
+  console.log(
+    `ORDER: ${orderInversions}/${orderPairs} pairs inverted = ${pct(orderInversions, orderPairs) ?? "n/a"} — inversions are temporal reordering under compaction (cross-chunk ordering not measured; ties count as preserved)`,
+  );
+
   // QW-A aspectual-flattening table (matched-pair verb-form survival).
   let aspectTotalAll = 0;
   let aspectSurvivedAll = 0;
@@ -423,6 +549,31 @@ async function main() {
   }
   console.log(
     `ASPECT OVERALL: ${aspectSurvivedAll}/${aspectTotalAll} aspectual forms survived = ${pct(aspectSurvivedAll, aspectTotalAll) ?? "n/a"} — lost forms = aspectual flattening (progressive/habitual wording rewritten under compaction)`,
+  );
+
+  // QW3 loss-taxonomy table (matched-pair survival of bindings/quantities/
+  // negations, 2026-11-22).
+  let lossTotalAll = 0;
+  let lossSurvivedAll = 0;
+  const perLoss = [];
+  for (const { name } of LOSS_CATEGORIES) {
+    const s = lossStats.get(name);
+    lossTotalAll += s.total;
+    lossSurvivedAll += s.survived;
+    perLoss.push({ category: name, survived: s.survived, total: s.total });
+  }
+  console.log("");
+  console.log(
+    `loss-taxonomy survival (matched-pair; chunks with loss forms: ${chunksWithLossForms}):`,
+  );
+  console.log("class          survived/total  survival");
+  for (const c of perLoss) {
+    console.log(
+      `${c.category.padEnd(14)} ${String(c.survived).padStart(4)}/${String(c.total).padEnd(6)}    ${pct(c.survived, c.total) ?? "n/a"}`,
+    );
+  }
+  console.log(
+    `LOSS OVERALL: ${lossSurvivedAll}/${lossTotalAll} loss-taxonomy forms survived = ${pct(lossSurvivedAll, lossTotalAll) ?? "n/a"} — lost forms = corrupted memory (reattached bindings, rounded quantities, inverted negations)`,
   );
 
   // QW2 (2026-11-24): gist-abstraction slice. Survival of the pre chunk's
@@ -472,17 +623,12 @@ async function main() {
       .toSorted((a, b) => a.survival - b.survival)
       .slice(0, 10)
       .forEach((r) =>
-        console.log(`  ${r.chunkId}  ${r.survived}/${r.total} = ${(100 * r.survival).toFixed(1)}%`),
+        console.log(`  ${r.chunkId}  ${r.survived}/${r.total} = ${(100 * r.survived).toFixed(1)}%`),
       );
   }
 }
 
-// CLI guard: unit tests import the pure helpers above; only a direct
-// `node temporal-survival-audit.mjs` invocation runs the audit itself.
-const isMainModule = process.argv[1]
-  ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-  : false;
-
-if (isMainModule) {
+// Direct-run guard: importing the module (tests) must not execute the audit.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   await main();
 }
