@@ -12,7 +12,11 @@ import {
   selectPromotable,
 } from "./consolidation.js";
 import { consolidateLongTermTyped } from "./longterm-typed.js";
-import { closeRetrievalUseStoreForTest, recordRetrievalUses } from "./retrieval-use-store.js";
+import {
+  closeRetrievalUseStoreForTest,
+  recordRetrievalUses,
+  recordSessionOutcome,
+} from "./retrieval-use-store.js";
 import { Storage } from "./storage.js";
 import type { L2Fact, TypedFact } from "./types.js";
 
@@ -1037,5 +1041,127 @@ describe("ConvMemory v3 safety invariants", () => {
       expect(result.passed.length).toBe(1);
       expect(result.blockedCount).toBe(0);
     });
+  });
+});
+
+describe("QW-2 utility decay + outcome join", () => {
+  const baseCandidate = {
+    dedupKey: "k:1",
+    text: "utility-joined fact",
+    importance: 0.7,
+    recallCount: 2,
+    firstSeenAt: NOW - 4 * MS_PER_DAY,
+    lastConfirmedAt: NOW,
+    sourceChunkIds: ["chunk-a"],
+    certainty: "confirmed" as const,
+  };
+
+  it("stamps shadow utility scalars from the outcome join", () => {
+    recordRetrievalUses({
+      sessionId: "s-good",
+      items: [{ chunkId: "chunk-a", tier: "l2" }],
+      now: NOW,
+      dir: storage.root,
+    });
+    recordRetrievalUses({
+      sessionId: "s-bad",
+      items: [{ chunkId: "chunk-a", tier: "l2" }],
+      now: NOW,
+      dir: storage.root,
+    });
+    recordSessionOutcome({ sessionId: "s-good", outcome: "positive", now: NOW, dir: storage.root });
+    recordSessionOutcome({ sessionId: "s-bad", outcome: "negative", now: NOW, dir: storage.root });
+    const stamped = joinRetrievalUseCounts([baseCandidate], storage.root, NOW);
+    expect(stamped[0]?.retrievalUseCount).toBe(2);
+    expect(stamped[0]?.retrievalPositiveUses).toBe(1);
+    expect(stamped[0]?.retrievalNegativeUses).toBe(1);
+    expect(stamped[0]?.retrievalLastUsedDay).toBe("2026-05-06");
+    // Fresh as of NOW → no stale flag stamped.
+    expect(stamped[0]?.retrievalUtilityStale).toBeUndefined();
+  });
+
+  it("marks injection history stale past the staleness window (30d default)", () => {
+    recordRetrievalUses({
+      sessionId: "s-old",
+      items: [{ chunkId: "chunk-a", tier: "l2" }],
+      now: NOW - 40 * MS_PER_DAY,
+      dir: storage.root,
+    });
+    const stamped = joinRetrievalUseCounts([baseCandidate], storage.root, NOW);
+    expect(stamped[0]?.retrievalUtilityStale).toBe(true);
+
+    // A fresh injection inside the window clears the flag.
+    recordRetrievalUses({
+      sessionId: "s-fresh",
+      items: [{ chunkId: "chunk-a", tier: "l2" }],
+      now: NOW - 2 * MS_PER_DAY,
+      dir: storage.root,
+    });
+    const stampedFresh = joinRetrievalUseCounts([baseCandidate], storage.root, NOW);
+    expect(stampedFresh[0]?.retrievalUtilityStale).toBeUndefined();
+  });
+
+  it("never marks never-injected candidates stale (no utility signal)", () => {
+    // A non-empty store so the join actually runs (an empty store degrades
+    // to unstamped candidates — the telemetry-outage path).
+    recordRetrievalUses({
+      sessionId: "s-other",
+      items: [{ chunkId: "chunk-other", tier: "l2" }],
+      now: NOW,
+      dir: storage.root,
+    });
+    const stamped = joinRetrievalUseCounts(
+      [{ ...baseCandidate, sourceChunkIds: ["chunk-c"] }],
+      storage.root,
+      NOW,
+    );
+    expect(stamped[0]?.retrievalUtilityStale).toBeUndefined();
+    expect(stamped[0]?.retrievalLastUsedDay).toBeNull();
+    expect(stamped[0]?.retrievalPositiveUses).toBe(0);
+  });
+
+  it("stale utility expires the behavioral-use credit", () => {
+    const singleRecall = {
+      ...baseCandidate,
+      recallCount: 1,
+      retrievalUseCount: 5,
+    };
+    // Fresh credit: 1 recall + capped 1 use credit ≥ minRecallCount 2 → passes.
+    expect(passesPromotionThresholds(singleRecall, DEFAULT_CONSOLIDATION_CONFIG)).toBe(true);
+    // Stale: credit expires → 1 < 2 → blocked.
+    expect(
+      passesPromotionThresholds(
+        { ...singleRecall, retrievalUtilityStale: true },
+        DEFAULT_CONSOLIDATION_CONFIG,
+      ),
+    ).toBe(false);
+  });
+
+  it("stale utility requires extra importance (demotion feature)", () => {
+    const atMinImportance = {
+      ...baseCandidate,
+      importance: DEFAULT_CONSOLIDATION_CONFIG.minImportance,
+      retrievalUseCount: 2,
+    };
+    // Fresh at exactly minImportance → passes.
+    expect(passesPromotionThresholds(atMinImportance, DEFAULT_CONSOLIDATION_CONFIG)).toBe(true);
+    // Stale at exactly minImportance → blocked by the 0.05 penalty.
+    expect(
+      passesPromotionThresholds(
+        { ...atMinImportance, retrievalUtilityStale: true },
+        DEFAULT_CONSOLIDATION_CONFIG,
+      ),
+    ).toBe(false);
+    // Stale but clearing the penalized bar → passes.
+    expect(
+      passesPromotionThresholds(
+        {
+          ...atMinImportance,
+          importance: DEFAULT_CONSOLIDATION_CONFIG.minImportance + 0.05,
+          retrievalUtilityStale: true,
+        },
+        DEFAULT_CONSOLIDATION_CONFIG,
+      ),
+    ).toBe(true);
   });
 });
