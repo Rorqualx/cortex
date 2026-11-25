@@ -1,3 +1,4 @@
+import { filterApplicabilityScoped, type ApplicabilityContext } from "./applicability-gate.js";
 // MemoType type-dispatched retrieval (QW3, 2026-10-09): per-category scoring
 // presets for typed-fact items, following the intent-preset pattern above.
 import { getCategoryScoringPreset, resolveTypedFactCategory } from "./category-presets.js";
@@ -1633,6 +1634,27 @@ export async function retrieveTopK(params: {
   }
 
   // -----------------------------------------------------------------
+  // QW-1 (2026-11-25): scope-enforced retrieval — Engram-style
+  // applicability gating at the injection surface.
+  // -----------------------------------------------------------------
+  // Typed facts promoted with an applicability scope (Gated Memory,
+  // PROMPT_VERSION=19) only hold within that scope — yet retrieval
+  // injected them unconditionally. When the caller supplies the current
+  // retrieval context (agent identity + query text), drop facts whose
+  // scope cannot be verified to hold. Strict v1: exact-token match only,
+  // no fuzzy interpretation; facts without a scope pass unchanged.
+  // Applied after pattern-completion expansion (so edge neighbors are
+  // gated too) but before Hebbian strengthening (so only actually-
+  // injected facts reinforce co-retrieval edges).
+  if (params.applicabilityContext) {
+    const gated = filterApplicabilityScoped(finalFacts, params.applicabilityContext);
+    if (gated.length !== finalFacts.length) {
+      finalFacts.length = 0;
+      finalFacts.push(...gated);
+    }
+  }
+
+  // -----------------------------------------------------------------
   // Retrieval-time Hebbian edge strengthening (AtomMem-style)
   // -----------------------------------------------------------------
   // Facts that surface together in the same retrieval result strengthen
@@ -1848,6 +1870,9 @@ function typedFactAsL2Fact(typed: TypedFact): L2Fact {
     participants: typed.participants,
     // QW-2 (LAPSE): thread the validity window into the scoring pipeline.
     validity: typed.validity,
+    // QW-1 (2026-11-25): thread the applicability scope into the injection
+    // surface so Engram-style gating can enforce it post-selection.
+    applicability: typed.applicability,
   };
 }
 
@@ -1867,6 +1892,9 @@ function longTermTypedAsL2Fact(ltt: LongTermTypedFact, now: number): L2Fact {
     provenanceQuote: ltt.provenance?.quote,
     // QW-2 (LAPSE): thread the validity window into the scoring pipeline.
     validity: ltt.validity,
+    // QW-1 (2026-11-25): thread the applicability scope into the injection
+    // surface so Engram-style gating can enforce it post-selection.
+    applicability: ltt.applicability,
   };
 }
 

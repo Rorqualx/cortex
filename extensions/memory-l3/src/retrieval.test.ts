@@ -2499,3 +2499,132 @@ describe("retrieveTopK evidence-conditioned drill (QW-C)", () => {
     expect(result.drillDepth).toBeUndefined();
   });
 });
+
+describe("retrieveTopK applicability gating (QW-1 scope-enforced retrieval)", () => {
+  const scopedTyped: TypedFact[] = [
+    {
+      slot: "device:firetv_ip",
+      value: "192.168.50.35",
+      sourceSpan: "duckie the fire tv lives at 192.168.50.35",
+      unit: null,
+      id: "tf-scoped",
+      confidence: 0.95,
+      createdAt: NOW,
+      applicability: ["duckie"],
+    },
+  ];
+
+  it("keeps scoped facts when the query names the scope", async () => {
+    await writeChunk("chunk-appscope", [], NOW, scopedTyped);
+    const { facts } = await retrieveTopK({
+      query: "duckie",
+      storage,
+      topK: 5,
+      now: NOW,
+      applicabilityContext: { queryText: "duckie" },
+    });
+    const scoped = facts.find((f) => f.fact.dedupKey === "device:firetv_ip");
+    expect(scoped).toBeDefined();
+    expect(scoped!.fact.applicability).toEqual(["duckie"]);
+  });
+
+  it("keeps scoped facts when the agent id equals a scope token", async () => {
+    await writeChunk("chunk-appscope", [], NOW, scopedTyped);
+    const { facts } = await retrieveTopK({
+      query: "fire tv",
+      storage,
+      topK: 5,
+      now: NOW,
+      applicabilityContext: { agentId: "duckie", queryText: "fire tv" },
+    });
+    expect(facts.find((f) => f.fact.dedupKey === "device:firetv_ip")).toBeDefined();
+  });
+
+  it("drops scoped facts when the scope does not hold", async () => {
+    await writeChunk("chunk-appscope", [], NOW, [
+      ...scopedTyped,
+      {
+        slot: "infra:pi_hole_ip",
+        value: "192.168.50.128",
+        sourceSpan: "the pi-hole is at 192.168.50.128",
+        unit: null,
+        id: "tf-unscoped",
+        confidence: 0.95,
+        createdAt: NOW,
+      },
+    ]);
+    const { facts } = await retrieveTopK({
+      query: "device and pi-hole addresses",
+      storage,
+      topK: 5,
+      now: NOW,
+      applicabilityContext: { agentId: "j-rorqual", queryText: "device and pi-hole addresses" },
+    });
+    // Unscoped fact survives; scoped fact is dropped (scope not in context).
+    expect(facts.find((f) => f.fact.dedupKey === "infra:pi_hole_ip")).toBeDefined();
+    expect(facts.find((f) => f.fact.dedupKey === "device:firetv_ip")).toBeUndefined();
+  });
+
+  it("gates long-term typed facts too", async () => {
+    await writeChunk("chunk-appscope-ltt", [
+      { id: "f-ph", text: "placeholder", importance: 0.1, createdAt: NOW, dedupKey: "k:ph" },
+    ]);
+    await storage.writeLongTermTyped(
+      {
+        version: 1,
+        agentId: "j-rorqual",
+        lastConsolidatedAt: NOW,
+        facts: [
+          {
+            id: "ltt-scoped",
+            slot: "laptop:hostname",
+            value: "work-laptop",
+            unit: null,
+            confidence: 0.95,
+            firstSeenAt: NOW,
+            lastConfirmedAt: NOW,
+            recallCount: 1,
+            sourceChunkIds: ["chunk-appscope-ltt"],
+            history: [],
+            validFrom: NOW,
+            validUntil: null,
+            supersededBy: null,
+            archived: false,
+            archivedAt: null,
+            lastAccessedAt: NOW,
+            applicability: ["work-laptop", "office"],
+          },
+        ],
+      },
+      "",
+    );
+    const { facts } = await retrieveTopK({
+      query: "hostname",
+      storage,
+      topK: 10,
+      now: NOW,
+      applicabilityContext: { agentId: "j-rorqual", queryText: "hostname" },
+    });
+    expect(facts.find((f) => f.fact.dedupKey === "laptop:hostname")).toBeUndefined();
+
+    const { facts: factsInScope } = await retrieveTopK({
+      query: "hostname on the work-laptop",
+      storage,
+      topK: 10,
+      now: NOW,
+      applicabilityContext: { agentId: "j-rorqual", queryText: "hostname on the work-laptop" },
+    });
+    expect(factsInScope.find((f) => f.fact.dedupKey === "laptop:hostname")).toBeDefined();
+  });
+
+  it("does not gate when no applicabilityContext is provided (back-compat)", async () => {
+    await writeChunk("chunk-appscope", [], NOW, scopedTyped);
+    const { facts } = await retrieveTopK({
+      query: "fire tv",
+      storage,
+      topK: 5,
+      now: NOW,
+    });
+    expect(facts.find((f) => f.fact.dedupKey === "device:firetv_ip")).toBeDefined();
+  });
+});
