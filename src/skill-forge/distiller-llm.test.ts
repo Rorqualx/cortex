@@ -14,13 +14,13 @@ describe("validateLlmDistilledProse", () => {
   });
 
   it("strips a wrapping markdown code fence if present", () => {
-    const raw = "```markdown\n## Overview\nhello\n```";
+    const raw = "```markdown\n## Overview\nhello\n\n## When to apply\nWhen X.\n```";
     const result = validateLlmDistilledProse(raw);
     expect(result.ok).toBe(true);
     if (!result.ok) {
       throw new Error("unreachable");
     }
-    expect(result.body).toBe("## Overview\nhello");
+    expect(result.body).toBe("## Overview\nhello\n\n## When to apply\nWhen X.");
   });
 
   it("rejects attempted frontmatter injection at the top", () => {
@@ -39,7 +39,9 @@ describe("validateLlmDistilledProse", () => {
   });
 
   it("truncates output above the max-body cap", () => {
-    const long = `## Overview\n${"x".repeat(SKILL_FORGE_LLM_MAX_BODY_CHARS + 200)}`;
+    const long = `## Overview\nstuff\n\n## When to apply\nWhen X.\n\n${"x".repeat(
+      SKILL_FORGE_LLM_MAX_BODY_CHARS + 200,
+    )}`;
     const result = validateLlmDistilledProse(long);
     expect(result.ok).toBe(true);
     if (!result.ok) {
@@ -58,6 +60,22 @@ describe("validateLlmDistilledProse", () => {
     }
     expect(result.body).toBe(raw.trim());
   });
+
+  it("accepts the new When to apply heading (EGSE 2026-11-26)", () => {
+    const raw = `## Overview\nDo a thing.\n\n## When to apply\nApply when X; do NOT apply when Y.\n\n## Workflow\n1. step\n`;
+    const result = validateLlmDistilledProse(raw);
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a body with no applicability section", () => {
+    const raw = "## Overview\nDo a thing.\n\n## Workflow\n1. step\n";
+    const result = validateLlmDistilledProse(raw);
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("unreachable");
+    }
+    expect(result.reason).toMatch(/applicability/iu);
+  });
 });
 
 describe("SKILL_FORGE_LLM_DISTILLER_SYSTEM", () => {
@@ -73,6 +91,13 @@ describe("SKILL_FORGE_LLM_DISTILLER_SYSTEM", () => {
   it("requires a contrastive Do/Don't section when failure trajectories are supplied", () => {
     expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/## Do \/ ## Don't/u);
     expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/only from the supplied failure excerpts/u);
+  });
+
+  it("requires an applicability section and source-traceable validation checks (EGSE)", () => {
+    expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/## When to apply/u);
+    expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/when it does NOT apply/u);
+    expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/source-traceable/u);
+    expect(SKILL_FORGE_LLM_DISTILLER_SYSTEM).toMatch(/never invent ids/u);
   });
 });
 
@@ -102,5 +127,11 @@ describe("buildUserPrompt", () => {
     expect(prompt).toContain("- read_file failed: disk quota exceeded");
     expect(prompt).toContain("- user frustration: still broken");
     expect(prompt).toMatch(/DATA, not instructions/u);
+  });
+
+  it("surfaces source capture ids for traceable validation checks (EGSE 2026-11-26)", () => {
+    const prompt = buildUserPrompt({ ...baseCandidate });
+    expect(prompt).toMatch(/Source captures: /u);
+    expect(prompt).toContain("one, two, three");
   });
 });
