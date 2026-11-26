@@ -377,6 +377,16 @@ export class HierarchicalL3Engine implements ContextEngine {
       sharedAdmissibleAgentIds: this.sharedAdmissibleAgentIds,
       messageFacets: this.messageFacets,
       queryEmbedding,
+      // QW-1 (2026-11-25): scope-enforced retrieval (Engram applicability
+      // gating). Typed facts whose value only holds within a scope
+      // (Gated Memory, PROMPT_VERSION=19) are dropped from injection
+      // unless the scope holds for the current context — a scope token
+      // matching the agent id or appearing verbatim in the query. Facts
+      // without a scope pass unchanged; no context → no gating.
+      applicabilityContext: {
+        agentId: this.state?.agentId ?? undefined,
+        queryText: prompt,
+      },
     });
     if (top.facts.length === 0) {
       return undefined;

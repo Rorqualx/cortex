@@ -8,6 +8,7 @@ import {
   recordSkillCreation,
   recordSkillDemotion,
   recordSkillPromotion,
+  recordSkillRevision,
   recordSkillUsage,
   recordSkillUsageOutcome,
   USAGE_LOG_MAX_RECORDS,
@@ -196,5 +197,117 @@ describe("skill-forge telemetry", () => {
     expect(
       await recordSkillUsageOutcome({ name: "no-log", taskSucceeded: true, env: env() }),
     ).toBeNull();
+  });
+});
+
+describe("QW-3 revision-frequency telemetry (JevRSI amortization metric)", () => {
+  let stateDir: string;
+  const env = (): NodeJS.ProcessEnv => ({
+    OPENCLAW_STATE_DIR: stateDir,
+    OPENCLAW_TEST_FAST: "1",
+  });
+
+  beforeEach(async () => {
+    stateDir = await fsp.mkdtemp(path.join(os.tmpdir(), "forge-tel-qw3-"));
+  });
+
+  afterEach(async () => {
+    await fsp.rm(stateDir, { recursive: true, force: true });
+  });
+
+  it("first promotion records no revision", async () => {
+    const entry = await recordSkillPromotion({
+      name: "fresh-skill",
+      now: new Date("2026-11-25T06:00:00Z"),
+      env: env(),
+    });
+    expect(entry.revisionCount).toBeUndefined();
+    expect(entry.lastRevisedAt).toBeUndefined();
+  });
+
+  it("re-promotion over a live promoted entry counts as a revision", async () => {
+    const first = await recordSkillPromotion({
+      name: "revised-skill",
+      now: new Date("2026-11-20T06:00:00Z"),
+      env: env(),
+    });
+    expect(first.revisionCount).toBeUndefined();
+    // The distiller rewrote the skill and it re-passed the gate.
+    const second = await recordSkillPromotion({
+      name: "revised-skill",
+      now: new Date("2026-11-25T06:00:00Z"),
+      env: env(),
+    });
+    expect(second.revisionCount).toBe(1);
+    expect(second.lastRevisedAt).toBe("2026-11-25T06:00:00.000Z");
+    const third = await recordSkillPromotion({
+      name: "revised-skill",
+      now: new Date("2026-11-26T06:00:00Z"),
+      env: env(),
+    });
+    expect(third.revisionCount).toBe(2);
+    expect(third.lastRevisedAt).toBe("2026-11-26T06:00:00.000Z");
+  });
+
+  it("revival from retired is not a revision of a live skill", async () => {
+    await recordSkillPromotion({
+      name: "phoenix",
+      now: new Date("2026-11-01T00:00:00Z"),
+      env: env(),
+    });
+    await recordSkillDemotion({
+      name: "phoenix",
+      reason: "unused",
+      now: new Date("2026-11-10T00:00:00Z"),
+      env: env(),
+    });
+    const revived = await recordSkillPromotion({
+      name: "phoenix",
+      now: new Date("2026-11-20T00:00:00Z"),
+      env: env(),
+    });
+    expect(revived.revisionCount).toBeUndefined();
+  });
+
+  it("recordSkillRevision increments in place and returns null for unknown skills", async () => {
+    const nullEntry = await recordSkillRevision({ name: "ghost", env: env() });
+    expect(nullEntry).toBeNull();
+    await recordSkillPromotion({
+      name: "in-place",
+      now: new Date("2026-11-25T00:00:00Z"),
+      env: env(),
+    });
+    const revised = await recordSkillRevision({
+      name: "in-place",
+      now: new Date("2026-11-25T06:00:00Z"),
+      env: env(),
+    });
+    expect(revised?.revisionCount).toBe(1);
+    expect(revised?.lastRevisedAt).toBe("2026-11-25T06:00:00.000Z");
+    const again = await recordSkillRevision({
+      name: "in-place",
+      now: new Date("2026-11-26T06:00:00Z"),
+      env: env(),
+    });
+    expect(again?.revisionCount).toBe(2);
+  });
+
+  it("revision scalars survive subsequent usage recording and flow to UI read paths", async () => {
+    await recordSkillPromotion({
+      name: "curve-skill",
+      now: new Date("2026-11-25T00:00:00Z"),
+      env: env(),
+    });
+    await recordSkillRevision({
+      name: "curve-skill",
+      now: new Date("2026-11-25T06:00:00Z"),
+      env: env(),
+    });
+    await recordSkillUsage({ name: "curve-skill", env: env() });
+    const entries = await listTelemetryEntries(env());
+    const curve = entries.find((e) => e.name === "curve-skill");
+    expect(curve?.revisionCount).toBe(1);
+    expect(curve?.lastRevisedAt).toBe("2026-11-25T06:00:00.000Z");
+    expect(curve?.usageCount).toBe(1);
   });
 });
