@@ -67,6 +67,16 @@ export const DEFAULT_CONSOLIDATION_CONFIG: ConsolidationConfig = {
  */
 const RETRIEVAL_USE_RECALL_CREDIT_CAP = 1;
 
+/**
+ * Hebbian edge-support credit cap (2026-11-26, STARK support-count): the
+ * number of co-occurrence edges touching a fact's dedupKey can substitute
+ * for at most ONE distinct-chunk recall. Connectivity proves the fact
+ * repeatedly co-occurred with other facts, but a hub fact connected to
+ * everything is weaker evidence than two independent chunks, so the credit
+ * is capped — mirroring the behavioral-use cap above.
+ */
+const HEBBIAN_EDGE_RECALL_CREDIT_CAP = 1;
+
 /** Rank for upgrading candidate certainty: any stronger occurrence wins. */
 const CERTAINTY_RANK: Record<FactCertainty, number> = {
   tentative: 0,
@@ -108,6 +118,14 @@ export type ConsolidationCandidate = {
    * call sites behave exactly as before.
    */
   retrievalUseCount?: number;
+  /**
+   * Hebbian edge support (2026-11-26, STARK support-count): number of
+   * co-occurrence edges touching this fact's dedupKey in the persisted edge
+   * map (`l3_edges`). Joined in selectPromotable from storage.readEdgeMap;
+   * counts as one capped support axis in passesPromotionThresholds. Optional
+   * so hand-built candidates and older call sites behave exactly as before.
+   */
+  hebbianEdgeCount?: number;
   /**
    * Strongest certainty across occurrences: one confirmed/instructional
    * sighting lifts the candidate out of the tentative bar. Facts extracted
@@ -211,7 +229,10 @@ export function passesPromotionThresholds(
   // Behavioral-use credit: recorded prompt injections can substitute for at
   // most one distinct-chunk recall (see RETRIEVAL_USE_RECALL_CREDIT_CAP).
   const useCredit = Math.min(candidate.retrievalUseCount ?? 0, RETRIEVAL_USE_RECALL_CREDIT_CAP);
-  if (candidate.recallCount + useCredit < minRecallCount) {
+  // Hebbian edge-support credit (STARK): co-occurrence connectivity can
+  // likewise substitute for at most one distinct-chunk recall.
+  const edgeCredit = Math.min(candidate.hebbianEdgeCount ?? 0, HEBBIAN_EDGE_RECALL_CREDIT_CAP);
+  if (candidate.recallCount + useCredit + edgeCredit < minRecallCount) {
     return false;
   }
   if (candidate.lastConfirmedAt - candidate.firstSeenAt < minDayspanMs) {
@@ -435,9 +456,52 @@ export async function selectPromotable(
   config: ConsolidationConfig = DEFAULT_CONSOLIDATION_CONFIG,
 ): Promise<ConsolidationCandidate[]> {
   const candidates = await aggregateCandidates(storage);
-  return joinRetrievalUseCounts(candidates, storage.root).filter((c) =>
+  const withEdgeCounts = await joinHebbianEdgeCounts(candidates, storage);
+  return joinRetrievalUseCounts(withEdgeCounts, storage.root).filter((c) =>
     passesPromotionThresholds(c, config),
   );
+}
+
+/**
+ * Hebbian edge-support join (2026-11-26, STARK support-count): stamp each
+ * candidate with the number of co-occurrence edges in the persisted edge map
+ * (`l3_edges` via storage.readEdgeMap) that touch its dedupKey (either side).
+ * Connectivity is a support axis distinct from distinct-chunk recall. An edge
+ * map outage or malformed rows degrade to unstamped candidates —
+ * consolidation never blocks on it.
+ */
+export async function joinHebbianEdgeCounts(
+  candidates: ConsolidationCandidate[],
+  storage: Storage,
+): Promise<ConsolidationCandidate[]> {
+  if (candidates.length === 0) {
+    return candidates;
+  }
+  try {
+    const edges = await storage.readEdgeMap();
+    if (!Array.isArray(edges) || edges.length === 0) {
+      return candidates;
+    }
+    const counts = new Map<string, number>();
+    for (const edge of edges) {
+      const a = (edge as { a?: unknown })?.a;
+      const b = (edge as { b?: unknown })?.b;
+      if (typeof a !== "string" || typeof b !== "string" || a === b) {
+        continue;
+      }
+      counts.set(a, (counts.get(a) ?? 0) + 1);
+      counts.set(b, (counts.get(b) ?? 0) + 1);
+    }
+    if (counts.size === 0) {
+      return candidates;
+    }
+    return candidates.map((candidate) => {
+      const count = counts.get(candidate.dedupKey) ?? 0;
+      return count > 0 ? { ...candidate, hebbianEdgeCount: count } : candidate;
+    });
+  } catch {
+    return candidates;
+  }
 }
 
 /**
