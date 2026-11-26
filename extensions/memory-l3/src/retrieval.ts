@@ -238,7 +238,8 @@ export type RetrievalConfig = {
   /**
    * When true, replace greedy top-K sort+slice with a budgeted submodular
    * selector that optimises for relevance + diversity + query-token coverage.
-   * Default false (gated for ablation evaluation).
+   * Default true (2026-11-26: CoD-style selection promoted from ablation to
+   * default; set false to recover the sort+slice baseline for A/B runs).
    */
   useSubmodularSelect: boolean;
   /** Weight of diversity term in submodular objective (0–1). Default 0.3. */
@@ -246,8 +247,10 @@ export type RetrievalConfig = {
   /** Weight of coverage term in submodular objective (0–1). Default 0.3. */
   submodularCoverageWeight: number;
   /**
-   * Token budget for submodular packing. When null, falls back to raw topK
-   * count (legacy budget mode). Default null.
+   * Token budget for submodular packing (approx 4 chars/token). When set, the
+   * selector enforces it strictly — bounded evidence per query, independent
+   * of store size (MIRIX-2.0 budgeted-retrieval rule). When null, only the
+   * raw topK count cap applies (legacy mode). Default 2000 tokens.
    */
   submodularTokenBudget: number | null;
   /**
@@ -337,10 +340,10 @@ export type RetrievalConfig = {
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   useEpochFirst: true,
   epochExpandTopN: 3,
-  useSubmodularSelect: false,
+  useSubmodularSelect: true,
   submodularDiversityWeight: 0.3,
   submodularCoverageWeight: 0.3,
-  submodularTokenBudget: null,
+  submodularTokenBudget: 2000,
   mode: "blended",
   enableMemoryCritique: false,
   reformulationPasses: 0,

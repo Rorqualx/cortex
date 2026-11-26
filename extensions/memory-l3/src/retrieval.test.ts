@@ -6,6 +6,7 @@ import {
   buildEvidenceExpansionTerms,
   classifyQueryIntent,
   critiqueStaleFacts,
+  DEFAULT_RETRIEVAL_CONFIG,
   extractQueryAnchors,
   findMissingPacketAnchors,
   formatMemorySection,
@@ -14,6 +15,7 @@ import {
   intentAdmitsSuperseded,
   retrieveTopK,
   type RetrievedFact,
+  submodularSelect,
   SUPERSEDED_REMISSION_PENALTY,
 } from "./retrieval.js";
 import { DEFAULT_SCORING_CONFIG } from "./scoring.js";
@@ -2497,5 +2499,83 @@ describe("retrieveTopK evidence-conditioned drill (QW-C)", () => {
       },
     });
     expect(result.drillDepth).toBeUndefined();
+  });
+});
+
+describe("submodularSelect (CoD-style budgeted selection, QW1 2026-11-26)", () => {
+  const mk = (id: string, text: string, score: number, dedupKey = id): RetrievedFact => ({
+    fact: {
+      id,
+      text,
+      importance: 0.5,
+      createdAt: NOW,
+      dedupKey,
+    },
+    score,
+    signals: {
+      lexical: 0,
+      bm25: 0,
+      importance: 0.5,
+      recency: 1,
+      l3Boost: 0,
+      semantic: 0,
+      informationGain: 0,
+      goalRelevance: 0,
+      reliability: 1,
+      semanticEntropy: 1,
+      validity: 1,
+      entityScore: 0,
+      polarityMultiplier: 1,
+    },
+    chunkId: "chunk-test",
+    tier: "l2",
+  });
+
+  it("defaults to submodular selection with an explicit 2000-token budget (MIRIX budgeted retrieval)", () => {
+    expect(DEFAULT_RETRIEVAL_CONFIG.useSubmodularSelect).toBe(true);
+    expect(DEFAULT_RETRIEVAL_CONFIG.submodularTokenBudget).toBe(2000);
+  });
+
+  it("enforces an explicit token budget strictly", () => {
+    // ~46 chars ≈ 12 tokens; ~190 chars ≈ 48 tokens.
+    const short = mk("short", "pi hole dns resolver address is 192.168.50.128", 0.9);
+    const long = mk(
+      "long",
+      "a very long fact about the router configuration history that spans multiple sentences and consumes far more than the available token budget allows for packing into the final context window",
+      0.85,
+    );
+    const selected = submodularSelect(
+      [short, long],
+      new Set(["pi", "hole", "dns"]),
+      5,
+      0.3,
+      0.3,
+      30,
+    );
+    // The short fact fits the 30-token budget; the long fact alone exceeds it.
+    expect(selected.map((r) => r.fact.id)).toEqual(["short"]);
+  });
+
+  it("with a null budget, only the topK count cap applies", () => {
+    const a = mk("a", "morning meeting notes alpha", 0.9);
+    const b = mk("b", "morning meeting notes beta", 0.8);
+    const c = mk("c", "morning meeting notes gamma", 0.7);
+    const selected = submodularSelect([a, b, c], new Set(["morning"]), 2, 0.3, 0.3, null);
+    expect(selected).toHaveLength(2);
+  });
+
+  it("prefers a novel fact over a near-duplicate of the anchor (lexical diversity)", () => {
+    const anchor = mk("anchor", "pi hole dns 192.168.50.128", 0.9);
+    const duplicate = mk("dup", "pi hole dns 192.168.50.128", 0.85);
+    const novel = mk("novel", "router gateway asus rt-ax89x dual wan", 0.8);
+    const selected = submodularSelect(
+      [anchor, duplicate, novel],
+      new Set(["pi", "hole", "dns", "192.168.50.128"]),
+      2,
+      0.3,
+      0.3,
+      null,
+    );
+    expect(selected.map((r) => r.fact.id)).toEqual(["anchor", "novel"]);
   });
 });
