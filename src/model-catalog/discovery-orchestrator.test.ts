@@ -134,9 +134,15 @@ describe("runProviderModelDiscovery", () => {
     // The upgrade link must still be recorded so doctor --fix sees a
     // distinguishable served id instead of collapsing both onto the alias.
     const { db } = await openTempDb();
-    const fetchFn = vi.fn(async (url: unknown) => {
+    const fetchFn = vi.fn(async (url: unknown, init?: unknown) => {
       const u = String(url);
       if (u.endsWith("/chat/completions")) {
+        const body = JSON.parse(String((init as { body?: string }).body ?? "{}"));
+        // QW7 watchlist: the provider has not shipped the landscape id yet —
+        // the probe fails and is skipped gracefully (never throws).
+        if (body.model === "DeepSeek-V4.1-Flash-1017") {
+          return new Response("not found", { status: 404 });
+        }
         return new Response(JSON.stringify({ model: "DeepSeek-V4-Flash-0731" }), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -179,9 +185,14 @@ describe("runProviderModelDiscovery", () => {
     // doctor's model-pin reassignment; a silent bump alone must stay inert so
     // pins keep riding the stable alias until the provider truly drops it.
     const { db } = await openTempDb();
-    const fetchFn = vi.fn(async (url: unknown) => {
+    const fetchFn = vi.fn(async (url: unknown, init?: unknown) => {
       const u = String(url);
       if (u.endsWith("/chat/completions")) {
+        const body = JSON.parse(String((init as { body?: string }).body ?? "{}"));
+        // QW7 watchlist: landscape id not shipped yet — probe fails, skipped.
+        if (body.model === "DeepSeek-V4.1-Flash-1017") {
+          return new Response("not found", { status: 404 });
+        }
         return new Response(JSON.stringify({ model: "DeepSeek-V4-Flash-0731" }), {
           status: 200,
           headers: { "content-type": "application/json" },
@@ -267,9 +278,15 @@ describe("runProviderModelDiscovery", () => {
         resolveEndpoint: () => ({ baseUrl: "https://api.deepseek.com", apiKey: "***" }),
       });
     const first = await run();
-    // Only config ids were probed (config list wins over the /models list).
-    expect(requested).toEqual(["deepseek-v4-flash", "deepseek-v4-flash-vision-exp"]);
-    expect(first.probedAdded).toEqual(["deepseek-v4-flash-vision-exp"]);
+    // Config ids first, then the provider's landscape watchlist entry
+    // (QW7 2026-11-27: DeepSeek-V4.1-Flash-1017) — config list still wins over
+    // the /models list (neither deepseek-v4-pro nor other live ids probed).
+    expect(requested).toEqual([
+      "deepseek-v4-flash",
+      "deepseek-v4-flash-vision-exp",
+      "DeepSeek-V4.1-Flash-1017",
+    ]);
+    expect(first.probedAdded).toEqual(["deepseek-v4-flash-vision-exp", "DeepSeek-V4.1-Flash-1017"]);
     const visionRow = listDiscoveredModels(db, { provider: "deepseek" }).find(
       (r) => r.modelId === "deepseek-v4-flash-vision-exp",
     );
@@ -284,6 +301,52 @@ describe("runProviderModelDiscovery", () => {
     expect(listDiscoveredModels(db, { provider: "deepseek", status: "deprecated" })).toEqual([]);
   });
 
+  it("probes landscape watchlist ids even when the provider has no config models (QW7 2026-11-27)", async () => {
+    // Nov-2026 landscape names ride along with the live /models ids: a zai
+    // provider with no curated config catalog still probes glm-5.3 each
+    // refresh. When the provider serves it (echoed back here), the served id
+    // is absent from /models, so it is harvested as a probe-sourced row —
+    // discovery picks the model up the moment it goes live upstream.
+    const { db } = await openTempDb();
+    const requested: string[] = [];
+    const fetchFn = vi.fn(async (url: unknown, init?: unknown) => {
+      const u = String(url);
+      if (u.endsWith("/chat/completions")) {
+        const body = JSON.parse(String((init as { body?: string }).body ?? "{}"));
+        if (body.reasoning_effort === "none") {
+          return new Response(
+            JSON.stringify({
+              model: body.model,
+              usage: { completion_tokens_details: { reasoning_tokens: 0 } },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        requested.push(String(body.model));
+        return new Response(JSON.stringify({ model: body.model }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return modelsResponse(["glm-5.2"]);
+    });
+    const report = await runProviderModelDiscovery({
+      provider: "zai",
+      cfg: cfgWith({ zai: { baseUrl: "https://api.z.ai/api/paas/v4" } }),
+      nowMs: 1000,
+      db,
+      probeServed: true,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      resolveEndpoint: () => ({ baseUrl: "https://api.z.ai/api/paas/v4", apiKey: "***" }),
+    });
+    // Watchlist id plus the live id, config absent → live ids still used.
+    expect(requested).toEqual(["glm-5.3", "glm-5.2"]);
+    expect(report.probedAdded).toEqual(["glm-5.3"]);
+    const row = listDiscoveredModels(db, { provider: "zai" }).find((r) => r.modelId === "glm-5.3");
+    expect(row?.source).toBe("probe");
+    expect(row?.status).toBe("active");
+  });
+
   it("stamps the advisory noThinkCompliant bit on upserted probe rows (QW1 2026-10-14)", async () => {
     // Empty-thinking audit: served ids the probe persists (unlisted) get a
     // second tiny completion with thinking disabled. Zero reasoning tokens →
@@ -293,6 +356,10 @@ describe("runProviderModelDiscovery", () => {
       const u = String(url);
       if (u.endsWith("/chat/completions")) {
         const body = JSON.parse(String((init as { body?: string }).body ?? "{}"));
+        // QW7 watchlist: landscape id not shipped yet — probe fails, skipped.
+        if (body.model === "glm-5.3") {
+          return new Response("not found", { status: 404 });
+        }
         if (body.reasoning_effort === "none") {
           const reasoningTokens = body.model === "glm-heavy" ? 24 : 0;
           return new Response(
