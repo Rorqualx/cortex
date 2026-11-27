@@ -2499,3 +2499,210 @@ describe("retrieveTopK evidence-conditioned drill (QW-C)", () => {
     expect(result.drillDepth).toBeUndefined();
   });
 });
+
+describe("retrieveTopK same-session neighborhood expansion (QW1, CoD remainder)", () => {
+  it("restores same-session facts from adjacent chunks around an L2 anchor", async () => {
+    await writeChunk(
+      "chunk-1",
+      [
+        {
+          id: "n-early",
+          text: "unrelated earlier conversation context",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n-early",
+          sessionId: "sess-A",
+        },
+        {
+          id: "n-other",
+          text: "different session fact entirely",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n-other",
+          sessionId: "sess-B",
+        },
+      ],
+      NOW - 2000,
+    );
+    await writeChunk("chunk-2", [
+      {
+        id: "anchor",
+        text: "morning standup schedule details",
+        importance: 0.5,
+        createdAt: NOW,
+        dedupKey: "k:anchor",
+        sessionId: "sess-A",
+      },
+    ]);
+    await writeChunk("chunk-3", [
+      {
+        id: "n-late",
+        text: "later unrelated same session note",
+        importance: 0.5,
+        createdAt: NOW,
+        dedupKey: "k:n-late",
+        sessionId: "sess-A",
+      },
+    ]);
+
+    const { facts } = await retrieveTopK({
+      query: "morning standup",
+      storage,
+      topK: 1,
+      now: NOW,
+    });
+    const ids = facts.map((f) => f.fact.id);
+    // Only the anchor matches the query at topK=1; everything else comes
+    // from neighborhood restoration.
+    expect(ids).toContain("anchor");
+    expect(ids).toContain("n-early");
+    expect(ids).toContain("n-late");
+    // Same-session verified: the sess-B fact in the adjacent chunk-1 is
+    // never restored even though the chunk is adjacent.
+    expect(ids).not.toContain("n-other");
+    // Anchor first, neighbors discounted just below it (bounded replay).
+    expect(facts[0]!.fact.id).toBe("anchor");
+    for (const neighbor of facts.slice(1)) {
+      expect(neighbor.score).toBeLessThan(facts[0]!.score);
+      expect(neighbor.fact.sessionId).toBe("sess-A");
+    }
+  });
+
+  it("caps restored neighbors per anchor", async () => {
+    await writeChunk(
+      "chunk-1",
+      [
+        {
+          id: "n1",
+          text: "first same session fact",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n1",
+          sessionId: "sess-A",
+        },
+        {
+          id: "n2",
+          text: "second same session fact",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n2",
+          sessionId: "sess-A",
+        },
+        {
+          id: "n3",
+          text: "third same session fact",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n3",
+          sessionId: "sess-A",
+        },
+      ],
+      NOW - 2000,
+    );
+    await writeChunk("chunk-2", [
+      {
+        id: "anchor",
+        text: "morning standup schedule details",
+        importance: 0.5,
+        createdAt: NOW,
+        dedupKey: "k:anchor",
+        sessionId: "sess-A",
+      },
+    ]);
+
+    const { facts } = await retrieveTopK({
+      query: "morning standup",
+      storage,
+      topK: 1,
+      now: NOW,
+    });
+    // Default cap: 2 neighbors per anchor → the first two in chunk order.
+    const ids = facts.map((f) => f.fact.id);
+    expect(ids).toContain("n1");
+    expect(ids).toContain("n2");
+    expect(ids).not.toContain("n3");
+    expect(facts).toHaveLength(3);
+  });
+
+  it("skips expansion when the anchor carries no sessionId (pre-stamp rows)", async () => {
+    await writeChunk(
+      "chunk-1",
+      [
+        {
+          id: "n-early",
+          text: "unrelated earlier conversation context",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n-early",
+          sessionId: "sess-A",
+        },
+      ],
+      NOW - 2000,
+    );
+    await writeChunk("chunk-2", [
+      {
+        id: "anchor",
+        text: "morning standup schedule details",
+        importance: 0.5,
+        createdAt: NOW,
+        dedupKey: "k:anchor",
+        // No sessionId — pre-stamp archive row, graceful skip.
+      },
+    ]);
+
+    const { facts } = await retrieveTopK({
+      query: "morning standup",
+      storage,
+      topK: 1,
+      now: NOW,
+    });
+    expect(facts).toHaveLength(1);
+    expect(facts[0]!.fact.id).toBe("anchor");
+  });
+
+  it("does not expand when neighborhoodExpansion is disabled", async () => {
+    await writeChunk(
+      "chunk-1",
+      [
+        {
+          id: "n-early",
+          text: "unrelated earlier conversation context",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n-early",
+          sessionId: "sess-A",
+        },
+      ],
+      NOW - 2000,
+    );
+    await writeChunk("chunk-2", [
+      {
+        id: "anchor",
+        text: "morning standup schedule details",
+        importance: 0.5,
+        createdAt: NOW,
+        dedupKey: "k:anchor",
+        sessionId: "sess-A",
+      },
+    ]);
+
+    const { facts } = await retrieveTopK({
+      query: "morning standup",
+      storage,
+      topK: 1,
+      now: NOW,
+      retrievalConfig: {
+        useEpochFirst: false,
+        epochExpandTopN: 3,
+        useSubmodularSelect: false,
+        submodularDiversityWeight: 0.3,
+        submodularCoverageWeight: 0.3,
+        submodularTokenBudget: null,
+        mode: "blended",
+        neighborhoodExpansion: false,
+      },
+    });
+    expect(facts).toHaveLength(1);
+    expect(facts[0]!.fact.id).toBe("anchor");
+  });
+});
