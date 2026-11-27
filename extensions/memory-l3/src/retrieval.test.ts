@@ -6,6 +6,7 @@ import {
   buildEvidenceExpansionTerms,
   classifyQueryIntent,
   critiqueStaleFacts,
+  DEFAULT_RETRIEVAL_CONFIG,
   extractQueryAnchors,
   findMissingPacketAnchors,
   formatMemorySection,
@@ -2357,7 +2358,16 @@ describe("retrieveTopK type-dispatched retrieval (MemoType, QW3)", () => {
       },
     ]);
     const query = "gateway 192.168.50.1";
-    const dispatched = await retrieveTopK({ query, storage, topK: 5, now: NOW });
+    // Scope to the category-dispatch layer: disable the near/far split so
+    // the only candidate difference between the runs is category dispatch
+    // (none for an un-namespaced slot).
+    const dispatched = await retrieveTopK({
+      query,
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: { ...DEFAULT_RETRIEVAL_CONFIG, nearFarSplit: false },
+    });
     const explicit = await retrieveTopK({
       query,
       storage,
@@ -2704,5 +2714,108 @@ describe("retrieveTopK same-session neighborhood expansion (QW1, CoD remainder)"
     });
     expect(facts).toHaveLength(1);
     expect(facts[0]!.fact.id).toBe("anchor");
+  });
+});
+
+describe("retrieveTopK near/far scoring split (QW3, NFA)", () => {
+  it("re-weights recency by zone vs a flat ranker (near amplified, far age-neutral)", async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    // retrieveTopK writes state during a run (Hebbian edge map,
+    // retrieval-use signals) that a second run on the same store reads —
+    // run-order contamination, not a config effect. Seed two identical
+    // VIRGIN stores (inside tmpRoot so afterEach cleans both) and run each
+    // configuration on its own, so any score delta is attributable to the
+    // zone re-weighting alone.
+    const seedStore = (): Storage => {
+      const dir = mkdtempSync(path.join(tmpRoot, "nf-split-"));
+      return new Storage(path.join(dir, ".openclaw", "l3"));
+    };
+    const seedFacts = async (store: Storage): Promise<void> => {
+      // Fresh session-archive fact (near zone: l2 tier, 1 day old).
+      await store.writeL2Chunk(
+        {
+          id: "chunk-nf",
+          agentId: "j-rorqual",
+          startTurnIndex: 0,
+          endTurnIndex: 1,
+          createdAt: NOW - 1 * DAY,
+          facts: [
+            {
+              id: "nf-near",
+              text: "standup schedule details",
+              importance: 0.5,
+              createdAt: NOW - 1 * DAY,
+              dedupKey: "k:nf-near",
+            },
+          ],
+          typedFacts: [],
+          dedupKeys: ["k:nf-near"],
+        },
+        "",
+      );
+      // Old consolidated fact (far zone: longterm tier, 30 days since confirm).
+      await store.writeLongTerm(
+        {
+          version: 1,
+          agentId: "j-rorqual",
+          lastConsolidatedAt: NOW,
+          facts: [
+            {
+              id: "nf-far",
+              text: "user prefers morning standup meetings",
+              dedupKey: "user_pref:standup_nf",
+              importance: 0.5,
+              firstSeenAt: NOW - 40 * DAY,
+              lastConfirmedAt: NOW - 30 * DAY,
+              recallCount: 4,
+              sourceChunkIds: ["chunk-a", "chunk-b", "chunk-c", "chunk-d"],
+              archived: false,
+              archivedAt: null,
+            },
+          ],
+        },
+        "",
+      );
+    };
+
+    const onStore = seedStore();
+    await seedFacts(onStore);
+    const offStore = seedStore();
+    await seedFacts(offStore);
+
+    const on = await retrieveTopK({
+      query: "standup",
+      storage: onStore,
+      topK: 2,
+      now: NOW,
+      retrievalConfig: { ...DEFAULT_RETRIEVAL_CONFIG, nearFarSplit: true },
+    });
+    const off = await retrieveTopK({
+      query: "standup",
+      storage: offStore,
+      topK: 2,
+      now: NOW,
+      retrievalConfig: { ...DEFAULT_RETRIEVAL_CONFIG, nearFarSplit: false },
+    });
+
+    const farOn = on.facts.find((r) => r.fact.id === "nf-far");
+    const farOff = off.facts.find((r) => r.fact.id === "nf-far");
+    const nearOn = on.facts.find((r) => r.fact.id === "nf-near");
+    const nearOff = off.facts.find((r) => r.fact.id === "nf-near");
+    expect(farOn).toBeDefined();
+    expect(farOff).toBeDefined();
+    expect(nearOn).toBeDefined();
+    expect(nearOff).toBeDefined();
+    // Far: weightRecency 0.05 → 0.01 — the recency term stops moving far
+    // ranking with age (age-neutral far pool). With a positive recency
+    // signal the far fact's absolute composite is a hair lower under the
+    // split; its within-pool ranking is now driven by content signals.
+    expect(farOn!.score).toBeLessThan(farOff!.score);
+    // Near: weightRecency 0.05 → 0.1 — the 1-day-old fact's freshness
+    // counts double, discriminating live session state harder.
+    expect(nearOn!.score).toBeGreaterThan(nearOff!.score);
+    // The far delta is tiny by design (the recency signal of a 30-day-old
+    // fact is already small); the near delta is the split's dominant effect.
+    expect(farOff!.score - farOn!.score).toBeLessThan(nearOn!.score - nearOff!.score);
   });
 });

@@ -15,6 +15,7 @@ import {
 } from "./hebbian.js";
 import { bestHypeMatch, buildHypeLookup } from "./hype.js";
 import { formatBody } from "./longterm-typed.js";
+import { applyNearFarProfile, resolveNearFarZone } from "./near-far-presets.js";
 import {
   readPromotedSkills,
   proceduralFactAsL2Fact,
@@ -362,6 +363,24 @@ export type RetrievalConfig = {
    * Default: max(2, floor(topK / 2)).
    */
   neighborhoodMaxTotal?: number;
+  /**
+   * QW3 (2026-11-27, NFA): near/far scoring split. When true, per-item
+   * scoring applies a zone-resolved recency re-weighting — near (recent
+   * session-archive items inside `nearFarWindowMs`) get weightRecency × 2;
+   * far (consolidated tiers + old session-archive items) get × 0.2, making
+   * the far pool age-neutral instead of systematically suppressed by a
+   * flat ranker. Multipliers compose with category/intent presets;
+   * explicit caller `config` suppresses the split (explicit > preset,
+   * mirroring category presets). Default true; kill-switch env
+   * OPENCLAW_MEMORY_L3_NEAR_FAR_SPLIT=0.
+   */
+  nearFarSplit?: boolean;
+  /**
+   * Wall-clock window in which a session-archive item (l2/typed/
+   * memory-core tier) counts as "near". Older items get far treatment.
+   * Default 7 days.
+   */
+  nearFarWindowMs?: number;
 };
 
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
@@ -382,6 +401,8 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   neighborhoodExpansion: true,
   neighborhoodMaxPerAnchor: 2,
   neighborhoodScoreDiscount: 0.75,
+  nearFarSplit: true,
+  nearFarWindowMs: 7 * 24 * 60 * 60 * 1000,
 };
 
 export type RetrievedFact = {
@@ -947,6 +968,14 @@ export async function retrieveTopK(params: {
   // preset), mirroring the intent-preset priority.
   const allowCategoryPresets = !params.config;
 
+  // QW3 (2026-11-27, NFA): near/far recency re-weighting. Gated like category
+  // presets — an explicit caller config takes full control of scoring
+  // (explicit > preset). Default on; env kill-switch for ablation.
+  const allowNearFarSplit =
+    !params.config &&
+    (retConfig.nearFarSplit ?? process.env.OPENCLAW_MEMORY_L3_NEAR_FAR_SPLIT !== "0");
+  const nearFarWindowMs = retConfig.nearFarWindowMs ?? 7 * 24 * 60 * 60 * 1000;
+
   // QW-2: Wall-clock deadline for scoring. When set, bail out of the scoring
   // loop early if the deadline is exceeded. Items not scored are simply
   // absent from results — partial results are better than blocking.
@@ -970,10 +999,20 @@ export async function retrieveTopK(params: {
       }
       break;
     }
-    const itemConfig =
+    const baseItemConfig =
       allowCategoryPresets && item.category
         ? getCategoryScoringPreset(item.category)
         : effectiveConfig;
+    // QW3 (2026-11-27, NFA): near/far recency re-weighting on the resolved
+    // per-item config (category preset, intent preset, or default). Near
+    // items get amplified recency discrimination; far items get
+    // age-neutral treatment. Composes with presets — never clobbers them.
+    const itemConfig = allowNearFarSplit
+      ? applyNearFarProfile(
+          baseItemConfig,
+          resolveNearFarZone(item.tier, item.fact.createdAt, now, nearFarWindowMs),
+        )
+      : baseItemConfig;
     const signals = scoreFact({
       queryTokens,
       fact: item.fact,
