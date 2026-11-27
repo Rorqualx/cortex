@@ -47,12 +47,12 @@ function extractToolRefs(text: string): Set<string> {
   return refs;
 }
 
-/** Extract trigger keywords from "## When this triggers" and "## When to use" sections. */
+/** Extract trigger keywords from "## When this triggers", "## When to apply", and "## When to use" sections. */
 function extractTriggers(text: string): Set<string> {
   const triggers = new Set<string>();
   // Capture the content of trigger/when sections
   const sectionRe =
-    /^##\s+(?:When this triggers|When to use this skill|Triggers)\s*\n([\s\S]*?)(?=\n##\s|$)/gmu;
+    /^##\s+(?:When this triggers|When to apply|When to use this skill|Triggers)\s*\n([\s\S]*?)(?=\n##\s|$)/gmu;
   let match: RegExpExecArray | null;
   while ((match = sectionRe.exec(text)) !== null) {
     const sectionContent = match[1];

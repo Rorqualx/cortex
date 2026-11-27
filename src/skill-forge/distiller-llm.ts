@@ -1,3 +1,4 @@
+import path from "node:path";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
 import {
   completeWithPreparedSimpleCompletionModel,
@@ -11,9 +12,9 @@ export const SKILL_FORGE_LLM_DISTILLER_SYSTEM =
 
 Output ONLY the markdown body (no YAML frontmatter, no surrounding code fences). Follow these rules:
 - Start with a "## Overview" section (1-2 sentences explaining what this skill enables).
-- Add a "## When to use this skill" section describing the trigger conditions.
+- Add a "## When to apply" section stating the applicability conditions: when the skill applies AND when it does NOT apply (boundary conditions grounded in the observed captures and failure excerpts).
 - Add a "## Workflow" section with a numbered list keyed to the captured tool sequence.
-- Add a "## Validation" section with bullet points describing how to confirm the skill worked correctly (e.g., expected output, success criteria).
+- Add a "## Validation" section with bullet points describing how to confirm the skill worked correctly (e.g., expected output, success criteria). Make every check source-traceable: end each bullet with a citation naming the capture id it was derived from, e.g. "(source: capture <id>)". Cite only the source captures listed in the candidate data; never invent ids.
 - When the candidate includes an "Observed failure trajectories" block, add a "## Do / ## Don't" section: "Do" states what the successful workflow does (max 4 bullets); "Don't" names the concrete failure modes seen in those excerpts (max 4 bullets). Derive "Don't" entries only from the supplied failure excerpts, never invent failure modes. Omit the section entirely when no failure trajectories are provided.
 - Keep the total body under 1500 characters (2000 when the "## Do / ## Don't" section is required).
 - Do NOT include "name:" or "description:" frontmatter fields - those are managed externally.
@@ -56,11 +57,20 @@ function laneSpecificBlock(candidate: Candidate): string {
 }
 
 export function buildUserPrompt(candidate: Candidate): string {
+  // EGSE delta (2026-11-26): surface the source capture ids so the distiller
+  // can emit source-traceable Validation checks (each check cites the capture
+  // it was derived from) and grounded When-to-apply boundary conditions.
+  const sourceCaptures =
+    candidate.lane === "tool-shape"
+      ? candidate.captureDirs.map((dir) => path.basename(dir)).slice(0, 8)
+      : [path.basename(candidate.captureDir)];
   const lines = [
     "Candidate workflow:",
     "",
     `Lane: ${candidate.lane}`,
     `Candidate ID: ${candidate.candidateId}`,
+    "",
+    `Source captures: ${sourceCaptures.join(", ")}`,
     "",
     laneSpecificBlock(candidate),
   ];
@@ -117,6 +127,18 @@ export function validateLlmDistilledProse(raw: string): ProseValidation {
   }
   if (/<\s*script\b/iu.test(body)) {
     return { ok: false, reason: "LLM output contains a script tag" };
+  }
+  // EGSE applicability contract (2026-11-26): the distilled body must carry
+  // an applicability section. Accept the legacy "When to use this skill"
+  // heading (and the compressor's trigger-heading variants) so bodies
+  // distilled before the rename keep validating.
+  if (
+    !/^##\s+(?:When to apply|When to use this skill|When this triggers|Triggers)\s*\n/mu.test(body)
+  ) {
+    return {
+      ok: false,
+      reason: "LLM output missing applicability section (## When to apply)",
+    };
   }
   if (body.length > SKILL_FORGE_LLM_MAX_BODY_CHARS) {
     body = `${body.slice(0, SKILL_FORGE_LLM_MAX_BODY_CHARS)}\n\n_... [truncated by skill-forge for length]_`;

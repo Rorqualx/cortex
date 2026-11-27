@@ -201,8 +201,11 @@ export async function runProviderModelDiscovery(params: {
       }
       if (requested.toLowerCase() !== key) {
         // A requested id that the provider answered with a different served id =
-        // a silent upgrade (e.g. glm-5.1 served as glm-5.2, or the stable alias
-        // deepseek-v4-flash answered with the snapshot id DeepSeek-V4-Flash-0731).
+        // a silent upgrade (e.g. glm-5.1 served as glm-5.2, or pins on the
+        // retired DeepSeek ids deepseek-v4-flash / deepseek-v4-flash-vision-exp
+        // now served as deepseek-flash, which answers with the V4.1-Flash-1017
+        // snapshot generation — the 2026-09 consolidation of the old
+        // DeepSeek-V4-Flash-0731 snapshot alias).
         // Record the link even when /models also lists the served id — the
         // snapshot identity must reach doctor --fix as a distinguishable ID.
         const from = upgradeFromByServed.get(key) ?? new Set<string>();
