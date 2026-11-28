@@ -19,7 +19,16 @@
 //
 // Usage:
 //   node extensions/memory-l3/scripts/temporal-survival-audit.mjs \
-//     [--root=<l3 dir>] [--limit=N] [--verbose]
+//     [--root=<l3 dir>] [--limit=N] [--since=<epoch-ms|ISO|0>] [--verbose]
+//
+// QW-A loss attribution (2026-11-28): after the base tables, a second
+// section audits the CURRENT pipeline only — chunks compacted after the
+// v18 timestamp-preservation clause landed (created_at >= --since, default
+// the d4e5dc4fadb landing) — with the pre-side denominator de-noised
+// (ambient tool-output/system/runtime-context timestamps excluded) and
+// every LOST anchor attributed: retained-earlier (cross-chunk dedup drop,
+// not a net loss), retained-later (re-extracted, not a net loss), or
+// extraction-lost (gone from the store — the true memory loss).
 //
 // Root resolution: --root → <cwd>/.openclaw/l3 → ~/.openclaw/workspace/.openclaw/l3.
 // Output: survival table (overall + per category) and, with --verbose, a
@@ -30,6 +39,12 @@ import { readFile, readdir } from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import {
+  attributionForLostAnchor,
+  denoisedTextFromLines,
+  parseSince,
+  V18_LANDED_AT,
+} from "./temporal-attribution.mjs";
 
 // Temporal-anchor regexes — MIRRORED from src/compression/temporal.ts with
 // the `g` flag added for extraction (keep in sync; all run in linear time).
@@ -146,6 +161,13 @@ const argVal = (name) => {
 };
 const VERBOSE = args.includes("--verbose");
 const LIMIT = Number.parseInt(argVal("limit") ?? "0", 10);
+const SINCE = parseSince(argVal("since"));
+if (SINCE === null) {
+  console.error(
+    `error: --since=${argVal("since")} is not an epoch-ms or ISO date (use --since=0 to audit all chunks)`,
+  );
+  process.exit(1);
+}
 
 async function resolveRoot() {
   const explicit = argVal("root");
@@ -180,7 +202,35 @@ try {
   process.exit(1);
 }
 
-const selectChunk = db.prepare("SELECT frontmatter, body FROM l3_l2_chunks WHERE id = ?");
+// Load every L2 chunk once: distilled post text (same postHaystack the base
+// audit scores against), creation time, deterministic-extractor flag, and
+// merged-fact text — the attribution pass below reuses these in memory.
+const posts = new Map(); // chunkId → { createdAt, post, deterministic, mergedText }
+for (const row of db.prepare("SELECT id, created_at, frontmatter, body FROM l3_l2_chunks").all()) {
+  let fm = {};
+  try {
+    fm = JSON.parse(row.frontmatter);
+  } catch {
+    fm = {};
+  }
+  const mergedParts = [];
+  for (const fact of fm.facts ?? []) {
+    if (
+      typeof fact?.text === "string" &&
+      typeof fact?.reasoning === "string" &&
+      fact.reasoning.startsWith("merged:")
+    ) {
+      mergedParts.push(fact.text);
+    }
+  }
+  posts.set(row.id, {
+    createdAt: row.created_at,
+    post: postHaystack(row.frontmatter, row.body),
+    deterministic: fm.deterministic === true,
+    mergedText: mergedParts.join("\n"),
+  });
+}
+db.close();
 
 // category → { survived, total }; overall accumulates per-chunk distinct anchors.
 const stats = new Map(CATEGORIES.map(({ name }) => [name, { survived: 0, total: 0 }]));
@@ -193,8 +243,8 @@ let chunksWithAnchors = 0;
 
 for (const file of archiveFiles) {
   const chunkId = file.replace(/\.jsonl$/, "");
-  const row = selectChunk.get(chunkId);
-  if (!row) {
+  const chunk = posts.get(chunkId);
+  if (!chunk) {
     unpaired += 1;
     continue;
   }
@@ -218,7 +268,7 @@ for (const file of archiveFiles) {
   }
 
   const anchors = extractAnchors(pre);
-  const post = postHaystack(row.frontmatter, row.body);
+  const post = chunk.post;
   let chunkTotal = 0;
   let chunkSurvived = 0;
   for (const [category, set] of anchors) {
@@ -267,7 +317,101 @@ for (const file of archiveFiles) {
     chunksWithAspects += 1;
   }
 }
-db.close();
+
+// --- QW-A (2026-11-28): loss attribution on the v18+ slice, de-noised pre side ---
+// The base tables keep their historical inputs (all chunks, noisy pre side)
+// so the longitudinal ledger numbers stay comparable. This pass answers
+// the follow-up: for the CURRENT pipeline — chunks compacted after the v18
+// preservation clause landed — with ambient noise removed from the
+// denominator, where do lost anchors actually die?
+const sliceLabel = SINCE > 0 ? new Date(SINCE).toISOString() : "all (--since=0)";
+const sliceChunks = [];
+for (const file of archiveFiles) {
+  const chunkId = file.replace(/\.jsonl$/, "");
+  const chunk = posts.get(chunkId);
+  if (chunk && (SINCE <= 0 || chunk.createdAt >= SINCE)) {
+    sliceChunks.push({ file, chunkId, chunk });
+  }
+}
+const attr = {
+  denoisedTotal: 0,
+  denoisedSurvived: 0,
+  noisyTotal: 0,
+  noisySurvived: 0,
+  retainedEarlier: 0,
+  retainedLater: 0,
+  extractionLostLlm: 0,
+  extractionLostDeterministic: 0,
+  mergedPreserved: 0,
+  aspectTotal: 0,
+  aspectSurvived: 0,
+};
+// Memoized per-anchor scan: sorted createdAts of chunks whose distilled
+// output contains the anchor. The anchor was already confirmed absent from
+// the owner chunk's own output, so every entry is another chunk.
+const containingCache = new Map();
+const containingCreatedAts = (anchor) => {
+  let list = containingCache.get(anchor);
+  if (list === undefined) {
+    list = [];
+    for (const c of posts.values()) {
+      if (c.post.includes(anchor)) list.push(c.createdAt);
+    }
+    list.sort((a, b) => a - b);
+    containingCache.set(anchor, list);
+  }
+  return list;
+};
+for (const { file, chunk } of sliceChunks) {
+  let raw = "";
+  try {
+    raw = await readFile(path.join(archiveDir, file), "utf8");
+  } catch {
+    continue;
+  }
+  const lines = raw.split(/\r?\n/);
+  const noisyPre = lines
+    .filter((l) => l.trim().length > 0)
+    .map((l) => {
+      try {
+        return messageText(JSON.parse(l));
+      } catch {
+        return "";
+      }
+    })
+    .join("\n");
+  const denoisedPre = denoisedTextFromLines(lines);
+
+  const post = chunk.post;
+  for (const set of extractAnchors(noisyPre).values()) {
+    for (const anchor of set) {
+      attr.noisyTotal += 1;
+      if (post.includes(anchor)) attr.noisySurvived += 1;
+    }
+  }
+  const postLower = post.toLowerCase();
+  for (const set of extractAnchors(denoisedPre).values()) {
+    for (const anchor of set) {
+      attr.denoisedTotal += 1;
+      if (post.includes(anchor)) {
+        attr.denoisedSurvived += 1;
+        if (chunk.mergedText.includes(anchor)) attr.mergedPreserved += 1;
+      } else {
+        const kind = attributionForLostAnchor(chunk.createdAt, containingCreatedAts(anchor));
+        if (kind === "retained-earlier") attr.retainedEarlier += 1;
+        else if (kind === "retained-later") attr.retainedLater += 1;
+        else if (chunk.deterministic) attr.extractionLostDeterministic += 1;
+        else attr.extractionLostLlm += 1;
+      }
+    }
+  }
+  for (const set of extractAspectForms(denoisedPre).values()) {
+    for (const form of set) {
+      attr.aspectTotal += 1;
+      if (postLower.includes(form)) attr.aspectSurvived += 1;
+    }
+  }
+}
 
 let totalAll = 0;
 let survivedAll = 0;
@@ -320,6 +464,38 @@ for (const c of perAspect) {
 }
 console.log(
   `ASPECT OVERALL: ${aspectSurvivedAll}/${aspectTotalAll} aspectual forms survived = ${pct(aspectSurvivedAll, aspectTotalAll) ?? "n/a"} — lost forms = aspectual flattening (progressive/habitual wording rewritten under compaction)`,
+);
+
+// QW-A attribution section (2026-11-28).
+console.log("");
+console.log("== QW-A loss attribution (v18+ slice, de-noised pre side) ==");
+console.log(
+  `slice: ${sliceChunks.length} chunks created_at >= ${sliceLabel}` +
+    (SINCE > 0
+      ? ` (default: v18 landed d4e5dc4fadb ${V18_LANDED_AT}; override with --since=<epoch|ISO> or --since=0)`
+      : ""),
+);
+console.log(
+  `pre-side anchors: ${attr.denoisedTotal} de-noised (noisy baseline: ${attr.noisyTotal}; ambient = tool/system/openclaw-runtime records + non-text blocks excluded)`,
+);
+console.log(
+  `slice survival: ${attr.denoisedSurvived}/${attr.denoisedTotal} = ${pct(attr.denoisedSurvived, attr.denoisedTotal) ?? "n/a"} de-noised | noisy baseline ${attr.noisySurvived}/${attr.noisyTotal} = ${pct(attr.noisySurvived, attr.noisyTotal) ?? "n/a"}`,
+);
+const attrLost = attr.denoisedTotal - attr.denoisedSurvived;
+console.log(`attribution of ${attrLost} lost anchors:`);
+console.log(
+  `  retained-earlier (cross-chunk dedup drop — anchor lives in an earlier chunk; NOT a net memory loss): ${attr.retainedEarlier}`,
+);
+console.log(
+  `  retained-later (re-extracted after this chunk — NOT a net memory loss): ${attr.retainedLater}`,
+);
+console.log(
+  `  extraction-lost (llm extraction/merge; category budget off by default): ${attr.extractionLostLlm}`,
+);
+console.log(`  extraction-lost (deterministic extractor): ${attr.extractionLostDeterministic}`);
+console.log(`  anchors preserved inside merged facts: ${attr.mergedPreserved}`);
+console.log(
+  `slice aspectual survival (de-noised): ${attr.aspectSurvived}/${attr.aspectTotal} = ${pct(attr.aspectSurvived, attr.aspectTotal) ?? "n/a"}`,
 );
 
 if (overall !== null) {
