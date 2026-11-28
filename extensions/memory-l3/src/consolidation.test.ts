@@ -6,6 +6,7 @@ import {
   aggregateCandidates,
   type ConsolidationConfig,
   DEFAULT_CONSOLIDATION_CONFIG,
+  joinHebbianEdgeCounts,
   joinRetrievalUseCounts,
   passesPromotionThresholds,
   runVerificationGate,
@@ -232,6 +233,73 @@ describe("joinRetrievalUseCounts", () => {
   });
 });
 
+describe("joinHebbianEdgeCounts", () => {
+  it("stamps candidates with the number of edges touching their dedupKey (STARK 2026-11-26)", async () => {
+    await storage.writeEdgeMap([
+      { a: "k:1", b: "k:2", weight: 2 },
+      { a: "k:1", b: "k:3", weight: 1 },
+      { a: "k:2", b: "k:3", weight: 1 },
+    ]);
+    const unlinked = {
+      dedupKey: "k:unlinked",
+      text: "no edges touch this key",
+      importance: 0.7,
+      recallCount: 2,
+      firstSeenAt: NOW,
+      lastConfirmedAt: NOW,
+      sourceChunkIds: ["chunk-c"],
+      certainty: "confirmed" as const,
+    };
+    const stamped = await joinHebbianEdgeCounts(
+      [
+        {
+          dedupKey: "k:1",
+          text: "hub fact",
+          importance: 0.7,
+          recallCount: 2,
+          firstSeenAt: NOW,
+          lastConfirmedAt: NOW,
+          sourceChunkIds: ["chunk-a"],
+          certainty: "confirmed" as const,
+        },
+        {
+          dedupKey: "k:2",
+          text: "spoke fact",
+          importance: 0.7,
+          recallCount: 2,
+          firstSeenAt: NOW,
+          lastConfirmedAt: NOW,
+          sourceChunkIds: ["chunk-b"],
+          certainty: "confirmed" as const,
+        },
+        unlinked,
+      ],
+      storage,
+    );
+    expect(stamped[0]?.hebbianEdgeCount).toBe(2);
+    expect(stamped[1]?.hebbianEdgeCount).toBe(2);
+    // Unlinked candidates pass through unstamped (and by identity).
+    expect(stamped[2]).toBe(unlinked);
+    expect(stamped[2]?.hebbianEdgeCount).toBeUndefined();
+  });
+
+  it("degrades to unstamped candidates when the edge map is empty", async () => {
+    const candidates = [
+      {
+        dedupKey: "k:1",
+        text: "t",
+        importance: 0.7,
+        recallCount: 2,
+        firstSeenAt: NOW,
+        lastConfirmedAt: NOW,
+        sourceChunkIds: ["chunk-a"],
+        certainty: "confirmed" as const,
+      },
+    ];
+    expect(await joinHebbianEdgeCounts(candidates, storage)).toBe(candidates);
+  });
+});
+
 describe("passesPromotionThresholds", () => {
   const baseCfg: ConsolidationConfig = DEFAULT_CONSOLIDATION_CONFIG;
 
@@ -301,6 +369,42 @@ describe("passesPromotionThresholds", () => {
           sourceChunkIds: ["chunk-1"],
           certainty: "confirmed",
           retrievalUseCount: 50,
+        },
+        baseCfg,
+      ),
+    ).toBe(false);
+  });
+
+  it("hebbian edge support lets an otherwise-barred single-recall fact promote (STARK 2026-11-26)", () => {
+    const candidate = {
+      dedupKey: "k:linked",
+      text: "co-occurs with neighbors across chunks",
+      importance: 0.7,
+      recallCount: 1,
+      firstSeenAt: NOW,
+      lastConfirmedAt: NOW + 4 * MS_PER_DAY,
+      sourceChunkIds: ["chunk-1"],
+      certainty: "confirmed" as const,
+    };
+    // Without edge support the single chunk cannot clear minRecallCount 2.
+    expect(passesPromotionThresholds(candidate, baseCfg)).toBe(false);
+    // Two touching edges substitute for one distinct-chunk recall.
+    expect(passesPromotionThresholds({ ...candidate, hebbianEdgeCount: 2 }, baseCfg)).toBe(true);
+  });
+
+  it("caps hebbian edge credit at one recall so connectivity cannot replace evidence", () => {
+    expect(
+      passesPromotionThresholds(
+        {
+          dedupKey: "k:hub",
+          text: "hub fact connected to everything but never re-emitted",
+          importance: 0.7,
+          recallCount: 0,
+          firstSeenAt: NOW,
+          lastConfirmedAt: NOW + 4 * MS_PER_DAY,
+          sourceChunkIds: ["chunk-1"],
+          certainty: "confirmed",
+          hebbianEdgeCount: 50,
         },
         baseCfg,
       ),

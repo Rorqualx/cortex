@@ -15,6 +15,7 @@ import {
 } from "./hebbian.js";
 import { bestHypeMatch, buildHypeLookup } from "./hype.js";
 import { formatBody } from "./longterm-typed.js";
+import { applyNearFarProfile, resolveNearFarZone } from "./near-far-presets.js";
 import {
   readPromotedSkills,
   proceduralFactAsL2Fact,
@@ -332,6 +333,54 @@ export type RetrievalConfig = {
    * 2000 for a 2K-token budget.
    */
   maxInjectedTokens?: number;
+  /**
+   * QW1 (2026-11-27, CoD remainder — "Context on Demand"): same-session
+   * neighborhood expansion. After anchor selection, each L2 anchor that
+   * carries a `sessionId` deterministically restores its same-session
+   * neighbors — facts from the adjacent L2 chunks (chunk-N±1) whose own
+   * `sessionId` matches the anchor's. Anchors are never displaced: neighbors
+   * ride just below their anchor (discounted score), fill leftover token
+   * budget, and are the first to be trimmed when it tightens. This doubles
+   * as the bounded-replay policy for how much archive context one recall
+   * rehydrates (capped per anchor and per retrieval). Facts without a
+   * sessionId (pre-stamp archive rows) never participate — graceful skip.
+   * Default true; kill-switch env OPENCLAW_MEMORY_L3_NEIGHBORHOOD_EXPANSION=0.
+   */
+  neighborhoodExpansion?: boolean;
+  /**
+   * Max neighbor facts restored per anchor. Default 2.
+   */
+  neighborhoodMaxPerAnchor?: number;
+  /**
+   * Score multiplier applied to restored neighbors, relative to their
+   * anchor's score. Default 0.75 — neighbors rank just below their anchor
+   * (above the message-chunk fallback's supplementary tier) so a session
+   * cluster stays together under score-ordered trimming.
+   */
+  neighborhoodScoreDiscount?: number;
+  /**
+   * Hard cap on total neighbors restored per retrieval (bounded replay).
+   * Default: max(2, floor(topK / 2)).
+   */
+  neighborhoodMaxTotal?: number;
+  /**
+   * QW3 (2026-11-27, NFA): near/far scoring split. When true, per-item
+   * scoring applies a zone-resolved recency re-weighting — near (recent
+   * session-archive items inside `nearFarWindowMs`) get weightRecency × 2;
+   * far (consolidated tiers + old session-archive items) get × 0.2, making
+   * the far pool age-neutral instead of systematically suppressed by a
+   * flat ranker. Multipliers compose with category/intent presets;
+   * explicit caller `config` suppresses the split (explicit > preset,
+   * mirroring category presets). Default true; kill-switch env
+   * OPENCLAW_MEMORY_L3_NEAR_FAR_SPLIT=0.
+   */
+  nearFarSplit?: boolean;
+  /**
+   * Wall-clock window in which a session-archive item (l2/typed/
+   * memory-core tier) counts as "near". Older items get far treatment.
+   * Default 7 days.
+   */
+  nearFarWindowMs?: number;
 };
 
 export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
@@ -349,6 +398,11 @@ export const DEFAULT_RETRIEVAL_CONFIG: RetrievalConfig = {
   useRRFFusion: false,
   rrfK: 60,
   evidenceFirstOrdering: true,
+  neighborhoodExpansion: true,
+  neighborhoodMaxPerAnchor: 2,
+  neighborhoodScoreDiscount: 0.75,
+  nearFarSplit: true,
+  nearFarWindowMs: 7 * 24 * 60 * 60 * 1000,
 };
 
 export type RetrievedFact = {
@@ -914,6 +968,14 @@ export async function retrieveTopK(params: {
   // preset), mirroring the intent-preset priority.
   const allowCategoryPresets = !params.config;
 
+  // QW3 (2026-11-27, NFA): near/far recency re-weighting. Gated like category
+  // presets — an explicit caller config takes full control of scoring
+  // (explicit > preset). Default on; env kill-switch for ablation.
+  const allowNearFarSplit =
+    !params.config &&
+    (retConfig.nearFarSplit ?? process.env.OPENCLAW_MEMORY_L3_NEAR_FAR_SPLIT !== "0");
+  const nearFarWindowMs = retConfig.nearFarWindowMs ?? 7 * 24 * 60 * 60 * 1000;
+
   // QW-2: Wall-clock deadline for scoring. When set, bail out of the scoring
   // loop early if the deadline is exceeded. Items not scored are simply
   // absent from results — partial results are better than blocking.
@@ -937,10 +999,20 @@ export async function retrieveTopK(params: {
       }
       break;
     }
-    const itemConfig =
+    const baseItemConfig =
       allowCategoryPresets && item.category
         ? getCategoryScoringPreset(item.category)
         : effectiveConfig;
+    // QW3 (2026-11-27, NFA): near/far recency re-weighting on the resolved
+    // per-item config (category preset, intent preset, or default). Near
+    // items get amplified recency discrimination; far items get
+    // age-neutral treatment. Composes with presets — never clobbers them.
+    const itemConfig = allowNearFarSplit
+      ? applyNearFarProfile(
+          baseItemConfig,
+          resolveNearFarZone(item.tier, item.fact.createdAt, now, nearFarWindowMs),
+        )
+      : baseItemConfig;
     const signals = scoreFact({
       queryTokens,
       fact: item.fact,
@@ -1558,6 +1630,41 @@ export async function retrieveTopK(params: {
   const finalFacts = result.slice(0, topK);
 
   // -----------------------------------------------------------------
+  // QW1 (2026-11-27, CoD remainder): same-session neighborhood expansion
+  // -----------------------------------------------------------------
+  // Anchors in the final packet are compact, isolated recalls; the
+  // surrounding conversation that disambiguates them lives in the same
+  // session's neighboring chunks. Deterministically restore (bounded —
+  // see RetrievalConfig) each anchor's same-session neighbors from the
+  // adjacent L2 chunks so a recall rehydrates its local context instead
+  // of a lone fact. Runs AFTER the top-K slice so neighbors are strictly
+  // additive to the anchor packet (never displacing a selected anchor)
+  // and BEFORE compression/trim, where their discounted scores make them
+  // the first items trimmed when the token budget tightens (bounded
+  // replay). The helper iterates a snapshot of the packet, so restored
+  // neighbors never cascade into further expansion.
+  const neighborhoodEnabled =
+    retConfig.neighborhoodExpansion ??
+    process.env.OPENCLAW_MEMORY_L3_NEIGHBORHOOD_EXPANSION !== "0";
+  if (neighborhoodEnabled && finalFacts.length > 0) {
+    const neighbors = await restoreSessionNeighborhoods(finalFacts, {
+      storage: params.storage,
+      queryTokens,
+      now,
+      config: effectiveConfig,
+      corpusStats,
+      canonicalSlots,
+      maxPerAnchor: retConfig.neighborhoodMaxPerAnchor ?? 2,
+      scoreDiscount: retConfig.neighborhoodScoreDiscount ?? 0.75,
+      maxTotal: retConfig.neighborhoodMaxTotal ?? Math.max(2, Math.floor(topK / 2)),
+    });
+    if (neighbors.length > 0) {
+      finalFacts.push(...neighbors);
+      finalFacts.sort((a, b) => b.score - a.score);
+    }
+  }
+
+  // -----------------------------------------------------------------
   // Access-time tracking for typed facts (SaliMory-style decay)
   // -----------------------------------------------------------------
   // Update lastAccessedAt on retrieved typed facts so the access-time
@@ -2169,6 +2276,116 @@ export function submodularSelect(
   }
 
   return selected;
+}
+
+// ---------------------------------------------------------------------------
+// Same-session neighborhood restoration (QW1, 2026-11-27 — CoD remainder)
+// ---------------------------------------------------------------------------
+// "Context on Demand"-style bounded replay: when a retrieval anchor comes
+// from an L2 chunk that carries a sessionId, the anchor is an isolated
+// recall of a conversation whose disambiguating surroundings live in the
+// session's adjacent chunks. This pass deterministically restores those
+// neighbors — never re-ranking them against the query, and never letting
+// them displace anchors:
+//
+// - Neighbors are VERIFIED same-session (fact.sessionId must equal the
+//   anchor's) — chunk-id adjacency alone is not trusted, since concurrent
+//   sessions can interleave compactions.
+// - Restored items are capped per anchor (`maxPerAnchor`) and per retrieval
+//   (`maxTotal`) — the bounded-replay policy for archive rehydration.
+// - Their score is the anchor's score × `scoreDiscount`, so under the
+//   score-ordered token trim they sit just below their anchor and are the
+//   first to go when the budget tightens. Anchors always survive first.
+// - Facts without a sessionId (pre-stamp archive rows) never participate;
+//   non-L2 anchors (longterm/insight/msg-chunk tiers) have no chunk
+//   neighborhood. Both cases are graceful skips.
+// - Typed-fact neighbors whose slot already has a canonical long-term view
+//   are suppressed, mirroring the corpus-callosum rule in candidate
+//   collection (the canonical value is the live one; the chunk copy is
+//   stale by construction).
+
+async function restoreSessionNeighborhoods(
+  anchors: ReadonlyArray<RetrievedFact>,
+  params: {
+    storage: Storage;
+    queryTokens: Set<string>;
+    now: number;
+    config: ScoringConfig;
+    corpusStats?: CorpusStats;
+    canonicalSlots: ReadonlySet<string>;
+    maxPerAnchor: number;
+    scoreDiscount: number;
+    maxTotal: number;
+  },
+): Promise<RetrievedFact[]> {
+  const present = new Set(anchors.map((r) => r.fact.dedupKey));
+  const restored: RetrievedFact[] = [];
+  let total = 0;
+  for (const anchor of anchors) {
+    if (total >= params.maxTotal) {
+      break;
+    }
+    const sessionId = anchor.fact.sessionId;
+    if (!sessionId) {
+      continue; // Pre-stamp rows never participate (graceful skip).
+    }
+    const seq = chunkSeq(anchor.chunkId);
+    if (seq === null) {
+      continue; // Non-L2 tiers have no chunk neighborhood.
+    }
+    let perAnchor = 0;
+    for (const neighborSeq of [seq - 1, seq + 1]) {
+      if (perAnchor >= params.maxPerAnchor || total >= params.maxTotal) {
+        break;
+      }
+      if (neighborSeq < 0) {
+        continue;
+      }
+      const doc = await params.storage.readL2Chunk(`chunk-${neighborSeq}`, 0);
+      if (!doc) {
+        continue;
+      }
+      const candidates: Array<{ fact: L2Fact; tier: RetrievalTier }> = [
+        ...doc.frontmatter.facts.map((fact) => ({ fact, tier: "l2" as const })),
+        ...(doc.frontmatter.typedFacts ?? [])
+          .filter((typed) => !params.canonicalSlots.has(typed.slot))
+          .map((typed) => ({ fact: typedFactAsL2Fact(typed), tier: "typed" as const })),
+      ];
+      for (const { fact, tier } of candidates) {
+        if (perAnchor >= params.maxPerAnchor || total >= params.maxTotal) {
+          break;
+        }
+        if (fact.sessionId !== sessionId) {
+          continue; // Verify same-session — do not trust chunk adjacency alone.
+        }
+        if (present.has(fact.dedupKey)) {
+          continue;
+        }
+        const signals = scoreFact({
+          queryTokens: params.queryTokens,
+          fact,
+          now: params.now,
+          config: params.config,
+          l3Boost: 0,
+          corpusStats: params.corpusStats,
+          significant: fact.significant,
+          informationGain: doc.frontmatter.informationGain,
+        });
+        restored.push({
+          fact,
+          score: anchor.score * params.scoreDiscount,
+          signals,
+          chunkId: doc.frontmatter.id,
+          tier,
+          contextWindow: doc.frontmatter.contextWindow,
+        });
+        present.add(fact.dedupKey);
+        perAnchor += 1;
+        total += 1;
+      }
+    }
+  }
+  return restored;
 }
 
 // ---------------------------------------------------------------------------

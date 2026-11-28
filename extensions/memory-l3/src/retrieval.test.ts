@@ -6,6 +6,7 @@ import {
   buildEvidenceExpansionTerms,
   classifyQueryIntent,
   critiqueStaleFacts,
+  DEFAULT_RETRIEVAL_CONFIG,
   extractQueryAnchors,
   findMissingPacketAnchors,
   formatMemorySection,
@@ -2357,7 +2358,16 @@ describe("retrieveTopK type-dispatched retrieval (MemoType, QW3)", () => {
       },
     ]);
     const query = "gateway 192.168.50.1";
-    const dispatched = await retrieveTopK({ query, storage, topK: 5, now: NOW });
+    // Scope to the category-dispatch layer: disable the near/far split so
+    // the only candidate difference between the runs is category dispatch
+    // (none for an un-namespaced slot).
+    const dispatched = await retrieveTopK({
+      query,
+      storage,
+      topK: 5,
+      now: NOW,
+      retrievalConfig: { ...DEFAULT_RETRIEVAL_CONFIG, nearFarSplit: false },
+    });
     const explicit = await retrieveTopK({
       query,
       storage,
@@ -2497,5 +2507,315 @@ describe("retrieveTopK evidence-conditioned drill (QW-C)", () => {
       },
     });
     expect(result.drillDepth).toBeUndefined();
+  });
+});
+
+describe("retrieveTopK same-session neighborhood expansion (QW1, CoD remainder)", () => {
+  it("restores same-session facts from adjacent chunks around an L2 anchor", async () => {
+    await writeChunk(
+      "chunk-1",
+      [
+        {
+          id: "n-early",
+          text: "unrelated earlier conversation context",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n-early",
+          sessionId: "sess-A",
+        },
+        {
+          id: "n-other",
+          text: "different session fact entirely",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n-other",
+          sessionId: "sess-B",
+        },
+      ],
+      NOW - 2000,
+    );
+    await writeChunk("chunk-2", [
+      {
+        id: "anchor",
+        text: "morning standup schedule details",
+        importance: 0.5,
+        createdAt: NOW,
+        dedupKey: "k:anchor",
+        sessionId: "sess-A",
+      },
+    ]);
+    await writeChunk("chunk-3", [
+      {
+        id: "n-late",
+        text: "later unrelated same session note",
+        importance: 0.5,
+        createdAt: NOW,
+        dedupKey: "k:n-late",
+        sessionId: "sess-A",
+      },
+    ]);
+
+    const { facts } = await retrieveTopK({
+      query: "morning standup",
+      storage,
+      topK: 1,
+      now: NOW,
+    });
+    const ids = facts.map((f) => f.fact.id);
+    // Only the anchor matches the query at topK=1; everything else comes
+    // from neighborhood restoration.
+    expect(ids).toContain("anchor");
+    expect(ids).toContain("n-early");
+    expect(ids).toContain("n-late");
+    // Same-session verified: the sess-B fact in the adjacent chunk-1 is
+    // never restored even though the chunk is adjacent.
+    expect(ids).not.toContain("n-other");
+    // Anchor first, neighbors discounted just below it (bounded replay).
+    expect(facts[0]!.fact.id).toBe("anchor");
+    for (const neighbor of facts.slice(1)) {
+      expect(neighbor.score).toBeLessThan(facts[0]!.score);
+      expect(neighbor.fact.sessionId).toBe("sess-A");
+    }
+  });
+
+  it("caps restored neighbors per anchor", async () => {
+    await writeChunk(
+      "chunk-1",
+      [
+        {
+          id: "n1",
+          text: "first same session fact",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n1",
+          sessionId: "sess-A",
+        },
+        {
+          id: "n2",
+          text: "second same session fact",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n2",
+          sessionId: "sess-A",
+        },
+        {
+          id: "n3",
+          text: "third same session fact",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n3",
+          sessionId: "sess-A",
+        },
+      ],
+      NOW - 2000,
+    );
+    await writeChunk("chunk-2", [
+      {
+        id: "anchor",
+        text: "morning standup schedule details",
+        importance: 0.5,
+        createdAt: NOW,
+        dedupKey: "k:anchor",
+        sessionId: "sess-A",
+      },
+    ]);
+
+    const { facts } = await retrieveTopK({
+      query: "morning standup",
+      storage,
+      topK: 1,
+      now: NOW,
+    });
+    // Default cap: 2 neighbors per anchor → the first two in chunk order.
+    const ids = facts.map((f) => f.fact.id);
+    expect(ids).toContain("n1");
+    expect(ids).toContain("n2");
+    expect(ids).not.toContain("n3");
+    expect(facts).toHaveLength(3);
+  });
+
+  it("skips expansion when the anchor carries no sessionId (pre-stamp rows)", async () => {
+    await writeChunk(
+      "chunk-1",
+      [
+        {
+          id: "n-early",
+          text: "unrelated earlier conversation context",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n-early",
+          sessionId: "sess-A",
+        },
+      ],
+      NOW - 2000,
+    );
+    await writeChunk("chunk-2", [
+      {
+        id: "anchor",
+        text: "morning standup schedule details",
+        importance: 0.5,
+        createdAt: NOW,
+        dedupKey: "k:anchor",
+        // No sessionId — pre-stamp archive row, graceful skip.
+      },
+    ]);
+
+    const { facts } = await retrieveTopK({
+      query: "morning standup",
+      storage,
+      topK: 1,
+      now: NOW,
+    });
+    expect(facts).toHaveLength(1);
+    expect(facts[0]!.fact.id).toBe("anchor");
+  });
+
+  it("does not expand when neighborhoodExpansion is disabled", async () => {
+    await writeChunk(
+      "chunk-1",
+      [
+        {
+          id: "n-early",
+          text: "unrelated earlier conversation context",
+          importance: 0.5,
+          createdAt: NOW,
+          dedupKey: "k:n-early",
+          sessionId: "sess-A",
+        },
+      ],
+      NOW - 2000,
+    );
+    await writeChunk("chunk-2", [
+      {
+        id: "anchor",
+        text: "morning standup schedule details",
+        importance: 0.5,
+        createdAt: NOW,
+        dedupKey: "k:anchor",
+        sessionId: "sess-A",
+      },
+    ]);
+
+    const { facts } = await retrieveTopK({
+      query: "morning standup",
+      storage,
+      topK: 1,
+      now: NOW,
+      retrievalConfig: {
+        useEpochFirst: false,
+        epochExpandTopN: 3,
+        useSubmodularSelect: false,
+        submodularDiversityWeight: 0.3,
+        submodularCoverageWeight: 0.3,
+        submodularTokenBudget: null,
+        mode: "blended",
+        neighborhoodExpansion: false,
+      },
+    });
+    expect(facts).toHaveLength(1);
+    expect(facts[0]!.fact.id).toBe("anchor");
+  });
+});
+
+describe("retrieveTopK near/far scoring split (QW3, NFA)", () => {
+  it("re-weights recency by zone vs a flat ranker (near amplified, far age-neutral)", async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    // retrieveTopK writes state during a run (Hebbian edge map,
+    // retrieval-use signals) that a second run on the same store reads —
+    // run-order contamination, not a config effect. Seed two identical
+    // VIRGIN stores (inside tmpRoot so afterEach cleans both) and run each
+    // configuration on its own, so any score delta is attributable to the
+    // zone re-weighting alone.
+    const seedStore = (): Storage => {
+      const dir = mkdtempSync(path.join(tmpRoot, "nf-split-"));
+      return new Storage(path.join(dir, ".openclaw", "l3"));
+    };
+    const seedFacts = async (store: Storage): Promise<void> => {
+      // Fresh session-archive fact (near zone: l2 tier, 1 day old).
+      await store.writeL2Chunk(
+        {
+          id: "chunk-nf",
+          agentId: "j-rorqual",
+          startTurnIndex: 0,
+          endTurnIndex: 1,
+          createdAt: NOW - 1 * DAY,
+          facts: [
+            {
+              id: "nf-near",
+              text: "standup schedule details",
+              importance: 0.5,
+              createdAt: NOW - 1 * DAY,
+              dedupKey: "k:nf-near",
+            },
+          ],
+          typedFacts: [],
+          dedupKeys: ["k:nf-near"],
+        },
+        "",
+      );
+      // Old consolidated fact (far zone: longterm tier, 30 days since confirm).
+      await store.writeLongTerm(
+        {
+          version: 1,
+          agentId: "j-rorqual",
+          lastConsolidatedAt: NOW,
+          facts: [
+            {
+              id: "nf-far",
+              text: "user prefers morning standup meetings",
+              dedupKey: "user_pref:standup_nf",
+              importance: 0.5,
+              firstSeenAt: NOW - 40 * DAY,
+              lastConfirmedAt: NOW - 30 * DAY,
+              recallCount: 4,
+              sourceChunkIds: ["chunk-a", "chunk-b", "chunk-c", "chunk-d"],
+              archived: false,
+              archivedAt: null,
+            },
+          ],
+        },
+        "",
+      );
+    };
+
+    const onStore = seedStore();
+    await seedFacts(onStore);
+    const offStore = seedStore();
+    await seedFacts(offStore);
+
+    const on = await retrieveTopK({
+      query: "standup",
+      storage: onStore,
+      topK: 2,
+      now: NOW,
+      retrievalConfig: { ...DEFAULT_RETRIEVAL_CONFIG, nearFarSplit: true },
+    });
+    const off = await retrieveTopK({
+      query: "standup",
+      storage: offStore,
+      topK: 2,
+      now: NOW,
+      retrievalConfig: { ...DEFAULT_RETRIEVAL_CONFIG, nearFarSplit: false },
+    });
+
+    const farOn = on.facts.find((r) => r.fact.id === "nf-far");
+    const farOff = off.facts.find((r) => r.fact.id === "nf-far");
+    const nearOn = on.facts.find((r) => r.fact.id === "nf-near");
+    const nearOff = off.facts.find((r) => r.fact.id === "nf-near");
+    expect(farOn).toBeDefined();
+    expect(farOff).toBeDefined();
+    expect(nearOn).toBeDefined();
+    expect(nearOff).toBeDefined();
+    // Far: weightRecency 0.05 → 0.01 — the recency term stops moving far
+    // ranking with age (age-neutral far pool). With a positive recency
+    // signal the far fact's absolute composite is a hair lower under the
+    // split; its within-pool ranking is now driven by content signals.
+    expect(farOn!.score).toBeLessThan(farOff!.score);
+    // Near: weightRecency 0.05 → 0.1 — the 1-day-old fact's freshness
+    // counts double, discriminating live session state harder.
+    expect(nearOn!.score).toBeGreaterThan(nearOff!.score);
+    // The far delta is tiny by design (the recency signal of a 30-day-old
+    // fact is already small); the near delta is the split's dominant effect.
+    expect(farOff!.score - farOn!.score).toBeLessThan(nearOn!.score - nearOff!.score);
   });
 });

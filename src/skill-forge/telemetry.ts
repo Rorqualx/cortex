@@ -40,6 +40,17 @@ export type SkillTelemetryEntry = {
   retiredReason?: string;
   usageCount: number;
   lastUsedAt?: string;
+  /**
+   * QW-3 (2026-11-25, JevRSI revision-frequency): how many times the
+   * distiller rewrote this skill AFTER initial promotion (re-promotions
+   * over a live promoted entry, or in-place rewrites via
+   * `recordSkillRevision`). The amortization curve the analysis wants:
+   * falling revision-per-usage = the forge amortizes; rising = promotion-
+   * gate leak. Absent on entries created before this feature = 0 revisions.
+   */
+  revisionCount?: number;
+  /** Most recent revision timestamp (ms ISO). Absent = never revised. */
+  lastRevisedAt?: string;
   successScore?: number;
   /** Capped invoke-time records with pool-size snapshots + post-run outcome stamps. */
   usageLog?: SkillUsageRecord[];
@@ -118,6 +129,16 @@ export async function recordSkillPromotion(params: {
         lifecycle: "trial",
         promotedAt: now,
         successScore: params.successScore ?? existing.successScore,
+        // QW-3 (JevRSI revision-frequency): promoting over a LIVE promoted
+        // entry means the distiller rewrote an already-promoted skill and
+        // the rewrite re-passed the gate — count it as a revision. A revival
+        // from retired/staged is not a revision of a live skill.
+        ...(existing.status === "promoted"
+          ? {
+              revisionCount: (existing.revisionCount ?? 0) + 1,
+              lastRevisedAt: now,
+            }
+          : {}),
       }
     : {
         name: params.name,
@@ -157,6 +178,33 @@ export async function recordSkillDemotion(params: {
         retiredReason: params.reason,
         usageCount: 0,
       };
+  await writeTelemetry({ entry, env: params.env });
+  return entry;
+}
+
+/**
+ * QW-3 (2026-11-25, JevRSI revision-frequency): record an in-place revision
+ * of an already-tracked skill — the distiller rewrote the skill body
+ * without a re-staging round. Increments `revisionCount` and stamps
+ * `lastRevisedAt`. Returns null for an untracked skill (nothing to revise)
+ * — never invents an entry. The promote path stamps revisions implicitly
+ * via `recordSkillPromotion`; this is the direct API for in-place rewrites.
+ */
+export async function recordSkillRevision(params: {
+  name: string;
+  now?: Date;
+  env?: NodeJS.ProcessEnv;
+}): Promise<SkillTelemetryEntry | null> {
+  const existing = await readTelemetry({ name: params.name, env: params.env });
+  if (!existing) {
+    return null;
+  }
+  const now = (params.now ?? new Date()).toISOString();
+  const entry: SkillTelemetryEntry = {
+    ...existing,
+    revisionCount: (existing.revisionCount ?? 0) + 1,
+    lastRevisedAt: now,
+  };
   await writeTelemetry({ entry, env: params.env });
   return entry;
 }

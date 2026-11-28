@@ -33,8 +33,33 @@ export type ProviderDiscoveryReport = {
 /** Cap on probe completions per provider per refresh, to bound latency/calls. */
 const MAX_PROBE_CANDIDATES = 24;
 
+/**
+ * Landscape watchlist (QW7, 2026-11-27): ids from the Nov-2026 model release
+ * landscape that providers may already serve without advertising them in
+ * `/models`. Merged into the probe candidate list after config ids (explicit
+ * user intent stays first) and before the live `/models` ids, so every
+ * refreshable-provider refresh harvests the actually-served id for these —
+ * when a provider starts serving one, it surfaces as a probe-sourced active
+ * row (never vanish-deprecated by a later /models reconcile). Providers not
+ * configured as refreshable simply never look this up.
+ *
+ * - DeepSeek-V4.1-Flash-1017 — the 1017 checkpoint of V4.1 Flash (763B,
+ *   Image-Text-to-Text).
+ * - Nov-2026 landscape: GLM-5.3 (zai), Qwen3.5-397B (qwen), GPT-5.4/5.5
+ *   (openai), Gemini 3.5 Flash (google), Claude Opus 4.6 (anthropic).
+ */
+const LANDSCAPE_PROBE_WATCHLIST: Readonly<Record<string, readonly string[]>> = {
+  deepseek: ["DeepSeek-V4.1-Flash-1017"],
+  zai: ["glm-5.3"],
+  qwen: ["qwen3.5-397b"],
+  openai: ["gpt-5.4", "gpt-5.5"],
+  google: ["gemini-3.5-flash"],
+  anthropic: ["claude-opus-4.6"],
+};
+
 /** Candidate ids to probe for served-but-unlisted models: the curated config
- * catalog ids when present, else the live /models ids. */
+ * catalog ids when present, else the live /models ids — with the provider's
+ * landscape watchlist ids merged in between (QW7 2026-11-27). */
 function collectProbeCandidateIds(
   cfg: OpenClawConfig,
   provider: string,
@@ -43,8 +68,9 @@ function collectProbeCandidateIds(
   const configIds = (cfg.models?.providers?.[provider]?.models ?? [])
     .map((m) => m.id?.trim())
     .filter((id): id is string => Boolean(id));
+  const watchlistIds = LANDSCAPE_PROBE_WATCHLIST[provider] ?? [];
   const liveIds = fetchResult.ok ? fetchResult.models.map((m) => m.modelId) : [];
-  const source = configIds.length > 0 ? configIds : liveIds;
+  const source = [...configIds, ...watchlistIds, ...(configIds.length > 0 ? [] : liveIds)];
   const seen = new Set<string>();
   const out: string[] = [];
   for (const id of source) {
@@ -175,8 +201,11 @@ export async function runProviderModelDiscovery(params: {
       }
       if (requested.toLowerCase() !== key) {
         // A requested id that the provider answered with a different served id =
-        // a silent upgrade (e.g. glm-5.1 served as glm-5.2, or the stable alias
-        // deepseek-v4-flash answered with the snapshot id DeepSeek-V4-Flash-0731).
+        // a silent upgrade (e.g. glm-5.1 served as glm-5.2, or pins on the
+        // retired DeepSeek ids deepseek-v4-flash / deepseek-v4-flash-vision-exp
+        // now served as deepseek-flash, which answers with the V4.1-Flash-1017
+        // snapshot generation — the 2026-09 consolidation of the old
+        // DeepSeek-V4-Flash-0731 snapshot alias).
         // Record the link even when /models also lists the served id — the
         // snapshot identity must reach doctor --fix as a distinguishable ID.
         const from = upgradeFromByServed.get(key) ?? new Set<string>();

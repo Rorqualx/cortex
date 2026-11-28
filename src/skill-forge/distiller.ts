@@ -246,8 +246,10 @@ function extractStructuredFields(body: string): {
     validationRules?: string[];
   } = {};
 
-  // Extract trigger boundary from "## When to use this skill" section
-  const triggerMatch = body.match(/^##\s+When to use this skill\s*\n([\s\S]*?)(?=\n##\s|$)/mu);
+  // Extract trigger boundary from "## When to apply" / "## When to use this skill" section
+  const triggerMatch = body.match(
+    /^##\s+(?:When to apply|When to use this skill)\s*\n([\s\S]*?)(?=\n##\s|$)/mu,
+  );
   if (triggerMatch?.[1]) {
     const text = triggerMatch[1].trim();
     if (text) {

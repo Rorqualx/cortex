@@ -34,6 +34,20 @@ CREATE TABLE IF NOT EXISTS retrieval_use_daily (
   tier TEXT NOT NULL,
   uses INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (day, chunk_id, tier)
+);
+CREATE TABLE IF NOT EXISTS retrieval_use_sessions (
+  session_id TEXT NOT NULL,
+  chunk_id TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  uses INTEGER NOT NULL DEFAULT 0,
+  last_used_at INTEGER NOT NULL,
+  PRIMARY KEY (session_id, chunk_id, tier)
+);
+CREATE INDEX IF NOT EXISTS retrieval_use_sessions_chunk ON retrieval_use_sessions (chunk_id);
+CREATE TABLE IF NOT EXISTS session_outcomes (
+  session_id TEXT PRIMARY KEY,
+  outcome TEXT NOT NULL,
+  recorded_at INTEGER NOT NULL
 );`;
 
 /** One injected retrieval item — the unit the engine emits per prompt injection. */
@@ -41,6 +55,15 @@ export type RetrievedUseItem = {
   chunkId: string;
   tier: string;
 };
+
+/**
+ * QW-2 (2026-11-25): run outcome for a session, used by the outcome join.
+ * Vocabulary mirrors the MERIT outcome-polarity taxonomy already in the
+ * codebase: `positive` = the run/turn succeeded (retrieved-and-helped),
+ * `negative` = it failed or was retried/abandoned (retrieved-and-ignored),
+ * `neutral` = no outcome signal recorded.
+ */
+export type SessionOutcome = "positive" | "negative" | "neutral";
 
 export type ChunkUseSummary = {
   /** Total recorded prompt injections across all days. */
@@ -78,9 +101,9 @@ function openDb(dir: string): DatabaseSync {
 }
 
 /**
- * Record one assemble-time injection batch. `sessionId` is accepted for
- * future per-session correlation (Skill Forge outcome join) but rows
- * aggregate on (day, chunk, tier) to keep volume tiny.
+ * Record one assemble-time injection batch. `sessionId` is now persisted in
+ * the per-session table (QW-2, 2026-11-25) for the outcome join, while the
+ * daily table keeps its original day-aggregated shape.
  */
 export function recordRetrievalUses(params: {
   sessionId: string;
@@ -92,15 +115,46 @@ export function recordRetrievalUses(params: {
     return;
   }
   const db = openDb(params.dir);
-  const day = localDay(params.now ?? Date.now());
+  const now = params.now ?? Date.now();
+  const day = localDay(now);
   const stmt = db.prepare(
     `INSERT INTO retrieval_use_daily (day, chunk_id, tier, uses)
      VALUES (?, ?, ?, 1)
      ON CONFLICT(day, chunk_id, tier) DO UPDATE SET uses = uses + 1`,
   );
+  const sessionStmt = db.prepare(
+    `INSERT INTO retrieval_use_sessions (session_id, chunk_id, tier, uses, last_used_at)
+     VALUES (?, ?, ?, 1, ?)
+     ON CONFLICT(session_id, chunk_id, tier) DO UPDATE SET uses = uses + 1, last_used_at = excluded.last_used_at`,
+  );
   for (const item of params.items) {
     stmt.run(day, item.chunkId, item.tier);
+    sessionStmt.run(params.sessionId, item.chunkId, item.tier, now);
   }
+}
+
+/**
+ * QW-2 (2026-11-25): record the run outcome for a session — the write side
+ * of the outcome join ("retrieved-and-helped vs retrieved-and-ignored",
+ * the Skill Forge outcome join this store's header anticipated). Callers
+ * that know whether a turn/run succeeded (replay judges, runtimes, metrics
+ * collectors) record the verdict once per session; re-recording overwrites
+ * with the latest verdict. Same best-effort discipline as the injection
+ * writes: failures are swallowed by callers, never block the hot path.
+ */
+export function recordSessionOutcome(params: {
+  sessionId: string;
+  outcome: SessionOutcome;
+  now?: number;
+  dir: string;
+}): void {
+  const db = openDb(params.dir);
+  const now = params.now ?? Date.now();
+  db.prepare(
+    `INSERT INTO session_outcomes (session_id, outcome, recorded_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(session_id) DO UPDATE SET outcome = excluded.outcome, recorded_at = excluded.recorded_at`,
+  ).run(params.sessionId, params.outcome, now);
 }
 
 /** Aggregate cumulative per-chunk use counters for the given chunk ids. */
@@ -129,6 +183,77 @@ export function summarizeChunkUse(params: {
     result.set(row.chunk_id, {
       uses: typeof row.uses === "bigint" ? Number(row.uses) : row.uses,
       lastUsedDay: row.last_day ?? null,
+    });
+  }
+  return result;
+}
+
+/**
+ * QW-2 (2026-11-25): per-chunk utility summary — the outcome join. Joins
+ * per-session injection rows with recorded session outcomes so each chunk
+ * carries (a) cumulative injection volume, (b) recency (last injection),
+ * and (c) injections attributable to positive/negative/neutral-outcome
+ * sessions. Chunks injected before the session table existed (or with no
+ * recorded outcome) report zero outcome counts — the join degrades to the
+ * plain use summary, never blocks consolidation.
+ */
+export type ChunkUtilitySummary = {
+  /** Total recorded prompt injections across all sessions. */
+  uses: number;
+  /** Most recent injection day (`YYYY-MM-DD`, local), if ever. */
+  lastUsedDay: string | null;
+  /** Most recent injection timestamp (ms), if ever. */
+  lastUsedAtMs: number | null;
+  /** Injections that happened in sessions later recorded `positive`. */
+  positiveUses: number;
+  /** Injections that happened in sessions later recorded `negative`. */
+  negativeUses: number;
+  /** Injections in sessions recorded `neutral`, or with no outcome record. */
+  neutralUses: number;
+};
+
+/** Aggregate per-chunk utility (injections + outcome attribution) for the given chunk ids. */
+export function summarizeChunkUtility(params: {
+  chunkIds: readonly string[];
+  dir: string;
+}): Map<string, ChunkUtilitySummary> {
+  const result = new Map<string, ChunkUtilitySummary>();
+  if (params.chunkIds.length === 0) {
+    return result;
+  }
+  const db = openDb(params.dir);
+  const placeholders = params.chunkIds.map(() => "?").join(", ");
+  const rows = db
+    .prepare(
+      `SELECT s.chunk_id AS chunk_id,
+              SUM(s.uses) AS uses,
+              MAX(s.last_used_at) AS last_used_at,
+              SUM(CASE WHEN o.outcome = 'positive' THEN s.uses ELSE 0 END) AS positive_uses,
+              SUM(CASE WHEN o.outcome = 'negative' THEN s.uses ELSE 0 END) AS negative_uses,
+              SUM(CASE WHEN o.outcome = 'neutral' OR o.outcome IS NULL THEN s.uses ELSE 0 END) AS neutral_uses
+       FROM retrieval_use_sessions s
+       LEFT JOIN session_outcomes o ON o.session_id = s.session_id
+       WHERE s.chunk_id IN (${placeholders})
+       GROUP BY s.chunk_id`,
+    )
+    .all(...params.chunkIds) as Array<{
+    chunk_id: string;
+    uses: number | bigint | null;
+    last_used_at: number | bigint | null;
+    positive_uses: number | bigint | null;
+    negative_uses: number | bigint | null;
+    neutral_uses: number | bigint | null;
+  }>;
+  for (const row of rows) {
+    const lastUsedAtMs =
+      row.last_used_at === null || row.last_used_at === undefined ? null : Number(row.last_used_at);
+    result.set(row.chunk_id, {
+      uses: Number(row.uses ?? 0),
+      lastUsedDay: lastUsedAtMs === null ? null : localDay(lastUsedAtMs),
+      lastUsedAtMs,
+      positiveUses: Number(row.positive_uses ?? 0),
+      negativeUses: Number(row.negative_uses ?? 0),
+      neutralUses: Number(row.neutral_uses ?? 0),
     });
   }
   return result;

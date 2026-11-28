@@ -143,6 +143,15 @@ export type L2Fact = {
    * scoring pipeline can demote facts whose validity window has closed.
    */
   validity?: FactValidity;
+  /**
+   * Applicability scope conditions (Gated Memory scope predicate) threaded
+   * from typed facts at retrieval so the injection surface can enforce
+   * them: a fact whose scope tokens do not match the current retrieval
+   * context (agent identity or query text, strict exact match) is dropped
+   * before injection. Absent = unconstrained (same pattern as `validity`).
+   * (QW-1 scope-enforced retrieval, 2026-11-25)
+   */
+  applicability?: string[];
 };
 
 /**
