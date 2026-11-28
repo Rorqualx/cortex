@@ -44,7 +44,7 @@ import { recordRetrievalUses, type RetrievedUseItem } from "./retrieval-use-stor
 import { formatMemorySection, type MemoryCoreLookup, retrieveTopK } from "./retrieval.js";
 import { cosineSimilarity } from "./scoring.js";
 import { selectSlidingWindow } from "./sliding-window.js";
-import { Storage } from "./storage.js";
+import { EmbeddingModelMismatchError, embeddingIdentityDecision, Storage } from "./storage.js";
 import { estimateTotalTokens } from "./token-estimate.js";
 import type { L3State, MessageChunkFacets } from "./types.js";
 
@@ -216,6 +216,9 @@ export class HierarchicalL3Engine implements ContextEngine {
   private readonly embeddingProviderOverride: EmbeddingProvider | undefined;
   /** Lazily resolved embedding provider from core infrastructure. */
   private resolvedEmbeddingProvider: EmbeddingProvider | null | undefined;
+  /** Active embedding-model identity (`provider|model`) once resolved (QW-B
+   * 2026-11-28 identity guard) — passed to the shared-store mirror on publish. */
+  private embeddingModelIdentity: string | undefined;
   private cachedZaiKey: string | null | undefined;
   private state: L3State | null = null;
   /** ReTopK session-scoped retrieval cache (bounded LRU). */
@@ -572,7 +575,13 @@ export class HierarchicalL3Engine implements ContextEngine {
                 this.state.agentId ?? "unknown",
                 activeFacts,
                 this.sharedMemoryDir,
+                this.embeddingModelIdentity,
               );
+              if (pub.embeddingIdentityStatus === "mismatch") {
+                l3debug(
+                  "afterTurn(): shared-store embedding identity MISMATCH — published fact vectors are cross-model; text stays valid, vectors should be ignored until re-encoded",
+                );
+              }
               if (pub.published > 0) {
                 l3debug(
                   `afterTurn(): cross-context published=${pub.published} conflicts=${pub.conflicts}`,
@@ -832,6 +841,37 @@ export class HierarchicalL3Engine implements ContextEngine {
         embed: async (text: string) => await provider.embed(text, { inputType: "query" }),
         embedBatch: (texts: string[]) => provider.embedBatch(texts),
       };
+      // QW-B (2026-11-28): embedding-model identity guard. Compare the active
+      // provider|model against the identity recorded in l3_kv — the model that
+      // produced this store's stored vectors. A store predating the guard
+      // (missing row) adopts the active identity once; a mismatch fails
+      // loudly at the embed call itself so no foreign vectors are written or
+      // compared, while query embedding degrades gracefully to the lexical
+      // channel via resolveQueryEmbedding's catch.
+      const identity = `${providerId}|${adapter.defaultModel}`;
+      this.embeddingModelIdentity = identity;
+      const decision = embeddingIdentityDecision(
+        await this.storage.readEmbeddingModelIdentity(),
+        identity,
+      );
+      if (decision.action === "adopt") {
+        await this.storage.recordEmbeddingModelIdentity(identity);
+        l3debug(`resolveEmbeddingProvider(): adopted embedding identity ${identity}`);
+      } else if (decision.action === "mismatch") {
+        l3debug(
+          `resolveEmbeddingProvider(): EMBEDDING MODEL MISMATCH — stored "${decision.stored}" vs active "${decision.active}"; embed calls will throw`,
+        );
+        const mismatched: EmbeddingProvider = {
+          embed: async () => {
+            throw new EmbeddingModelMismatchError(decision.stored, decision.active);
+          },
+          embedBatch: async () => {
+            throw new EmbeddingModelMismatchError(decision.stored, decision.active);
+          },
+        };
+        this.resolvedEmbeddingProvider = mismatched;
+        return mismatched;
+      }
       this.resolvedEmbeddingProvider = wrapped;
       l3debug("resolveEmbeddingProvider(): resolved provider from core infrastructure");
       return wrapped;

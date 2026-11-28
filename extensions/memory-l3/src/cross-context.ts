@@ -64,7 +64,42 @@ CREATE TABLE IF NOT EXISTS l3_shared_longterm (
   payload TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS l3_shared_longterm_dedup ON l3_shared_longterm (dedup_key);
+CREATE TABLE IF NOT EXISTS l3_shared_kv (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
+
+/** kv key holding the shared store's embedding-model identity (QW-B mirror). */
+const SHARED_KV_EMBEDDING_MODEL = "embedding_model";
+
+/**
+ * Read the shared store's recorded embedding-model identity (`provider|model`)
+ * or null when unset (store predates the guard). Opens and closes its own
+ * handle, mirroring the other public entry points.
+ */
+export async function readSharedEmbeddingModelIdentity(sharedDir?: string): Promise<string | null> {
+  const db = openSharedDb(sharedDir);
+  try {
+    return readSharedEmbeddingIdentitySync(db);
+  } finally {
+    closeSharedDb(db);
+  }
+}
+
+function readSharedEmbeddingIdentitySync(db: DatabaseSync): string | null {
+  const row = db
+    .prepare("SELECT value FROM l3_shared_kv WHERE key = ?")
+    .get(SHARED_KV_EMBEDDING_MODEL) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+function recordSharedEmbeddingIdentitySync(db: DatabaseSync, identity: string): void {
+  db.prepare("INSERT OR REPLACE INTO l3_shared_kv (key, value) VALUES (?, ?)").run(
+    SHARED_KV_EMBEDDING_MODEL,
+    identity,
+  );
+}
 
 /**
  * Resolve the shared memory directory path.
@@ -257,7 +292,16 @@ export async function publishToFacts(
   agentId: string,
   facts: ReadonlyArray<LongTermFact>,
   sharedDir?: string,
-): Promise<{ published: number; conflicts: number }> {
+  embeddingIdentity?: string,
+): Promise<{
+  published: number;
+  conflicts: number;
+  /** QW-B mirror (2026-11-28): embedding-identity guard outcome for this
+   * publish. Present only when `embeddingIdentity` was provided. Mismatch
+   * never blocks the publish — shared facts carry valid text without their
+   * vectors — but is surfaced so callers can warn. */
+  embeddingIdentityStatus?: "adopted" | "match" | "mismatch";
+}> {
   // Stamp agent ID on new facts (independent of the transaction).
   const newShared: SharedLongTermFact[] = [];
   for (const fact of facts) {
@@ -269,6 +313,21 @@ export async function publishToFacts(
   const db = openSharedDb(sharedDir);
   try {
     return runSqliteImmediateTransactionSync(db, () => {
+      // QW-B mirror: record/compare the embedding-model identity of the
+      // vectors riding on published facts. First publish with an identity
+      // adopts (store predates the guard); a later different identity is
+      // reported, not enforced — the shared tier's facts are text-first.
+      let embeddingIdentityStatus: "adopted" | "match" | "mismatch" | undefined;
+      if (embeddingIdentity) {
+        const stored = readSharedEmbeddingIdentitySync(db);
+        if (stored === null) {
+          recordSharedEmbeddingIdentitySync(db, embeddingIdentity);
+          embeddingIdentityStatus = "adopted";
+        } else {
+          embeddingIdentityStatus = stored === embeddingIdentity ? "match" : "mismatch";
+        }
+      }
+
       const existing = readAllSync(db);
       const activeExisting = existing.filter((f) => !f.archived);
 
@@ -295,7 +354,11 @@ export async function publishToFacts(
       replaceAllSync(db, [...resolved, ...archived]);
 
       const conflicts = allActive.length - resolved.filter((f) => !f.archived).length;
-      return { published: newShared.length, conflicts: Math.max(0, -conflicts) };
+      return {
+        published: newShared.length,
+        conflicts: Math.max(0, -conflicts),
+        ...(embeddingIdentityStatus ? { embeddingIdentityStatus } : {}),
+      };
     });
   } finally {
     closeSharedDb(db);

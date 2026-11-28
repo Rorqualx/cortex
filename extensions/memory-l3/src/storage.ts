@@ -42,6 +42,7 @@ const KV_STATE = "state";
 const KV_LONG_TERM = "longterm";
 const KV_LONG_TERM_TYPED = "longterm_typed";
 const KV_INSIGHTS = "insights";
+const KV_EMBEDDING_MODEL = "embedding_model";
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS l3_kv (
@@ -137,6 +138,55 @@ function ensureMessageFacetColumns(db: DatabaseSync): void {
   }
   if (!names.has("channel")) {
     db.exec("ALTER TABLE l3_message_chunks ADD COLUMN channel TEXT");
+  }
+}
+
+/**
+ * Embedding-model identity guard decision (QW-B, 2026-11-28, HASB-inspired).
+ *
+ * A silent embedding-provider swap invalidates every stored vector: cosine
+ * similarities between vectors from different models are meaningless, so
+ * retrieval quality degrades with no error anywhere. The guard records the
+ * `provider|model` identity of the embedding model that produced a store's
+ * vectors in `l3_kv` and compares the active provider against it:
+ *   - `adopt` — no row yet (store predates the guard): the first embed after
+ *     the upgrade records the active identity once, never a hard fail.
+ *   - `match` — same identity; nothing to do.
+ *   - `mismatch` — different identity: the active model must not compute
+ *     vectors for (or be compared against) this store — see
+ *     `EmbeddingModelMismatchError`.
+ */
+export type EmbeddingIdentityDecision =
+  | { ok: true; action: "match" }
+  | { ok: true; action: "adopt" }
+  | { ok: false; action: "mismatch"; stored: string; active: string };
+
+export function embeddingIdentityDecision(
+  stored: string | null,
+  active: string,
+): EmbeddingIdentityDecision {
+  if (stored === null) return { ok: true, action: "adopt" };
+  if (stored === active) return { ok: true, action: "match" };
+  return { ok: false, action: "mismatch", stored, active };
+}
+
+/**
+ * Thrown when the active embedding model differs from the one that produced
+ * a store's stored vectors (QW-B identity guard). Carries the actionable
+ * remedy: raw text is always retained in `l1_archive`, so re-encoding or
+ * pointing the provider back at the recorded model both recover.
+ */
+export class EmbeddingModelMismatchError extends Error {
+  constructor(
+    readonly stored: string,
+    readonly active: string,
+  ) {
+    super(
+      `embedding model mismatch: store vectors were produced by "${stored}" but the active provider is "${active}". ` +
+        "Mixing embedding models silently invalidates cosine similarity — refusing to embed. " +
+        "Re-encode from the retained l1_archive raw text, or point OPENCLAW_L3_EMBEDDING_PROVIDER back at the recorded model.",
+    );
+    this.name = "EmbeddingModelMismatchError";
   }
 }
 
@@ -237,6 +287,26 @@ export class Storage {
 
   async writeState(state: L3State): Promise<void> {
     this.writeKv(KV_STATE, JSON.stringify(state));
+  }
+
+  // -----------------------------------------------------------------
+  // Embedding-model identity guard (QW-B, 2026-11-28, HASB-inspired)
+  // -----------------------------------------------------------------
+
+  /**
+   * Identity (`provider|model`) of the embedding model that produced this
+   * store's stored vectors, or null when the store predates the guard.
+   * Null is treated as "unknown": the first embed after the upgrade adopts
+   * and records the active identity (see `embeddingIdentityDecision`),
+   * never a hard fail.
+   */
+  async readEmbeddingModelIdentity(): Promise<string | null> {
+    return this.readKv(KV_EMBEDDING_MODEL);
+  }
+
+  /** Record the store's embedding-model identity (first-embed adoption). */
+  async recordEmbeddingModelIdentity(identity: string): Promise<void> {
+    this.writeKv(KV_EMBEDDING_MODEL, identity);
   }
 
   // -----------------------------------------------------------------

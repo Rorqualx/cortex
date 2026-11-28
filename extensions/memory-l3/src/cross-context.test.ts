@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { describe, it } from "node:test";
 import {
   publishToFacts,
+  readSharedEmbeddingModelIdentity,
   readSharedFacts,
   resolveConflicts,
   resolveSharedMemoryDir,
@@ -125,6 +126,42 @@ describe("cross-context", () => {
       });
       assert.strictEqual(read.length, 1);
       assert.strictEqual(read[0]!.sourceAgentId, "agent-1");
+      await cleanup();
+    });
+  });
+
+  describe("embedding identity guard (QW-B mirror)", () => {
+    it("adopts the first identity, matches the same, flags a mismatch without blocking", async () => {
+      const dir = path.join(tmpBase, "embedding-identity");
+      const facts = [makeLongTermFact("key:id1")];
+      // First publish with an identity adopts it (store predates the guard).
+      const first = await publishToFacts("agent-1", facts, dir, "openai|text-embedding-3-small");
+      assert.strictEqual(first.embeddingIdentityStatus, "adopted");
+      assert.strictEqual(
+        await readSharedEmbeddingModelIdentity(dir),
+        "openai|text-embedding-3-small",
+      );
+      // Same identity matches.
+      const second = await publishToFacts("agent-1", facts, dir, "openai|text-embedding-3-small");
+      assert.strictEqual(second.embeddingIdentityStatus, "match");
+      // A different identity is flagged but does not block the publish.
+      const third = await publishToFacts("agent-1", facts, dir, "ollama|nomic-embed");
+      assert.strictEqual(third.embeddingIdentityStatus, "mismatch");
+      assert.strictEqual(third.published, 1);
+      // The recorded identity is not overwritten by the mismatching publish.
+      assert.strictEqual(
+        await readSharedEmbeddingModelIdentity(dir),
+        "openai|text-embedding-3-small",
+      );
+      await cleanup();
+    });
+
+    it("leaves identity untouched when publish provides none", async () => {
+      const dir = path.join(tmpBase, "embedding-identity-none");
+      const facts = [makeLongTermFact("key:id2")];
+      const result = await publishToFacts("agent-1", facts, dir);
+      assert.strictEqual(result.embeddingIdentityStatus, undefined);
+      assert.strictEqual(await readSharedEmbeddingModelIdentity(dir), null);
       await cleanup();
     });
   });

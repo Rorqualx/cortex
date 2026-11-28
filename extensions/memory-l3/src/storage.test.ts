@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Storage } from "./storage.js";
+import { embeddingIdentityDecision, Storage } from "./storage.js";
 import {
   INITIAL_L3_STATE,
   type L2ChunkFrontmatter,
@@ -456,6 +456,29 @@ describe("Storage cost-attribution metrics (QW5 2026-08-16)", () => {
       demotions: 0,
       merges: 0,
       tokensSpent: 0,
+    });
+  });
+});
+
+describe("Embedding-model identity guard (QW-B, 2026-11-28)", () => {
+  it("readEmbeddingModelIdentity returns null for a fresh store (predates-guard semantics)", async () => {
+    expect(await storage.readEmbeddingModelIdentity()).toBe(null);
+  });
+
+  it("recordEmbeddingModelIdentity round-trips through l3_kv", async () => {
+    await storage.ensureLayout();
+    await storage.recordEmbeddingModelIdentity("openai|text-embedding-3-small");
+    expect(await storage.readEmbeddingModelIdentity()).toBe("openai|text-embedding-3-small");
+  });
+
+  it("embeddingIdentityDecision: adopt on missing, match on equal, mismatch on different", () => {
+    expect(embeddingIdentityDecision(null, "a|b")).toEqual({ ok: true, action: "adopt" });
+    expect(embeddingIdentityDecision("a|b", "a|b")).toEqual({ ok: true, action: "match" });
+    expect(embeddingIdentityDecision("a|b", "c|d")).toEqual({
+      ok: false,
+      action: "mismatch",
+      stored: "a|b",
+      active: "c|d",
     });
   });
 });
